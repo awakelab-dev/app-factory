@@ -1,0 +1,509 @@
+/* ── Fundo escurecido ── */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: backdropIn 0.2s ease;
+}
+
+@keyframes backdropIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ── Card do modal ── */
+.modal-card {
+  width: 100%;
+  max-width: 640px;
+  max-height: 82vh;
+  background: #10101e;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(124, 92, 252, 0.08);
+  animation: cardIn 0.22s ease;
+  overflow: hidden;
+}
+
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+
+/* ── Header ── */
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 22px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+.modal-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.modal-file-icon {
+  color: rgba(124, 92, 252, 0.7);
+  flex-shrink: 0;
+  display: flex;
+}
+
+.modal-filename {
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.modal-close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+.modal-close-btn:hover {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.25);
+  color: #f87171;
+}
+
+/* ── Metadados ── */
+.modal-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 14px 22px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  flex-shrink: 0;
+}
+
+.meta-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 20px;
+}
+
+.meta-key {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.3);
+  font-weight: 500;
+}
+
+.meta-val {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 600;
+}
+
+/* ── Seção de domínio ── */
+.modal-domain-section {
+  padding: 14px 22px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.domain-radios {
+  display: flex;
+  gap: 24px;
+}
+
+.radio-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.55);
+  user-select: none;
+  transition: color 0.15s;
+}
+
+.radio-option:hover {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.radio-option input[type="radio"] {
+  accent-color: #7c5cfc;
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+.domain-input-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.domain-input {
+  width: 100%;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: #ffffff;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.domain-input:focus {
+  border-color: rgba(124, 92, 252, 0.45);
+  background: rgba(124, 92, 252, 0.04);
+}
+
+.domain-input::placeholder {
+  color: rgba(255, 255, 255, 0.2);
+}
+
+.domain-preview {
+  padding: 9px 14px;
+  background: rgba(124, 92, 252, 0.08);
+  border: 1px solid rgba(124, 92, 252, 0.22);
+  border-radius: 8px;
+  font-size: 13px;
+  color: #a78bfa;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  user-select: none;
+}
+
+.domain-preview:hover {
+  background: rgba(124, 92, 252, 0.15);
+  border-color: rgba(124, 92, 252, 0.4);
+}
+
+/* ── Footer com botão ── */
+.modal-footer {
+  padding: 14px 22px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+.btn-download-extracted {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  width: 100%;
+  padding: 12px;
+  background: linear-gradient(135deg, #5b48e5, #8b5cf6);
+  border: none;
+  border-radius: 10px;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: opacity 0.2s, box-shadow 0.2s, transform 0.15s;
+  box-shadow: 0 4px 20px rgba(91, 72, 229, 0.35);
+}
+
+.btn-download-extracted:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 28px rgba(91, 72, 229, 0.5);
+}
+
+.btn-download-extracted:active {
+  transform: translateY(0);
+}
+
+.btn-download-extracted:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ── Progresso de extração ── */
+.extract-progress-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.extract-progress-bar-bg {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.extract-progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #5b48e5, #8b5cf6);
+  border-radius: 99px;
+  transition: width 0.25s ease;
+}
+
+.extract-progress-text {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
+  text-align: center;
+}
+
+.extract-error {
+  font-size: 12px;
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+}
+
+.extract-hint {
+  margin-top: 8px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.25);
+  text-align: center;
+  line-height: 1.5;
+}
+
+.extract-hint strong {
+  color: rgba(255, 255, 255, 0.4);
+  font-weight: 600;
+}
+
+/* ── Label de seção ── */
+.modal-section-label {
+  padding: 12px 22px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.25);
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+/* ── Lista de conteúdo ── */
+.modal-body {
+  overflow-y: auto;
+  flex: 1;
+  padding: 4px 0 12px;
+}
+
+.modal-body::-webkit-scrollbar {
+  width: 4px;
+}
+
+.modal-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.modal-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+
+/* estado vazio / loading / erro */
+.modal-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 36px 22px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.modal-state-error {
+  color: #f87171;
+}
+
+.modal-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(124, 92, 252, 0.2);
+  border-top-color: #7c5cfc;
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Linha de entrada ── */
+.entry-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  padding-right: 22px;
+  border-radius: 6px;
+  margin: 0 8px;
+  transition: background 0.12s;
+}
+
+.entry-row:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.entry-file {
+  cursor: pointer;
+}
+
+.entry-file:hover {
+  background: rgba(124, 92, 252, 0.07) !important;
+}
+
+.entry-file:hover .entry-name {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.entry-file:hover .icon-file {
+  color: rgba(124, 92, 252, 0.7);
+}
+
+.entry-icon {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.icon-dir {
+  color: #fbbf24;
+}
+
+.icon-file {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.entry-dir .entry-name {
+  color: rgba(255, 255, 255, 0.75);
+  font-weight: 500;
+}
+
+.entry-name {
+  flex: 1;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+}
+
+.entry-size {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.2);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* hint "Abrir →" aparece no hover */
+.entry-open-hint {
+  font-size: 10px;
+  color: rgba(124, 92, 252, 0);
+  flex-shrink: 0;
+  margin-left: 4px;
+  transition: color 0.15s;
+  font-weight: 600;
+}
+
+.entry-file:hover .entry-open-hint {
+  color: rgba(124, 92, 252, 0.7);
+}
+
+/* ── Botão voltar ── */
+.btn-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: none;
+  color: rgba(124, 92, 252, 0.8);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+
+.btn-back:hover {
+  color: #a78bfa;
+}
+
+/* ── Visualizador de arquivo interno ── */
+.viewer-wrap {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* código / texto */
+.viewer-code {
+  flex: 1;
+  overflow: auto;
+  margin: 0;
+  padding: 20px 24px;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: rgba(255, 255, 255, 0.78);
+  background: #0c0c1a;
+  white-space: pre;
+  tab-size: 2;
+}
+
+.viewer-code::-webkit-scrollbar       { width: 4px; height: 4px; }
+.viewer-code::-webkit-scrollbar-track { background: transparent; }
+.viewer-code::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+
+/* imagem */
+.viewer-image-wrap {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: repeating-conic-gradient(rgba(255,255,255,0.03) 0% 25%, transparent 0% 50%) 0 0 / 16px 16px;
+}
+
+.viewer-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 6px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+}
