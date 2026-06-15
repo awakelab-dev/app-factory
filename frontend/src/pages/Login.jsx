@@ -34,7 +34,7 @@ export default function Login() {
               <polygon points="12,2 22,8.5 22,15.5 12,22 2,15.5 2,8.5" fill="#7c5cfc" />
               <polygon points="12,6 18,9.5 18,14.5 12,18 6,14.5 6,9.5" fill="#0d0d1a" />
             </svg>
-            <span>AppFactory</span>
+            <span>AwkFactory</span>
           </div>
 
           <h1 className="login-title">Inicia sesión</h1>
@@ -106,7 +106,7 @@ export default function Login() {
 
         <div className="right-text">
           <h2>Gestión Inteligente</h2>
-          <p>AppFactory</p>
+          <p>AwkFactory</p>
         </div>
 
         <div className="mountain-layer">

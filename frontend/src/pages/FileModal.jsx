@@ -137,16 +137,11 @@ export default function FileModal({ file, onClose, onStatusChange }) {
   }
 
   async function handleDownloadExtracted() {
-    const link = document.createElement('a');
-    link.href = `/api/uploads/${file._id}/download-extracted`;
-    link.download = file.originalName.replace(/\.zip$/i, '') + '.zip';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
     try {
       await updateUploadStatus(file._id, 'En revisión');
       if (onStatusChange) onStatusChange('En revisión');
     } catch { /* silencioso */ }
+    onClose();
   }
 
   function closeEntry() {
@@ -234,6 +229,14 @@ export default function FileModal({ file, onClose, onStatusChange }) {
                   />
                   <span>Dominio</span>
                 </label>
+                <label className="radio-option">
+                  <input
+                    type="radio" name="domainType" value="dns"
+                    checked={domainType === 'dns'}
+                    onChange={() => { setDomainType('dns'); setDomainValue(''); }}
+                  />
+                  <span>Cómo configurar mis DNS</span>
+                </label>
               </div>
 
               {domainType && (
@@ -251,15 +254,15 @@ export default function FileModal({ file, onClose, onStatusChange }) {
                       title="Haz clic para usar este valor"
                       onClick={() => {
                         const full = domainType === 'subdomain'
-                          ? `${domainValue}.appfactory.com`
-                          : `${domainValue}.com`;
+                          ? `${domainValue}.awkfactory.com`
+                          : domainValue;
                         setDomainValue(full);
                         setDomainConfirmed(true);
                       }}
                     >
                       {domainType === 'subdomain'
-                        ? `${domainValue}.appfactory.com`
-                        : `${domainValue}.com`}
+                        ? `${domainValue}.awkfactory.com`
+                        : domainValue}
                     </div>
                   )}
                 </div>
@@ -313,7 +316,7 @@ export default function FileModal({ file, onClose, onStatusChange }) {
                   <polyline points="7 10 12 15 17 10"/>
                   <line x1="12" y1="15" x2="12" y2="3"/>
                 </svg>
-                Descargar archivo descomprimido
+                Continuar
               </button>
             </div>
           </>
