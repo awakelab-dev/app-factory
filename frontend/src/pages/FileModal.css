@@ -159,6 +159,37 @@
   cursor: pointer;
 }
 
+.dns-help-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.55);
+  transition: color 0.15s;
+}
+
+.dns-help-btn:hover {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.dns-help-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
 .domain-input-wrap {
   display: flex;
   flex-direction: column;
