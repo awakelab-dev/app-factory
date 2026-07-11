@@ -1,0 +1,13 @@
+// Modelo de datos de la plataforma.
+// Convención (docs/02-stack.md): las entidades core viven en el schema PG "core";
+// cada módulo generado añade su archivo prisma/schema/<modulo>.prisma con su propio schema PG.
+// Los primeros modelos (usuarios, roles, auditoría) llegan con el core en el siguiente paso de Fase 0.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}

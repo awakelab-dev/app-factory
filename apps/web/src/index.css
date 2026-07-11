@@ -1,0 +1,6 @@
+@import 'tailwindcss';
+@import '@awk/ui/styles.css';
+
+/* Tailwind v4 detecta fuentes automáticamente desde aquí; @source añade el
+   paquete UI (workspace, fuera del árbol de la app). */
+@source '../../../packages/ui/src';

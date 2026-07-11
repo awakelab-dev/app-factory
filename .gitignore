@@ -7,3 +7,6 @@ build/
 .DS_Store
 *.log
 coverage/
+.turbo/
+.vite/
+*.tsbuildinfo

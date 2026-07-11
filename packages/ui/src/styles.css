@@ -1,0 +1,37 @@
+/*
+ * Tokens de marca Awakelab 2026 (brand-guideline-AWK-2026) como theme de Tailwind v4.
+ * Importar desde la app: @import '@awk/ui/styles.css'; (después de @import 'tailwindcss').
+ * Genera utilidades: bg-awk-cyan-500, text-awk-navy-900, border-awk-blue-300, font-sans...
+ * Nota: la fuente Poppins se carga vía <link> en el index.html de cada app
+ * (un @import aquí quedaría mal posicionado al inlinear el CSS).
+ */
+@theme {
+  /* Tipografía: Poppins en todo (titulares, cuerpo y UI) */
+  --font-sans: 'Poppins', ui-sans-serif, system-ui, sans-serif;
+
+  /* Cianes vivos — acentos, CTAs, datos, destellos (sobre fondos oscuros) */
+  --color-awk-cyan-100: #d9fbff;
+  --color-awk-cyan-300: #19f7f1;
+  --color-awk-cyan-400: #11eaea;
+  --color-awk-cyan-500: #0fced3;
+  --color-awk-cyan-600: #0abcc9;
+  --color-awk-cyan-700: #0b93aa;
+
+  /* Azules profundos — claros (superficies suaves) */
+  --color-awk-blue-50: #f0f3fc;
+  --color-awk-blue-100: #e2e6f2;
+  /* medios (jerarquía) */
+  --color-awk-blue-300: #72a3c4;
+  --color-awk-blue-400: #4e7ea5;
+  --color-awk-blue-500: #3b6996;
+  --color-awk-blue-600: #34547a;
+  --color-awk-blue-700: #314668;
+  --color-awk-blue-800: #27334f;
+
+  /* Azules oscuros (fondos) */
+  --color-awk-navy-500: #003670;
+  --color-awk-navy-600: #003260;
+  --color-awk-navy-700: #01264c;
+  --color-awk-navy-800: #012142;
+  --color-awk-navy-900: #011932;
+}
