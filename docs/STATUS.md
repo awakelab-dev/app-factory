@@ -21,7 +21,7 @@
 ## Siguiente (en orden)
 
 1. **Verificación local con BD** (Leonardo, ~10 min, ver receta abajo): migración + seed + dev-login end-to-end.
-2. Provisionar infra (Lightsail, managed PG, CI GitHub Actions con build+test+migración en BD efímera).
+2. Provisionar infra (Lightsail, managed PG, CI GitHub Actions con build+test+migración en BD efímera). **Runbook de la managed PostgreSQL listo**: `docs/runbooks/lightsail-postgres.md` (paso a paso por consola; plan Standard $30 2GB/80GB cifrado verificado en precios AWS 2026-07-11; versión **PG 16** por paridad con dev/CI). Antes de ejecutar, confirmar la **región del grupo** (RGPD→UE, es irreversible sin migración).
 3. Primer módulo ejemplar construido a mano (elegir prototipo real sencillo) → plantilla de módulo.
 
 ### Receta de verificación local (paso 1)
