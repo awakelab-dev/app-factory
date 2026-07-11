@@ -11,7 +11,9 @@ services:
     ports:
       - '5432:5432'
     volumes:
-      - awk-pgdata:/var/lib/postgresql/data
+      # postgres:18+ monta en /var/lib/postgresql (sin /data): el datadir vive
+      # en un subdirectorio por major, lo que permite pg_upgrade entre versiones.
+      - awk-pgdata:/var/lib/postgresql
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U awk -d awkplatform']
       interval: 5s
