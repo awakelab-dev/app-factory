@@ -27,10 +27,27 @@ Criterio rápido: si equivocarse cuesta una re-arquitectura → Fable; si cuesta
 
 ## Ciclo de vida de una tarea
 
-1. **Abrir tarea** en Cowork sobre esta carpeta, con nombre prefijado y modelo según la tabla.
-2. Primer mensaje: objetivo concreto + criterio de "terminado". Claude lee STATUS.md automáticamente (protocolo de CLAUDE.md).
-3. Trabajo normal. Cambios estructurales inesperados → se proponen antes de implementar.
-4. **Cerrar**: pedir a Claude "cierra la sesión" → actualiza STATUS.md, añade a DECISIONES.md si aplica, commit. Una tarea sin cierre es contexto perdido.
+### Cómo abrir una tarea (receta)
+
+1. En Cowork: nueva tarea **sobre esta misma carpeta** (`app-factory`) — esto carga CLAUDE.md y el protocolo automáticamente; sin esto no hay contexto.
+2. Elegir el modelo según la tabla de arriba.
+3. Primer mensaje con esta plantilla (el nombre con prefijo es solo convención organizativa, no sintaxis obligatoria):
+
+```
+[prefijo] Título corto
+
+Objetivo: qué quiero lograr en esta tarea.
+Terminado cuando: criterio concreto y verificable.
+(opcional) Contexto extra no presente en los docs.
+```
+
+Atajo: **STATUS.md mantiene en "Siguiente" el mensaje inicial sugerido de la próxima tarea, listo para copiar** — al cerrar cada sesión, Claude lo deja preparado. Si no sabes cómo arrancar algo, ese es el sitio donde mirar.
+
+### Flujo
+
+1. Abrir tarea (receta anterior). Claude lee STATUS.md por protocolo.
+2. Trabajo normal. Cambios estructurales inesperados → se proponen antes de implementar.
+3. **Cerrar**: pedir a Claude "cierra la sesión" → actualiza STATUS.md (incluido el mensaje inicial sugerido de la siguiente tarea), añade a DECISIONES.md si aplica, commit. Una tarea sin cierre es contexto perdido.
 
 ### Cierre parcial (tarea inconclusa)
 
