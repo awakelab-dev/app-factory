@@ -21,13 +21,13 @@
 ## Siguiente (en orden)
 
 1. **Verificación local con BD** (Leonardo, ~10 min, ver receta abajo): migración + seed + dev-login end-to-end.
-2. Provisionar infra (Lightsail, managed PG, CI GitHub Actions con build+test+migración en BD efímera). **Runbook de la managed PostgreSQL listo**: `docs/runbooks/lightsail-postgres.md` (paso a paso por consola; plan Standard $30 2GB/80GB cifrado verificado en precios AWS 2026-07-11; versión **PG 16** por paridad con dev/CI). Antes de ejecutar, confirmar la **región del grupo** (RGPD→UE, es irreversible sin migración).
+2. Provisionar infra (Lightsail, managed PG, CI GitHub Actions con build+test+migración en BD efímera). **Runbook de la managed PostgreSQL listo**: `docs/runbooks/lightsail-postgres.md` (paso a paso por consola; plan Standard $30 2GB/80GB cifrado verificado en precios AWS 2026-07-11; versión **PG 18** — D-012, Lightsail ofrece hasta 18.4, corregido el 16 inicial). Antes de ejecutar, confirmar la **región del grupo** (RGPD→UE, es irreversible sin migración).
 3. Primer módulo ejemplar construido a mano (elegir prototipo real sencillo) → plantilla de módulo.
 
 ### Receta de verificación local (paso 1)
 
 ```bash
-docker compose -f docker-compose.dev.yml up -d   # Postgres 16 en :5432
+docker compose -f docker-compose.dev.yml up -d   # Postgres 18 en :5432
 pnpm install    # relinkea node_modules (el sandbox lo dejó apuntando a un store propio; aceptar purge si pregunta)
 cd apps/api
 cp .env.example .env
@@ -49,7 +49,7 @@ Si `prisma migrate dev` reportara drift contra `core_init`: regenerar la migraci
 
 Objetivo: workflow de CI que en cada PR corra pnpm install, turbo
 build/test/lint/typecheck y aplique las migraciones Prisma contra un Postgres
-16 de servicio (BD efímera), y en main además construya imágenes Docker de
+18 de servicio (BD efímera, paridad D-012), y en main además construya imágenes Docker de
 apps/api y apps/web y las publique en GHCR (D-003). Nota: en CI no aplican los
 workarounds del sandbox de Cowork (ver "Notas sandbox" en STATUS); GitHub
 Actions descarga engines de Prisma sin problema.

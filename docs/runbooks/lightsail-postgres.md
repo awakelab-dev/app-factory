@@ -11,7 +11,7 @@ Por qué este plan exactamente: es el escalón más pequeño que **cifra en repo
 ## Prerrequisitos (leer antes de tocar la consola)
 
 1. **Región — decisión crítica e irreversible sin migración.** El "modo privado" de Lightsail es *scoped por región*: la BD solo es alcanzable por recursos Lightsail de **su misma región**. Debes crearla en la **misma región donde vive (o vivirá) el Lightsail de 32 GB** que aloja plataforma+fábrica, y esa región debe ser la del grupo. RGPD → región de la UE (p. ej. `eu-west-3` París o `eu-central-1` Fráncfort). **Confirma la región del grupo antes de crear.** Cambiar de región después obliga a snapshot + recrear.
-2. **Versión de PostgreSQL: 16.x.** Es la decisión correcta por **paridad CI↔producción** (D-003): dev y CI ya corren Postgres 16 (`docker-compose.dev.yml`) y la migración `core_init` se validó contra 16. Selecciona la 16.x más reciente del desplegable. Si en el futuro subes de major, súbelo **a la vez** en dev/CI y en la managed, nunca solo aquí.
+2. **Versión de PostgreSQL: 18.x** (D-012; corrige el 16 que decía una versión anterior de este runbook). Lightsail ofrece hasta 18.4 (verificado en consola 2026-07-11); en greenfield se elige el major más nuevo estable por runway de soporte (EOL nov 2030 vs nov 2028 de la 16). La regla de **paridad dev=CI=prod** (D-003) se mantiene: `docker-compose.dev.yml` y CI corren `postgres:18`. Selecciona la 18.x más reciente del desplegable. Si en el futuro subes de major, súbelo **a la vez** en dev/CI y en la managed, nunca solo aquí.
 3. **Acceso a la consola** con permisos de Lightsail en la cuenta AWS del grupo.
 4. **El Lightsail de 32 GB no es bloqueante** para *crear* la BD, pero sí para *verificar la conexión privada* (paso 8). Puedes crear la BD en paralelo y verificar cuando el servidor exista.
 
@@ -24,7 +24,7 @@ Por qué este plan exactamente: es el escalón más pequeño que **cifra en repo
 
 ### 2 · Motor y versión
 - **Select a database**: `PostgreSQL`.
-- **Version**: **16.x** (paridad con dev/CI, ver prerrequisito 2). Anota la versión exacta elegida.
+- **Version**: **18.x** (paridad con dev/CI, ver prerrequisito 2 y D-012). Anota la versión exacta elegida.
 
 ### 3 · Zona de disponibilidad
 - Elige una **AZ dentro de la región**. Preferible la misma AZ que el Lightsail de 32 GB (menor latencia); no es obligatorio para el acceso privado (basta con la región).
