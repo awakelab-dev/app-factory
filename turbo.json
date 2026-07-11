@@ -1,5 +1,6 @@
 {
   "$schema": "https://turborepo.com/schema.json",
+  "globalPassThroughEnv": ["DATABASE_URL", "JWT_SECRET", "NODE_ENV", "PRISMA_*"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

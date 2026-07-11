@@ -4,14 +4,15 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "build": "nest build",
+    "build": "prisma generate && nest build",
     "dev": "nest start --watch",
     "start": "node dist/main.js",
-    "test": "vitest run",
+    "test": "prisma generate && vitest run",
     "lint": "eslint src test",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "prisma generate && tsc --noEmit",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
     "@awk/auth": "workspace:*",
@@ -22,7 +23,10 @@
     "@prisma/client": "^7.8.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "@nestjs/jwt": "^11.0.1",
+    "@prisma/adapter-pg": "^7.8.0",
+    "pg": "^8.16.3"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.24",
@@ -36,6 +40,8 @@
     "supertest": "^7.2.2",
     "typescript": "~5.9.3",
     "unplugin-swc": "^1.5.9",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "tsx": "^4.20.6",
+    "@types/pg": "^8.15.6"
   }
 }

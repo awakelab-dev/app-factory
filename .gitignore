@@ -10,3 +10,5 @@ coverage/
 .turbo/
 .vite/
 *.tsbuildinfo
+.pnpm-store/
+apps/api/src/generated/

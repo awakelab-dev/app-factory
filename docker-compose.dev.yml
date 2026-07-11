@@ -1,0 +1,22 @@
+# Postgres local para desarrollo (espejo del Lightsail managed PG de prod, D-004).
+# Uso: docker compose -f docker-compose.dev.yml up -d
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: awk-db-dev
+    environment:
+      POSTGRES_USER: awk
+      POSTGRES_PASSWORD: awk
+      POSTGRES_DB: awkplatform
+    ports:
+      - '5432:5432'
+    volumes:
+      - awk-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U awk -d awkplatform']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  awk-pgdata:

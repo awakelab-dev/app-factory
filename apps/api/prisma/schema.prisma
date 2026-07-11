@@ -1,13 +1,80 @@
 // Modelo de datos de la plataforma.
 // Convención (docs/02-stack.md): las entidades core viven en el schema PG "core";
-// cada módulo generado añade su archivo prisma/schema/<modulo>.prisma con su propio schema PG.
-// Los primeros modelos (usuarios, roles, auditoría) llegan con el core en el siguiente paso de Fase 0.
+// cada módulo generado añade sus modelos con su propio schema PG (multiSchema).
+//
+// Generador: `prisma-client` (Prisma 7, sin engines Rust). El cliente se genera
+// como TypeScript en src/generated/prisma (gitignored) y consulta la BD vía
+// driver adapter (@prisma/adapter-pg). Ver DECISIONES D-010.
 
 generator client {
-  provider = "prisma-client-js"
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
 }
 
+// Prisma 7: la URL de conexión ya no vive aquí — CLI usa prisma.config.ts
+// y el runtime recibe el adapter (@prisma/adapter-pg) en el constructor.
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  schemas  = ["core"]
+}
+
+/// Usuario de la plataforma. La identidad vendrá del IdP (SSO pendiente,
+/// ver STATUS); mientras tanto se crea por seed y se autentica con dev-login.
+model User {
+  id          String       @id @default(uuid(7)) @db.Uuid
+  email       String       @unique
+  displayName String
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  roles       UserRole[]
+  auditEvents AuditEvent[] @relation("actor")
+
+  @@map("users")
+  @@schema("core")
+}
+
+/// Rol global de plataforma (admin, user, ...). Los permisos finos por
+/// módulo viven en cada module.manifest (requiredRoles).
+model Role {
+  id          String     @id @default(uuid(7)) @db.Uuid
+  name        String     @unique
+  description String
+  users       UserRole[]
+
+  @@map("roles")
+  @@schema("core")
+}
+
+/// Asignación usuario↔rol. Tabla explícita (no m-n implícita) para poder
+/// auditar cuándo/quién asignó cada rol.
+model UserRole {
+  userId     String   @db.Uuid
+  roleId     String   @db.Uuid
+  assignedAt DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role       Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+  @@schema("core")
+}
+
+/// Evento de auditoría append-only. `action` con convención "dominio.accion"
+/// (p. ej. "auth.dev_login"). `actorId` nullable: acciones de sistema.
+model AuditEvent {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  actorId   String?  @db.Uuid
+  actor     User?    @relation("actor", fields: [actorId], references: [id], onDelete: SetNull)
+  action    String
+  entity    String?
+  entityId  String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([actorId])
+  @@index([action, createdAt])
+  @@map("audit_events")
+  @@schema("core")
 }

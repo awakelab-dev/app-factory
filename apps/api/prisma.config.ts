@@ -1,13 +1,15 @@
 import { defineConfig } from 'prisma/config';
 
-// Prisma 7 ya no carga .env automáticamente: la URL del datasource para los
-// comandos CLI (migrate, db) se define aquí, leyendo del entorno.
+// Prisma 7: la URL del datasource ya no vive en schema.prisma ni en .env
+// autocargado. Los comandos CLI (migrate, db, seed) la toman de aquí;
+// el runtime la recibe vía driver adapter en PrismaService.
 export default defineConfig({
   schema: 'prisma/schema.prisma',
   migrations: {
-    path: 'prisma/migrations'
+    path: 'prisma/migrations',
+    seed: 'tsx prisma/seed.ts'
   },
   datasource: {
-    url: process.env.DATABASE_URL ?? 'postgresql://awk:awk@localhost:5432/awkplatform?schema=core'
+    url: process.env.DATABASE_URL ?? 'postgresql://awk:awk@localhost:5432/awkplatform'
   }
 });

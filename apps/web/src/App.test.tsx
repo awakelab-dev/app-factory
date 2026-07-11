@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { HelloResponse } from '@awk/types';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AuthUser, HelloResponse } from '@awk/types';
 import { App } from './App';
 
 const helloFixture: HelloResponse = {
@@ -9,34 +9,78 @@ const helloFixture: HelloResponse = {
   timestamp: new Date('2026-07-11T12:00:00Z').toISOString()
 };
 
-function mockFetchOnce(body: unknown, ok = true, status = 200) {
+const adminFixture: AuthUser = {
+  id: 'u-1',
+  email: 'leonardo.barreto@awakelab.dev',
+  displayName: 'Leonardo Barreto',
+  roles: ['admin']
+};
+
+const userFixture: AuthUser = { ...adminFixture, id: 'u-2', roles: ['user'] };
+
+function ok(body: unknown) {
+  return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) });
+}
+
+function mockApi(me: AuthUser) {
   vi.stubGlobal(
     'fetch',
-    vi.fn().mockResolvedValue({ ok, status, json: () => Promise.resolve(body) })
+    vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/api/auth/me')) return ok(me);
+      if (url.endsWith('/api/hello')) return ok(helloFixture);
+      if (url.endsWith('/api/core/users')) return ok([]);
+      return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) });
+    })
   );
 }
 
-afterEach(() => {
-  vi.unstubAllGlobals();
+beforeEach(() => {
+  window.history.replaceState({}, '', '/');
 });
 
-describe('App', () => {
-  it('muestra la respuesta tipada de la API', async () => {
-    mockFetchOnce(helloFixture);
+afterEach(() => {
+  vi.unstubAllGlobals();
+  localStorage.clear();
+});
+
+describe('App (shell)', () => {
+  it('sin sesión muestra el login', async () => {
     render(<App />);
+    expect(await screen.findByTestId('login-page')).toBeInTheDocument();
+  });
+
+  it('con sesión construye el menú desde los manifests y entra al primer módulo', async () => {
+    localStorage.setItem('awk.token', 'token-test');
+    mockApi(adminFixture);
+    render(<App />);
+
+    expect(await screen.findByTestId('shell-nav')).toBeInTheDocument();
+    // admin ve el módulo demo y el de administración (manifest core-admin)
+    expect(screen.getByText('Demo Hello')).toBeInTheDocument();
+    expect(screen.getByText('Usuarios')).toBeInTheDocument();
+    // el índice redirige al primer ítem visible: la página del módulo hello
     expect(await screen.findByTestId('hello-ok')).toBeInTheDocument();
-    expect(screen.getByText('Hola desde el test')).toBeInTheDocument();
   });
 
-  it('muestra error si la respuesta no cumple el contrato', async () => {
-    mockFetchOnce({ cualquier: 'cosa' });
+  it('un usuario sin rol admin no ve el módulo de administración', async () => {
+    localStorage.setItem('awk.token', 'token-test');
+    mockApi(userFixture);
     render(<App />);
-    expect(await screen.findByTestId('hello-error')).toBeInTheDocument();
+
+    expect(await screen.findByTestId('shell-nav')).toBeInTheDocument();
+    expect(screen.getByText('Demo Hello')).toBeInTheDocument();
+    expect(screen.queryByText('Usuarios')).not.toBeInTheDocument();
   });
 
-  it('muestra error si la API no responde', async () => {
-    mockFetchOnce({}, false, 500);
+  it('con token inválido (401 en /me) vuelve al login', async () => {
+    localStorage.setItem('awk.token', 'caducado');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: false, status: 401, json: () => Promise.resolve({}) })
+    );
     render(<App />);
-    expect(await screen.findByTestId('hello-error')).toBeInTheDocument();
+    expect(await screen.findByTestId('login-page')).toBeInTheDocument();
+    expect(localStorage.getItem('awk.token')).toBeNull();
   });
 });
