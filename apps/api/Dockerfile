@@ -54,6 +54,13 @@ CMD ["node", "dist/src/main.js"]
 # ahí (la managed PG es privada, ver docs/runbooks/lightsail-deploy.md). Se
 # publica en GHCR con el mismo tag que awkplatform-api para garantizar que
 # las migraciones corresponden exactamente al código desplegado.
+#
+# IMPORTANTE: invocar los binarios directos vía node_modules/.bin, nunca
+# "pnpm exec ..." ni "pnpm <script>" aquí dentro. En este workspace, "pnpm
+# exec" dispara el chequeo de deps de pnpm 11 (el mismo de la nota de
+# "pnpm turbo" en STATUS.md/D-013) y, sin TTY, termina reinstalando en modo
+# --production a mitad de la corrida — borra prisma/tsx (devDependencies)
+# justo antes de usarlos. Reproducido en el Lightsail real (2026-07-12).
 FROM build AS migrator
 WORKDIR /repo/apps/api
-CMD ["pnpm", "exec", "prisma", "migrate", "deploy"]
+CMD ["node_modules/.bin/prisma", "migrate", "deploy"]

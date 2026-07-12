@@ -26,14 +26,16 @@ ENV_FILE="/opt/awkfactory/${ENV_NAME}/.env"
 IMAGE="ghcr.io/awakelab-dev/awkplatform-api-migrator:${TAG}"
 docker pull "$IMAGE"
 
-RUN_CMD="pnpm exec prisma migrate deploy"
+# Binarios directos (node_modules/.bin), NUNCA "pnpm exec ...": en este
+# workspace "pnpm exec" dispara el chequeo de deps de pnpm 11 y termina
+# reinstalando en modo --production a mitad de la corrida, borrando prisma/
+# tsx (devDependencies) justo antes de usarlos — reproducido en el server
+# real (2026-07-12). Ver comentario en apps/api/Dockerfile stage `migrator`.
+RUN_CMD="node_modules/.bin/prisma migrate deploy"
 if [ "$SEED" = "--seed" ]; then
-  RUN_CMD="${RUN_CMD} && pnpm exec tsx prisma/seed.ts"
+  RUN_CMD="${RUN_CMD} && node_modules/.bin/tsx prisma/seed.ts"
 fi
 
-# CI=true: pnpm 11 corre un chequeo de deps antes de "exec" y, sin TTY (como
-# aquí), aborta con ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY al intentar
-# purgar node_modules para "arreglarlo". CI=true lo vuelve no interactivo.
-docker run --rm -e CI=true --env-file "$ENV_FILE" "$IMAGE" sh -c "$RUN_CMD"
+docker run --rm --env-file "$ENV_FILE" "$IMAGE" sh -c "$RUN_CMD"
 
 echo "Migración (${ENV_NAME} @ ${TAG}) completada."
