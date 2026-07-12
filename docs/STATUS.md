@@ -2,8 +2,8 @@
 
 > Actualizar al cerrar CADA sesión de trabajo. Este archivo es lo primero que lee cualquier tarea nueva.
 
-**Última actualización**: 2026-07-12 (sesión provisión Lightsail managed PostgreSQL; instancia creada y PITR verificado)
-**Fase actual**: Fase 0 — Fundaciones (core mínimo + CI en verde; managed PostgreSQL provisionada y verificada; falta el Lightsail de cómputo y el deploy)
+**Última actualización**: 2026-07-12 (sesión infra: managed PostgreSQL provisionada + PITR verificado; Docker+Compose instalados en el server de cómputo)
+**Fase actual**: Fase 0 — Fundaciones (core mínimo + CI en verde; managed PostgreSQL y Docker listos; falta la tarea de deploy)
 
 ## Hecho
 
@@ -28,6 +28,37 @@
 1. **Deploy sobre el Lightsail de cómputo (32 GB) — que YA EXISTE y está en uso** (Nginx nativo + certbot + pm2 + otras apps del grupo, que se migrarán después; Leonardo ya se conecta a la managed PG desde ahí). Por tanto NO se provisiona de cero: hay que **coexistir**. Tarea (Docker + Compose v2 **ya instalados**, D-015): definir compose de `staging` y `production` con puertos propios (no chocar con lo existente); **añadir server blocks Nginx nuevos** para nuestros dominios sin tocar los sitios actuales (certbot ya está); deploy GHCR→webhook/SSH (D-003). Cablear `DATABASE_URL` (managed **ya provisionada**, ver Hecho) y `JWT_SECRET` como secretos fuera del repo; crear los roles de app `app_staging`/`app_production` y correr la primera `prisma migrate deploy`+seed contra staging **desde la máquina** (la BD es privada). La managed PostgreSQL ya no es parte de esta tarea.
 2. Primer módulo ejemplar construido a mano (elegir prototipo real sencillo) → plantilla de módulo.
 3. (Opcional, no bloqueante) Rotar la contraseña de MongoDB expuesta en `backend/.env` en el historial de git y evaluar purgarla con `git-filter-repo` (ver "Bloqueos").
+
+### Mensaje inicial sugerido para la próxima tarea (copiar/pegar)
+
+> Modelo recomendado: Sonnet (deploy/infra es mecánico una vez decidido D-003/D-013/D-015).
+
+```
+[infra] Deploy en el Lightsail de cómputo: compose staging+production + Nginx + GHCR→SSH
+
+Objetivo: desplegar la plataforma (apps/api + apps/web) sobre el Lightsail de 32 GB
+EXISTENTE Y COMPARTIDO (ya corre otras apps con Nginx nativo + certbot + pm2; ver
+memoria y docs/03). NO se provisiona de cero: coexistir. Docker + Compose v2 ya
+instalados (D-015).
+
+Alcance:
+- Compose de `staging` y `production` en la misma máquina, consumiendo las imágenes
+  de GHCR (ghcr.io/awakelab-dev/app-factory-*) por tag, con puertos propios que no
+  choquen con lo existente (revisar antes qué puertos usa pm2/Nginx actual).
+- Server blocks Nginx NUEVOS para nuestros dominios (p. ej. staging.awkfactory.com y
+  el de producción), proxy a los contenedores, SSL con el certbot ya instalado. No
+  tocar los sitios actuales.
+- Deploy GHCR→webhook/SSH desde `main` (D-003): pull + `docker compose up` por tag.
+- Secretos por compose project, fuera del repo: DATABASE_URL (managed ya provisionada,
+  privada, PG 18.4 en eu-west-3) y JWT_SECRET.
+- En la managed: crear roles de app `app_staging`/`app_production` (mínimo privilegio)
+  y correr la primera `prisma migrate deploy` + seed contra staging DESDE la máquina
+  (la BD es privada, no alcanzable desde fuera).
+
+Antes de empezar: leer docs/STATUS.md, docs/03-arquitectura.md y D-003/D-013/D-015.
+Terminado cuando: staging sirve la plataforma por HTTPS en su dominio, dev-login
+funciona contra la managed, y STATUS.md actualizado.
+```
 
 ### Receta de verificación local con BD (ya completada — queda de referencia para levantar el entorno de nuevo)
 
