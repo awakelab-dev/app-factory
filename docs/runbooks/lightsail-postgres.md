@@ -69,6 +69,21 @@ CREATE ROLE app_production LOGIN PASSWORD '<secreto-production>';
 GRANT ALL PRIVILEGES ON DATABASE awkplatform_staging    TO app_staging;
 GRANT ALL PRIVILEGES ON DATABASE awkplatform_production TO app_production;
 ```
+
+**Falta un paso**: `GRANT ALL PRIVILEGES ON DATABASE` es a nivel de base
+(`CONNECT`/`CREATE`/`TEMP`), **no** da permisos dentro del schema `public`.
+Prisma migrate crea ahí su tabla interna `_prisma_migrations` (aunque los
+datos de la app vivan en el schema `core`) — sin esto falla con
+`permission denied for schema public` (reproducido en staging real,
+2026-07-12; PG 15+ ya no da `CREATE` en `public` a `PUBLIC` por defecto).
+Conéctate a **cada base** (no a `postgres`) y otorga el schema:
+```sql
+\c awkplatform_staging
+GRANT USAGE, CREATE ON SCHEMA public TO app_staging;
+
+\c awkplatform_production
+GRANT USAGE, CREATE ON SCHEMA public TO app_production;
+```
 El rol de app **no** es superusuario — es exactamente lo que quieres para que la Row-Level Security del core (ver [05-gobernanza-seguridad](../05-gobernanza-seguridad.md)) tenga efecto.
 
 ### 10 · Ventanas de backup y mantenimiento

@@ -144,6 +144,20 @@ GRANT ALL PRIVILEGES ON DATABASE awkplatform_staging    TO app_staging;
 GRANT ALL PRIVILEGES ON DATABASE awkplatform_production TO app_production;
 ```
 
+**No te saltes esto**: además, conectado a **cada base** (no a `postgres`),
+otorga el schema `public` — sin esto la migración falla con
+`permission denied for schema public` (Prisma pone ahí su tabla interna
+`_prisma_migrations` aunque los datos vivan en `core`; ver detalle en
+lightsail-postgres.md):
+
+```sql
+\c awkplatform_staging
+GRANT USAGE, CREATE ON SCHEMA public TO app_staging;
+
+\c awkplatform_production
+GRANT USAGE, CREATE ON SCHEMA public TO app_production;
+```
+
 Usa esos mismos secretos en los `DATABASE_URL` del paso 3.
 
 ## 6 · Primer arranque + migración de staging
