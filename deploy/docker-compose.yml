@@ -1,0 +1,44 @@
+# Compose de despliegue de la plataforma (apps/api + apps/web), compartido
+# entre los proyectos `staging` y `production` en el mismo Lightsail de 32 GB
+# (D-003, D-015). Sin secretos aquí: todo viene del .env del compose project
+# (fuera del repo, en /opt/awkfactory/<entorno>/.env en el server).
+#
+# Uso en el server (nunca en local):
+#   cd /opt/awkfactory/staging     # o /opt/awkfactory/production
+#   docker compose --env-file .env -p awk-staging pull   # o awk-production
+#   docker compose --env-file .env -p awk-staging up -d
+#
+# El Nginx nativo del host (no este compose) enruta:
+#   https://<dominio>/api  -> 127.0.0.1:${API_PORT_HOST}  (contenedor api, NestJS en :3000)
+#   https://<dominio>/     -> 127.0.0.1:${WEB_PORT_HOST}   (contenedor web, nginx:alpine estático)
+#
+# IMAGE_TAG por defecto "latest" (staging sigue main); producción se
+# promueve fijando IMAGE_TAG=<sha> en su .env (re-tag = D-003 arquitectura).
+
+services:
+  api:
+    image: ghcr.io/awakelab-dev/awkplatform-api:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV}
+      PORT: 3000
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET}
+    ports:
+      - '127.0.0.1:${API_PORT_HOST}:3000'
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:3000/api/hello || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  web:
+    image: ghcr.io/awakelab-dev/awkplatform-web:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:${WEB_PORT_HOST}:80'
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost/health || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 5

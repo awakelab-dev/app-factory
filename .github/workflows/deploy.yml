@@ -1,0 +1,59 @@
+name: Deploy
+
+# Staging se despliega solo cuando el workflow de CI (ci.yml) terminó en verde
+# sobre `main` (garantiza que las imágenes ya están publicadas en GHCR).
+# Producción NUNCA se dispara sola: se promueve a mano fijando el sha exacto
+# que ya se validó en staging (D-003 "promoción = re-tag de la misma imagen").
+on:
+  workflow_run:
+    workflows: ['CI']
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Sha (o "latest") a promover a producción'
+        required: true
+        type: string
+
+concurrency:
+  group: deploy-${{ github.event.inputs.image_tag && 'production' || 'staging' }}
+  cancel-in-progress: false
+
+jobs:
+  staging:
+    name: Deploy staging
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH deploy (pull + up)
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.LIGHTSAIL_HOST }}
+          username: ${{ secrets.LIGHTSAIL_SSH_USER }}
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            cd /opt/awkfactory/staging
+            docker compose --env-file .env -p awk-staging pull
+            docker compose --env-file .env -p awk-staging up -d
+            docker image prune -f
+
+  production:
+    name: Promote to production
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH deploy (re-tag + pull + up)
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.LIGHTSAIL_HOST }}
+          username: ${{ secrets.LIGHTSAIL_SSH_USER }}
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            cd /opt/awkfactory/production
+            sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=${{ inputs.image_tag }}/" .env
+            docker compose --env-file .env -p awk-production pull
+            docker compose --env-file .env -p awk-production up -d
+            docker image prune -f

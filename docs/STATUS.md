@@ -2,8 +2,8 @@
 
 > Actualizar al cerrar CADA sesión de trabajo. Este archivo es lo primero que lee cualquier tarea nueva.
 
-**Última actualización**: 2026-07-12 (sesión infra: managed PostgreSQL provisionada + PITR verificado; Docker+Compose instalados en el server de cómputo)
-**Fase actual**: Fase 0 — Fundaciones (core mínimo + CI en verde; managed PostgreSQL y Docker listos; falta la tarea de deploy)
+**Última actualización**: 2026-07-12 (sesión infra: artefactos de deploy staging+production listos — D-016; **pendiente que Leonardo ejecute el runbook en el server real**, el sandbox de Cowork no tiene ruta de red al Lightsail)
+**Fase actual**: Fase 0 — Fundaciones (core mínimo + CI en verde; managed PostgreSQL y Docker listos; deploy diseñado y con artefactos listos, ejecución manual pendiente)
 
 ## Hecho
 
@@ -18,46 +18,38 @@
 - **Lightsail managed PostgreSQL provisionada** (2026-07-12, ejecuta D-004 vía `docs/runbooks/lightsail-postgres.md`): instancia PG **18.4** en `eu-west-3` (París, UE), plan Standard $30 (2GB/80GB, **cifrado en reposo**), **modo privado** (solo recursos Lightsail de la región). Usuario maestro `dbmasteruser`; base inicial por defecto `dbmaster` (sin uso). Bases lógicas por entorno creadas: `awkplatform_staging` y `awkplatform_production`. **Point-in-time restore verificado** (Emergency restore → instancia temporal contenía ambas bases → borrada). Endpoint privado `ls-....eu-west-3.rds.amazonaws.com:5432`. **Pendiente antes del deploy**: crear roles de app de mínimo privilegio `app_staging`/`app_production` y guardar las dos `DATABASE_URL` como secreto (SSM/gestor), fuera del repo. La API lee `process.env.DATABASE_URL` (CLI en `prisma.config.ts`, runtime en `prisma.service.ts`); el dev local sigue apuntando al Postgres de Docker, no a la managed. Como la BD es privada, la primera `prisma migrate deploy`+seed contra staging/prod corre **desde el Lightsail de 32 GB o CI**, nunca desde portátil.
 
 - **Docker en el Lightsail de cómputo** (2026-07-12, D-015): Engine 29.6.1 + Compose v2 (`docker compose`, v5.3.1) instalados desde el repo oficial; usuario `ubuntu` en el grupo `docker`. El server (existente/compartido, ver memoria) ya está listo para levantar compose sin tocar Nginx/certbot/pm2.
+- **Artefactos de deploy staging+production** (2026-07-12, D-016): `deploy/docker-compose.yml` (único, sin secretos) + `deploy/staging.env.example` / `deploy/production.env.example` + `deploy/nginx/{staging,production}.conf` para los dominios reales `staging.factory.wiloxagency.com` / `production.factory.wiloxagency.com`, puertos tentativos 18100-18103; `apps/api/Dockerfile` con nuevo stage `migrator` + job `docker-migrator` en `ci.yml` que publica `awkplatform-api-migrator` en GHCR (permite `prisma migrate deploy`/seed contra la managed sin instalar Node/pnpm en el host); `deploy/scripts/migrate.sh` para correrlo; `.github/workflows/deploy.yml` (staging automático tras CI verde en `main`, producción por promoción manual `workflow_dispatch`); runbook completo en `docs/runbooks/lightsail-deploy.md`. Llave SSH dedicada `awk-deploy` generada (no reutiliza ninguna personal), pública entregada para autorizar en el server, privada para el GitHub Secret `LIGHTSAIL_SSH_KEY`. **No ejecutado aún contra el server real**: el sandbox de Cowork no tiene ruta de red al Lightsail (`13.38.161.213:22` → `Network is unreachable`, confirmado). Pendiente que Leonardo corra el runbook (o pegue la llave/curse los pasos) para que quede realmente sirviendo por HTTPS.
 
 ## En curso
 
-(nada abierto — ver "Siguiente" para lo que arranca la próxima tarea)
+Ejecución del runbook `docs/runbooks/lightsail-deploy.md` en el Lightsail real (fuera del alcance del sandbox de Cowork). Ver checklist de verificación al final de ese runbook — cerrar esta entrada cuando esté todo ✅.
 
 ## Siguiente (en orden)
 
-1. **Deploy sobre el Lightsail de cómputo (32 GB) — que YA EXISTE y está en uso** (Nginx nativo + certbot + pm2 + otras apps del grupo, que se migrarán después; Leonardo ya se conecta a la managed PG desde ahí). Por tanto NO se provisiona de cero: hay que **coexistir**. Tarea (Docker + Compose v2 **ya instalados**, D-015): definir compose de `staging` y `production` con puertos propios (no chocar con lo existente); **añadir server blocks Nginx nuevos** para nuestros dominios sin tocar los sitios actuales (certbot ya está); deploy GHCR→webhook/SSH (D-003). Cablear `DATABASE_URL` (managed **ya provisionada**, ver Hecho) y `JWT_SECRET` como secretos fuera del repo; crear los roles de app `app_staging`/`app_production` y correr la primera `prisma migrate deploy`+seed contra staging **desde la máquina** (la BD es privada). La managed PostgreSQL ya no es parte de esta tarea.
+1. **Terminar el deploy**: Leonardo ejecuta `docs/runbooks/lightsail-deploy.md` paso a paso (autorizar llave, confirmar puertos, roles de BD, primer `up`+migración, Nginx/certbot, GitHub Secrets). Si algo se desvía (puertos ocupados, PAT de GHCR ya existente con otro alcance, DNS no propagado) documentarlo ahí mismo y en D-016 si cambia una decisión.
 2. Primer módulo ejemplar construido a mano (elegir prototipo real sencillo) → plantilla de módulo.
 3. (Opcional, no bloqueante) Rotar la contraseña de MongoDB expuesta en `backend/.env` en el historial de git y evaluar purgarla con `git-filter-repo` (ver "Bloqueos").
 
 ### Mensaje inicial sugerido para la próxima tarea (copiar/pegar)
 
-> Modelo recomendado: Sonnet (deploy/infra es mecánico una vez decidido D-003/D-013/D-015).
+> Modelo recomendado: Sonnet. Si el runbook de deploy ya se ejecutó y verificó
+> en el server real, arrancar con la tarea 2 (primer módulo ejemplar).
 
 ```
-[infra] Deploy en el Lightsail de cómputo: compose staging+production + Nginx + GHCR→SSH
+[infra] Verificar/cerrar el deploy de staging+production en el Lightsail
 
-Objetivo: desplegar la plataforma (apps/api + apps/web) sobre el Lightsail de 32 GB
-EXISTENTE Y COMPARTIDO (ya corre otras apps con Nginx nativo + certbot + pm2; ver
-memoria y docs/03). NO se provisiona de cero: coexistir. Docker + Compose v2 ya
-instalados (D-015).
+Objetivo: confirmar que docs/runbooks/lightsail-deploy.md (D-016) quedó
+ejecutado correctamente en el Lightsail real y cerrar la checklist final de
+ese runbook. Si algo falló a mitad (puertos, DNS, GHCR), resolverlo y dejar
+documentado el desvío en el propio runbook y/o una decisión nueva en
+DECISIONES.md.
 
-Alcance:
-- Compose de `staging` y `production` en la misma máquina, consumiendo las imágenes
-  de GHCR (ghcr.io/awakelab-dev/app-factory-*) por tag, con puertos propios que no
-  choquen con lo existente (revisar antes qué puertos usa pm2/Nginx actual).
-- Server blocks Nginx NUEVOS para nuestros dominios (p. ej. staging.awkfactory.com y
-  el de producción), proxy a los contenedores, SSL con el certbot ya instalado. No
-  tocar los sitios actuales.
-- Deploy GHCR→webhook/SSH desde `main` (D-003): pull + `docker compose up` por tag.
-- Secretos por compose project, fuera del repo: DATABASE_URL (managed ya provisionada,
-  privada, PG 18.4 en eu-west-3) y JWT_SECRET.
-- En la managed: crear roles de app `app_staging`/`app_production` (mínimo privilegio)
-  y correr la primera `prisma migrate deploy` + seed contra staging DESDE la máquina
-  (la BD es privada, no alcanzable desde fuera).
-
-Antes de empezar: leer docs/STATUS.md, docs/03-arquitectura.md y D-003/D-013/D-015.
-Terminado cuando: staging sirve la plataforma por HTTPS en su dominio, dev-login
-funciona contra la managed, y STATUS.md actualizado.
+Antes de empezar: leer docs/STATUS.md, docs/runbooks/lightsail-deploy.md y
+D-016 completo.
+Terminado cuando: staging y production sirven por HTTPS en sus dominios
+reales, dev-login funciona contra la managed en ambos, el deploy automático
+(push a main → Deploy → staging) corrió al menos una vez en verde, y
+STATUS.md actualizado con el resultado real (no el plan).
 ```
 
 ### Receta de verificación local con BD (ya completada — queda de referencia para levantar el entorno de nuevo)

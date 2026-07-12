@@ -46,3 +46,14 @@ EXPOSE 3000
 # nest build no aplana a dist/main.js (no hay rootDir): el compilado real
 # preserva la carpeta src (dist/src/main.js). Ver STATUS "Resuelto recientemente".
 CMD ["node", "dist/src/main.js"]
+
+# Imagen auxiliar "migrator": reutiliza el stage `build` (workspace completo,
+# con prisma CLI y tsx como devDependencies de @awk/api, D-013) para correr
+# `prisma migrate deploy` (+ seed) contra staging/production DESDE el
+# Lightsail de cómputo, sin instalar Node/pnpm en el host ni clonar el repo
+# ahí (la managed PG es privada, ver docs/runbooks/lightsail-deploy.md). Se
+# publica en GHCR con el mismo tag que awkplatform-api para garantizar que
+# las migraciones corresponden exactamente al código desplegado.
+FROM build AS migrator
+WORKDIR /repo/apps/api
+CMD ["pnpm", "exec", "prisma", "migrate", "deploy"]
