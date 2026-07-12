@@ -2,8 +2,8 @@
 
 > Actualizar al cerrar CADA sesión de trabajo. Este archivo es lo primero que lee cualquier tarea nueva.
 
-**Última actualización**: 2026-07-12 (sesión CI GitHub Actions + Dockerfiles; primer push y CI en verde confirmados)
-**Fase actual**: Fase 0 — Fundaciones (core mínimo construido y verificado localmente con BD; CI en GitHub Actions en verde, imágenes publicadas en GHCR)
+**Última actualización**: 2026-07-12 (sesión provisión Lightsail managed PostgreSQL; instancia creada y PITR verificado)
+**Fase actual**: Fase 0 — Fundaciones (core mínimo + CI en verde; managed PostgreSQL provisionada y verificada; falta el Lightsail de cómputo y el deploy)
 
 ## Hecho
 
@@ -15,13 +15,15 @@
 - **Core mínimo** (2026-07-11): modelos Prisma del schema PG `core` (`users`, `roles`, `user_roles`, `audit_events`) con migración inicial `core_init` + seed idempotente (roles admin/user, usuarios dev `leonardo.barreto@awakelab.dev`=admin y `demo@awakelab.dev`=user); **auth**: `POST /api/auth/dev-login` (solo email contra usuarios sembrados, deshabilitado con `NODE_ENV=production`) emite JWT HS256 de plataforma, `GET /api/auth/me`; **RBAC**: guards globales `JwtAuthGuard`+`RolesGuard` con decoradores `@Public()`/`@Roles()` y la regla `canAccess` de `@awk/auth` compartida api↔web; **auditoría**: `AuditService` global (append-only, nunca tumba la operación); **manifests**: `moduleManifestSchema` en `@awk/types`, módulos de ejemplo `hello` y `core-admin` (`GET /api/core/users` solo admin) — el shell web construye menú y rutas desde los manifests filtrando por roles, con login dev y sesión en localStorage. Migración a Prisma 7 real: generador `prisma-client` sin engines Rust + adapter pg (D-010); patrón auth/RBAC/manifest fijado (D-011). `turbo build/test/lint/typecheck` verdes y smoke test de la API sin BD (hello 200, me 401, zod 400).
 - **CI GitHub Actions + Dockerfiles** (2026-07-11, **confirmada en verde en GitHub el 2026-07-12**): `.github/workflows/ci.yml` — job `build-test` (pnpm install, `prisma migrate deploy` contra Postgres 18 de servicio efímero con las credenciales de `docker-compose.dev.yml`, y `turbo run build lint typecheck test`) + jobs `Docker api` / `Docker web` que en cada PR construyen (sin publicar) las imágenes de `apps/api` y `apps/web` como gate de que los Dockerfiles compilan, y en `main` las publican en GHCR con tag `sha` + `latest` (D-003, `permissions: packages: write`). Los tres jobs corrieron verdes en el primer push real a `main` (repo `awakelab-dev/app-factory`). Dockerfiles nuevos (no existían): `apps/api/Dockerfile` (multi-stage, `pnpm deploy --prod --legacy` para aislar `@awk/api` con solo deps de producción — ver D-013) y `apps/web/Dockerfile` (build Vite + `nginx:alpine` sirviendo estáticos con fallback SPA; el proxy real de `/api` sigue siendo el Nginx nativo del host, docs/03). `apps/api`, `packages/types` y `packages/auth` declaran `"files": ["dist"]` (si no, `pnpm deploy`/`npm pack` excluyen `dist/` por estar en `.gitignore`). Ver D-013 para el patrón completo y los dos gotchas de pnpm 11 encontrados en la verificación local.
 
+- **Lightsail managed PostgreSQL provisionada** (2026-07-12, ejecuta D-004 vía `docs/runbooks/lightsail-postgres.md`): instancia PG **18.4** en `eu-west-3` (París, UE), plan Standard $30 (2GB/80GB, **cifrado en reposo**), **modo privado** (solo recursos Lightsail de la región). Usuario maestro `dbmasteruser`; base inicial por defecto `dbmaster` (sin uso). Bases lógicas por entorno creadas: `awkplatform_staging` y `awkplatform_production`. **Point-in-time restore verificado** (Emergency restore → instancia temporal contenía ambas bases → borrada). Endpoint privado `ls-....eu-west-3.rds.amazonaws.com:5432`. **Pendiente antes del deploy**: crear roles de app de mínimo privilegio `app_staging`/`app_production` y guardar las dos `DATABASE_URL` como secreto (SSM/gestor), fuera del repo. La API lee `process.env.DATABASE_URL` (CLI en `prisma.config.ts`, runtime en `prisma.service.ts`); el dev local sigue apuntando al Postgres de Docker, no a la managed. Como la BD es privada, la primera `prisma migrate deploy`+seed contra staging/prod corre **desde el Lightsail de 32 GB o CI**, nunca desde portátil.
+
 ## En curso
 
 (nada abierto — ver "Siguiente" para lo que arranca la próxima tarea)
 
 ## Siguiente (en orden)
 
-1. Provisionar infra (Lightsail, managed PG). **Runbook de la managed PostgreSQL listo**: `docs/runbooks/lightsail-postgres.md` (paso a paso por consola; plan Standard $30 2GB/80GB cifrado verificado en precios AWS 2026-07-11; versión **PG 18** — D-012, Lightsail ofrece hasta 18.4, corregido el 16 inicial). Antes de ejecutar, confirmar la **región del grupo** (RGPD→UE, es irreversible sin migración).
+1. Provisionar el **Lightsail de cómputo (32 GB)** y el pipeline de deploy: Nginx nativo + certbot, Docker + Compose, deploy GHCR→webhook/SSH, con compose de `staging` y `production` en la misma máquina (docs/03). Cablear `DATABASE_URL` (managed **ya provisionada**, ver Hecho) y `JWT_SECRET` como secretos fuera del repo; crear los roles de app `app_staging`/`app_production` y correr la primera `prisma migrate deploy`+seed contra staging **desde la máquina** (la BD es privada). La managed PostgreSQL ya no es parte de esta tarea.
 2. Primer módulo ejemplar construido a mano (elegir prototipo real sencillo) → plantilla de módulo.
 3. (Opcional, no bloqueante) Rotar la contraseña de MongoDB expuesta en `backend/.env` en el historial de git y evaluar purgarla con `git-filter-repo` (ver "Bloqueos").
 
