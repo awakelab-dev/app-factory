@@ -2,8 +2,8 @@
 
 > Actualizar al cerrar CADA sesión de trabajo. Este archivo es lo primero que lee cualquier tarea nueva.
 
-**Última actualización**: 2026-07-11 (sesión core mínimo)
-**Fase actual**: Fase 0 — Fundaciones (core mínimo construido; pendiente verificación local con BD)
+**Última actualización**: 2026-07-11 (sesión core mínimo + D-012 PG 18)
+**Fase actual**: Fase 0 — Fundaciones (core mínimo construido; verificación local con BD en curso)
 
 ## Hecho
 
@@ -16,11 +16,11 @@
 
 ## En curso
 
-- Nada en curso.
+- **Verificación local con BD** (Leonardo): Docker Desktop instalado; compose corregido para `postgres:18` (montaje en `/var/lib/postgresql`, convención 18+; si hay volumen viejo de la 16, `down -v` antes de `up`). Falta confirmar: Postgres arriba → `prisma:generate` → `prisma:migrate` (sin drift contra `core_init`) → `prisma:seed` → dev-login end-to-end en :5173.
 
 ## Siguiente (en orden)
 
-1. **Verificación local con BD** (Leonardo, ~10 min, ver receta abajo): migración + seed + dev-login end-to-end.
+1. Terminar la verificación local con BD (ver "En curso" y receta abajo).
 2. Provisionar infra (Lightsail, managed PG, CI GitHub Actions con build+test+migración en BD efímera). **Runbook de la managed PostgreSQL listo**: `docs/runbooks/lightsail-postgres.md` (paso a paso por consola; plan Standard $30 2GB/80GB cifrado verificado en precios AWS 2026-07-11; versión **PG 18** — D-012, Lightsail ofrece hasta 18.4, corregido el 16 inicial). Antes de ejecutar, confirmar la **región del grupo** (RGPD→UE, es irreversible sin migración).
 3. Primer módulo ejemplar construido a mano (elegir prototipo real sencillo) → plantilla de módulo.
 
@@ -74,3 +74,5 @@ Terminado cuando: workflow verde en un PR de prueba y STATUS.md actualizado.
 
 - `pnpm prisma:generate` verificado (bloqueo de la sesión anterior): con el generador nuevo de Prisma 7 funciona incluso en sandbox (ver notas).
 - Core mínimo completo (esta sesión). `package-lock.json` residual de la raíz eliminado.
+- **PG 16 → PG 18 (D-012)**: la elección inicial de 16 venía de un supuesto no verificado y docs de AWS desactualizadas; la consola de Lightsail ofrece hasta 18.4. Compose, runbook y CI sugerido actualizados a 18.
+- Locks huérfanos de git (`index.lock`, `HEAD.lock`) limpiados tras crash de una sesión paralela; si un commit falla con "index.lock exists", verificar que no haya git vivo y borrarlos.
