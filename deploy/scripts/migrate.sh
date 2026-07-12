@@ -31,6 +31,9 @@ if [ "$SEED" = "--seed" ]; then
   RUN_CMD="${RUN_CMD} && pnpm exec tsx prisma/seed.ts"
 fi
 
-docker run --rm --env-file "$ENV_FILE" "$IMAGE" sh -c "$RUN_CMD"
+# CI=true: pnpm 11 corre un chequeo de deps antes de "exec" y, sin TTY (como
+# aquí), aborta con ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY al intentar
+# purgar node_modules para "arreglarlo". CI=true lo vuelve no interactivo.
+docker run --rm -e CI=true --env-file "$ENV_FILE" "$IMAGE" sh -c "$RUN_CMD"
 
 echo "Migración (${ENV_NAME} @ ${TAG}) completada."
