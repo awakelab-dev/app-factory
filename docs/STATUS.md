@@ -2,8 +2,8 @@
 
 > Actualizar al cerrar CADA sesión de trabajo. Este archivo es lo primero que lee cualquier tarea nueva.
 
-**Última actualización**: 2026-07-11 (sesión CI GitHub Actions + Dockerfiles)
-**Fase actual**: Fase 0 — Fundaciones (core mínimo construido; CI lista; verificación local con BD y primer PR de prueba en curso)
+**Última actualización**: 2026-07-12 (sesión CI GitHub Actions + Dockerfiles; remoto configurado)
+**Fase actual**: Fase 0 — Fundaciones (core mínimo construido y verificado localmente con BD; CI lista; falta el primer push a GitHub para confirmarla en verde)
 
 ## Hecho
 
@@ -17,16 +17,19 @@
 
 ## En curso
 
-- **Verificación local con BD** (Leonardo): Docker Desktop instalado; compose corregido para `postgres:18` (montaje en `/var/lib/postgresql`, convención 18+; si hay volumen viejo de la 16, `down -v` antes de `up`). Falta confirmar: Postgres arriba → `prisma:generate` → `prisma:migrate` (sin drift contra `core_init`) → `prisma:seed` → dev-login end-to-end en :5173.
+- **Primer push a GitHub y confirmación de CI en verde** (Leonardo): remoto ya configurado en el repo local — `origin` → `git@github.com:awakelab-dev/app-factory.git` (repo privado recién creado, vacío). La rama local se renombró de `master` a `main` porque el workflow dispara con `push: branches: [main]` (con `master` nunca hubiera corrido ni publicado en GHCR). Desde la Mac (SSH ya configurado ahí):
+  ```bash
+  git push -u origin main
+  ```
+  Con el equipo de una sola persona todavía no hace falta PR (docs/07: "hoy... main siempre funcional"); el push directo a `main` ya dispara ambos jobs de `ci.yml`, incluida la publicación de imágenes en GHCR. Revisar en el tab Actions: (a) el paso `prisma migrate deploy` contra el Postgres 18 de servicio, (b) que el job `docker` construya y publique ambas imágenes, (c) que `Settings → Actions → General → Workflow permissions` tenga `Read and write permissions` (si no, el push a GHCR falla por permisos aunque el resto pase).
 
 ## Siguiente (en orden)
 
-1. Terminar la verificación local con BD (ver "En curso" y receta abajo).
-2. **Abrir un PR de prueba y confirmar CI en verde** — no se pudo verificar en sandbox (sin Docker, sin Postgres real; ver "Resuelto recientemente" y D-013 para lo que sí se verificó). Revisar en especial: (a) el paso `prisma migrate deploy` contra el Postgres 18 de servicio, (b) que el job `docker` efectivamente construya ambas imágenes, (c) que el repo tenga habilitado `packages: write` para `GITHUB_TOKEN` (Settings → Actions → General) para que el push a GHCR en `main` no falle por permisos.
-3. Provisionar infra (Lightsail, managed PG). **Runbook de la managed PostgreSQL listo**: `docs/runbooks/lightsail-postgres.md` (paso a paso por consola; plan Standard $30 2GB/80GB cifrado verificado en precios AWS 2026-07-11; versión **PG 18** — D-012, Lightsail ofrece hasta 18.4, corregido el 16 inicial). Antes de ejecutar, confirmar la **región del grupo** (RGPD→UE, es irreversible sin migración).
-4. Primer módulo ejemplar construido a mano (elegir prototipo real sencillo) → plantilla de módulo.
+1. Terminar "En curso": push a `main` y confirmar CI en verde (ver arriba).
+2. Provisionar infra (Lightsail, managed PG). **Runbook de la managed PostgreSQL listo**: `docs/runbooks/lightsail-postgres.md` (paso a paso por consola; plan Standard $30 2GB/80GB cifrado verificado en precios AWS 2026-07-11; versión **PG 18** — D-012, Lightsail ofrece hasta 18.4, corregido el 16 inicial). Antes de ejecutar, confirmar la **región del grupo** (RGPD→UE, es irreversible sin migración).
+3. Primer módulo ejemplar construido a mano (elegir prototipo real sencillo) → plantilla de módulo.
 
-### Receta de verificación local (paso 1)
+### Receta de verificación local con BD (ya completada — queda de referencia para levantar el entorno de nuevo)
 
 ```bash
 docker compose -f docker-compose.dev.yml up -d   # Postgres 18 en :5432
@@ -66,6 +69,8 @@ Si `prisma migrate dev` reportara drift contra `core_init`: regenerar la migraci
 
 ## Resuelto recientemente
 
+- **Verificación local con BD terminada** (Leonardo, Docker Desktop): Postgres 18 arriba vía `docker-compose.dev.yml`, dev-login y lectura de usuarios funcionando end-to-end en :5173. (Nota aparte, no funcional: en Docker Desktop el contenedor aparece agrupado bajo el nombre del proyecto Compose "app-factory" sin ID/imagen/puerto visibles hasta expandir la fila — es la agrupación normal de Compose, no un problema.)
+- **Remoto configurado + rama renombrada**: `origin` → `git@github.com:awakelab-dev/app-factory.git` (repo privado nuevo, vacío). La rama local era `master`; se renombró a `main` porque el workflow de CI dispara sobre `push: branches: [main]` — con `master` el job nunca hubiera corrido. El push en sí no se pudo hacer desde el sandbox de Cowork (sin acceso SSH/red a github.com); queda para la Mac de Leonardo (ver "En curso").
 - **CI GitHub Actions + Dockerfiles** (esta sesión): ver "Hecho" y D-013.
 - Bug preexistente en `apps/api/package.json`: script `start` apuntaba a `dist/main.js`, que nunca existió (el compilado real es `dist/src/main.js`, ver notas de CI/Docker arriba). Corregido.
 - `pnpm prisma:generate` verificado (bloqueo de la sesión anterior): con el generador nuevo de Prisma 7 funciona incluso en sandbox (ver notas).
