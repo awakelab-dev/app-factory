@@ -84,12 +84,20 @@ scp deploy/docker-compose.yml AWK-Dev:/opt/awkfactory/production/docker-compose.
 ## 3 · Secretos por entorno (`.env`, fuera del repo)
 
 Parte de `deploy/staging.env.example` y `deploy/production.env.example`
-(están en el repo, sin secretos reales). En el server:
+(están en el repo, sin secretos reales). **No hay repo clonado en el server**
+(ni falta que lo haya, ver paso 6) — cópialos igual que el compose del paso 2,
+**desde tu Mac**, con el repo local:
 
 ```bash
-# staging
-cp deploy/staging.env.example /opt/awkfactory/staging/.env   # si trabajas desde el repo clonado en el server
-# o pégalo a mano con: nano /opt/awkfactory/staging/.env
+scp deploy/staging.env.example    AWK-Dev:/opt/awkfactory/staging/.env
+scp deploy/production.env.example AWK-Dev:/opt/awkfactory/production/.env
+```
+
+Y ya en el server, edita cada uno para rellenar los valores reales:
+
+```bash
+nano /opt/awkfactory/staging/.env
+nano /opt/awkfactory/production/.env
 ```
 
 Rellena en cada `.env`:
@@ -147,11 +155,17 @@ docker compose --env-file .env -p awk-staging up -d
 docker compose -p awk-staging ps   # ambos healthy
 ```
 
-Migración + seed (primera vez, imagen "migrator" de GHCR — ver D-016):
+Migración + seed (primera vez, imagen "migrator" de GHCR — ver D-016). Copia
+el script desde tu Mac (mismo patrón que los pasos 2-3, no hace falta clonar
+el repo en el server):
 
 ```bash
-# copia deploy/scripts/migrate.sh al server (o clona el repo ahí) y:
-./migrate.sh staging latest --seed
+# desde tu Mac:
+scp deploy/scripts/migrate.sh AWK-Dev:~/migrate.sh
+ssh AWK-Dev chmod +x ~/migrate.sh
+
+# ya en el server:
+~/migrate.sh staging latest --seed
 ```
 
 Verifica sin pasar aún por Nginx:
@@ -163,8 +177,14 @@ curl -s http://127.0.0.1:18101/health      # web, "ok"
 
 ## 7 · Nginx + certbot para los dominios nuevos
 
+Copia el server block desde tu Mac (mismo patrón que los pasos anteriores):
+
 ```bash
-sudo cp deploy/nginx/staging.conf /etc/nginx/sites-available/staging.factory.wiloxagency.com
+# desde tu Mac:
+scp deploy/nginx/staging.conf AWK-Dev:~/staging.factory.wiloxagency.com
+
+# ya en el server:
+sudo mv ~/staging.factory.wiloxagency.com /etc/nginx/sites-available/staging.factory.wiloxagency.com
 sudo ln -s /etc/nginx/sites-available/staging.factory.wiloxagency.com /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 sudo certbot --nginx -d staging.factory.wiloxagency.com
