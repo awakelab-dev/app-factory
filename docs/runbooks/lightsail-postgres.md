@@ -31,7 +31,7 @@ Por qué este plan exactamente: es el escalón más pequeño que **cifra en repo
 
 ### 4 · Credenciales y nombre de la BD inicial (opcional "Specify login credentials")
 - Deja que Lightsail **genere la contraseña maestra** (más fuerte que una a mano). Guárdala de inmediato en el gestor de secretos del grupo / SSM Parameter Store — **no** en el repo ni en Slack.
-- Usuario maestro: por defecto `dbmaster` (déjalo).
+- Usuario maestro: Lightsail lo fija en `dbmasteruser` (no editable).
 - Nombre de la base inicial: p. ej. `awkplatform`. Crearemos `staging` y `production` como bases lógicas aparte en el paso 9.
 
 ### 5 · Plan
@@ -51,12 +51,12 @@ Por qué este plan exactamente: es el escalón más pequeño que **cifra en repo
 - Desde el **Lightsail de 32 GB** (misma región), instala el cliente y prueba:
   ```bash
   sudo apt-get update && sudo apt-get install -y postgresql-client
-  psql "host=<endpoint> port=5432 user=dbmaster dbname=awkplatform sslmode=require"
+  psql "host=<endpoint> port=5432 user=dbmasteruser dbname=postgres sslmode=require"
   ```
-  Si conecta desde el servidor pero NO desde tu portátil, es la señal correcta de que el modo privado funciona.
+  Conéctate a la base de mantenimiento **`postgres`** (siempre existe), no al nombre de la base inicial: así no dependes de recordarlo. Ya dentro, `\l` lista todas las bases. Si conecta desde el servidor pero NO desde tu portátil, es la señal correcta de que el modo privado funciona. (El usuario maestro de Lightsail es **`dbmasteruser`**.)
 
 ### 9 · Bases lógicas y roles de aplicación (mínimo privilegio)
-Conectado como `dbmaster`, crea una base por entorno y un rol de app por entorno (nunca uses `dbmaster` desde la aplicación):
+Conectado como `dbmasteruser` (a `postgres`), crea una base por entorno y un rol de app por entorno (nunca uses `dbmaster` desde la aplicación):
 ```sql
 CREATE DATABASE awkplatform_staging;
 CREATE DATABASE awkplatform_production;
