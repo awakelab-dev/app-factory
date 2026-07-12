@@ -17,11 +17,11 @@
 
 ## En curso
 
-- **Primer push a GitHub y confirmación de CI en verde** (Leonardo): remoto ya configurado en el repo local — `origin` → `git@github.com:awakelab-dev/app-factory.git` (repo privado recién creado, vacío). La rama local se renombró de `master` a `main` porque el workflow dispara con `push: branches: [main]` (con `master` nunca hubiera corrido ni publicado en GHCR). Desde la Mac (SSH ya configurado ahí):
+- **Primer push a GitHub y confirmación de CI en verde** (Leonardo): el primer intento de `git push -u origin main` fue rechazado por GitHub (`pre-receive hook declined`, blob de 170MB > límite de 100MB) — historia reescrita para sacarlo, ver D-014 y "Resuelto recientemente". `origin` sigue apuntando a `git@github.com:awakelab-dev/app-factory.git` (repo privado, aún vacío en GitHub — el push rechazado no dejó nada del lado remoto). Desde la Mac (SSH ya configurado ahí), repetir:
   ```bash
   git push -u origin main
   ```
-  Con el equipo de una sola persona todavía no hace falta PR (docs/07: "hoy... main siempre funcional"); el push directo a `main` ya dispara ambos jobs de `ci.yml`, incluida la publicación de imágenes en GHCR. Revisar en el tab Actions: (a) el paso `prisma migrate deploy` contra el Postgres 18 de servicio, (b) que el job `docker` construya y publique ambas imágenes, (c) que `Settings → Actions → General → Workflow permissions` tenga `Read and write permissions` (si no, el push a GHCR falla por permisos aunque el resto pase).
+  Como los hashes de commit cambiaron (D-014), si hay algún checkout/clon adicional de este repo en otro lado hay que descartarlo y volver a clonar — no hacer `git pull`/merge contra el historial viejo. Con el equipo de una sola persona todavía no hace falta PR (docs/07: "hoy... main siempre funcional"); el push directo a `main` ya dispara ambos jobs de `ci.yml`, incluida la publicación de imágenes en GHCR. Revisar en el tab Actions: (a) el paso `prisma migrate deploy` contra el Postgres 18 de servicio, (b) que el job `docker` construya y publique ambas imágenes, (c) que `Settings → Actions → General → Workflow permissions` tenga `Read and write permissions` (si no, el push a GHCR falla por permisos aunque el resto pase).
 
 ## Siguiente (en orden)
 
@@ -65,10 +65,11 @@ Si `prisma migrate dev` reportara drift contra `core_init`: regenerar la migraci
 
 - Elección del prototipo real que servirá de módulo ejemplar.
 - IdP para SSO: ¿el grupo usa Microsoft 365/Entra ID? (condiciona Keycloak vs Entra). El dev-login actual queda encapsulado en AuthService: al llegar el IdP solo se sustituye ese método.
-- **Seguridad**: rotar la contraseña de MongoDB expuesta en el historial de git (`backend/.env`, IP pública 84.247.191.200) y restringir ese Mongo a red privada si sigue en uso.
+- **Seguridad**: rotar la contraseña de MongoDB expuesta en el historial de git (`backend/.env`, IP pública 84.247.191.200) y restringir ese Mongo a red privada si sigue en uso. Sigue en el historial después de la purga de D-014 (esa purga solo sacó `node_modules` y `uploads`, no tocó `.env`); rotar la contraseña primero, y de paso evaluar si conviene purgar también `backend/.env` con `git-filter-repo` (ya instalado y probado esta sesión) ya que el repo remoto sigue sin nada publicado.
 
 ## Resuelto recientemente
 
+- **Push rechazado por GitHub (blob de 170MB) → historia reescrita (D-014)**: `git push -u origin main` desde la Mac falló con `pre-receive hook declined` por `backend/uploads/....zip` (170MB, > límite de 100MB de GitHub). Se instaló `git-filter-repo` (`pip install git-filter-repo --break-system-packages`, no viene con git) y se purgaron `backend/node_modules`, `frontend/node_modules` y `backend/uploads` de **todo** el historial (basura pre-D-008). `.git` bajó de 183MB a ~500KB, los 15 commits y sus mensajes quedaron intactos (solo cambian los hashes), y el `legacy/` actual (23 archivos) no se tocó. Como el remoto nunca había aceptado un push, no fue necesario force-push. Se hizo un backup de `.git` antes de reescribir (`/tmp/app-factory-git-backup-pre-filter-repo` en el sandbox, no persiste). Pendiente: repetir el push (ver "En curso").
 - **Verificación local con BD terminada** (Leonardo, Docker Desktop): Postgres 18 arriba vía `docker-compose.dev.yml`, dev-login y lectura de usuarios funcionando end-to-end en :5173. (Nota aparte, no funcional: en Docker Desktop el contenedor aparece agrupado bajo el nombre del proyecto Compose "app-factory" sin ID/imagen/puerto visibles hasta expandir la fila — es la agrupación normal de Compose, no un problema.)
 - **Remoto configurado + rama renombrada**: `origin` → `git@github.com:awakelab-dev/app-factory.git` (repo privado nuevo, vacío). La rama local era `master`; se renombró a `main` porque el workflow de CI dispara sobre `push: branches: [main]` — con `master` el job nunca hubiera corrido. El push en sí no se pudo hacer desde el sandbox de Cowork (sin acceso SSH/red a github.com); queda para la Mac de Leonardo (ver "En curso").
 - **CI GitHub Actions + Dockerfiles** (esta sesión): ver "Hecho" y D-013.
