@@ -44,7 +44,7 @@ Contexto: Awakelab/Aspasia opera 36 Moodles en 5 Lightsails con Nginx nativo y R
 
 | Pieza | Decisión |
 |---|---|
-| Servidor | **Lightsail 32GB RAM / 640GB SSD** nuevo, en la misma red privada que el resto de instancias. Aloja plataforma, fábrica y runners; discos attachables si crece. |
+| Servidor | **Lightsail 32GB RAM / 640GB SSD** — instancia **existente y compartida** del grupo (ya corre otras apps/servicios con Nginx nativo + certbot + pm2 y utilidades), en la red privada del grupo. Esas apps se migrarán al modelo centralizado cuando exista la fábrica. Nuestro stack (plataforma, fábrica, runners) corre en **Docker Compose y coexiste** con lo existente: puertos propios, server blocks Nginx nuevos sin tocar los sitios actuales, y **no** usa pm2. Discos attachables si crece. |
 | Orquestación | **Docker Compose** (sin PaaS): como la unidad de deploy es una sola plataforma, Coolify/Dokploy sobrarían. Docker se justifica por: paridad CI↔producción (la imagen que pasó los tests es la que se despliega), rollback = tag de imagen anterior, y porque los runners del Agent SDK requieren contenedores efímeros de todos modos (aislamiento). |
 | Reverse proxy | **Nginx nativo en el host** (mismo patrón que los Moodles) proxy hacia los contenedores; SSL con certbot. DNS `*.awkfactory.com` → IP del Lightsail. |
 | Git + CI | **GitHub privado + GitHub Actions**: typecheck, lint, tests, migración en BD efímera, build de imagen → push a GHCR → webhook/SSH al Lightsail hace `pull` + `compose up`. |

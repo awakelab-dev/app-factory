@@ -23,7 +23,7 @@
 
 ## Siguiente (en orden)
 
-1. Provisionar el **Lightsail de cómputo (32 GB)** y el pipeline de deploy: Nginx nativo + certbot, Docker + Compose, deploy GHCR→webhook/SSH, con compose de `staging` y `production` en la misma máquina (docs/03). Cablear `DATABASE_URL` (managed **ya provisionada**, ver Hecho) y `JWT_SECRET` como secretos fuera del repo; crear los roles de app `app_staging`/`app_production` y correr la primera `prisma migrate deploy`+seed contra staging **desde la máquina** (la BD es privada). La managed PostgreSQL ya no es parte de esta tarea.
+1. **Deploy sobre el Lightsail de cómputo (32 GB) — que YA EXISTE y está en uso** (Nginx nativo + certbot + pm2 + otras apps del grupo, que se migrarán después; Leonardo ya se conecta a la managed PG desde ahí). Por tanto NO se provisiona de cero: hay que **coexistir**. Tarea: verificar/instalar Docker + Compose; definir compose de `staging` y `production` con puertos propios (no chocar con lo existente); **añadir server blocks Nginx nuevos** para nuestros dominios sin tocar los sitios actuales (certbot ya está); deploy GHCR→webhook/SSH (D-003). Cablear `DATABASE_URL` (managed **ya provisionada**, ver Hecho) y `JWT_SECRET` como secretos fuera del repo; crear los roles de app `app_staging`/`app_production` y correr la primera `prisma migrate deploy`+seed contra staging **desde la máquina** (la BD es privada). La managed PostgreSQL ya no es parte de esta tarea.
 2. Primer módulo ejemplar construido a mano (elegir prototipo real sencillo) → plantilla de módulo.
 3. (Opcional, no bloqueante) Rotar la contraseña de MongoDB expuesta en `backend/.env` en el historial de git y evaluar purgarla con `git-filter-repo` (ver "Bloqueos").
 
