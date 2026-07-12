@@ -1,0 +1,18 @@
+# Contexto de build de los Dockerfiles (apps/api, apps/web): raíz del monorepo.
+node_modules
+**/node_modules
+dist
+**/dist
+.turbo
+**/.turbo
+.pnpm-store
+.git
+.github
+.vscode
+legacy
+**/*.md
+**/.env
+**/.env.*
+!**/.env.example
+**/coverage
+apps/api/test

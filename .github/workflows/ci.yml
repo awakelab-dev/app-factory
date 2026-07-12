@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # BD efímera de servicio: mismas credenciales que docker-compose.dev.yml.
+  DATABASE_URL: postgresql://awk:awk@localhost:5432/awkplatform
+  JWT_SECRET: ci-test-secret-no-usar-en-produccion
+  NODE_ENV: test
+
+jobs:
+  build-test:
+    name: build · lint · typecheck · test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # Paridad de major con Lightsail managed PG y docker-compose.dev.yml (D-012).
+        image: postgres:18
+        env:
+          POSTGRES_USER: awk
+          POSTGRES_PASSWORD: awk
+          POSTGRES_DB: awkplatform
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U awk -d awkplatform"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Instalar pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Instalar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Instalar dependencias
+        run: pnpm install --frozen-lockfile
+
+      - name: Migración Prisma contra Postgres 18 efímero
+        working-directory: apps/api
+        run: pnpm run prisma:migrate:deploy
+
+      - name: turbo build · lint · typecheck · test
+        # "pnpm exec turbo" (no "pnpm turbo"): el atajo "pnpm turbo" dispara el
+        # chequeo de deps de pnpm 11, que en este repo termina reinstalando en
+        # modo --production y borra devDependencies (turbo incluido) a mitad
+        # de la corrida (reproducido en verificación local, ver STATUS).
+        run: pnpm exec turbo run build lint typecheck test
+
+  docker:
+    name: Docker ${{ matrix.app }} (push a GHCR solo en main)
+    needs: build-test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        app: [api, web]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Owner de la imagen en minúsculas (requisito de GHCR)
+        run: echo "IMAGE_OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
+      - name: Configurar Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login GHCR
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # En PRs se construye sin publicar (valida que el Dockerfile compila);
+      # en main se publica con tag de sha + latest (D-003: rollback = tag anterior).
+      - name: Build (y push en main)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/${{ matrix.app }}/Dockerfile
+          push: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
+          tags: |
+            ghcr.io/${{ env.IMAGE_OWNER }}/awkplatform-${{ matrix.app }}:${{ github.sha }}
+            ghcr.io/${{ env.IMAGE_OWNER }}/awkplatform-${{ matrix.app }}:latest
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.app }}
