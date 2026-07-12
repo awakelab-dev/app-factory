@@ -48,12 +48,14 @@ Por qué este plan exactamente: es el escalón más pequeño que **cifra en repo
 
 ### 8 · Endpoint y prueba de conexión privada
 - Pestaña **Connect**: copia **endpoint** (`ls-xxxx.xxxx.<region>.rds.amazonaws.com`), **puerto** (`5432`), usuario y contraseña.
-- Desde el **Lightsail de 32 GB** (misma región), instala el cliente y prueba:
+- Desde el **Lightsail de 32 GB** (misma región), instala el cliente **v18** y prueba. Importante: el `postgresql-client` por defecto de Ubuntu 24.04 es v16, y sus meta-comandos (`\l`, `\d`) fallan contra un server 18 (`ERROR: column d.daticulocale does not exist`). Instala el cliente 18 desde PGDG para emparejar (paridad D-012):
   ```bash
-  sudo apt-get update && sudo apt-get install -y postgresql-client
+  sudo apt-get install -y postgresql-common
+  sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+  sudo apt-get install -y postgresql-client-18
   psql "host=<endpoint> port=5432 user=dbmasteruser dbname=postgres sslmode=require"
   ```
-  Conéctate a la base de mantenimiento **`postgres`** (siempre existe), no al nombre de la base inicial: así no dependes de recordarlo. Ya dentro, `\l` lista todas las bases. Si conecta desde el servidor pero NO desde tu portátil, es la señal correcta de que el modo privado funciona. (El usuario maestro de Lightsail es **`dbmasteruser`**.)
+  Conéctate a la base de mantenimiento **`postgres`** (siempre existe), no al nombre de la base inicial: así no dependes de recordarlo. Ya dentro, lista las bases con `\l` (cliente 18) o, si tienes el cliente 16, con SQL portable: `SELECT datname FROM pg_database WHERE datistemplate = false;`. Si conecta desde el servidor pero NO desde tu portátil, es la señal correcta de que el modo privado funciona. (El usuario maestro de Lightsail es **`dbmasteruser`**.)
 
 ### 9 · Bases lógicas y roles de aplicación (mínimo privilegio)
 Conectado como `dbmasteruser` (a `postgres`), crea una base por entorno y un rol de app por entorno (nunca uses `dbmaster` desde la aplicación):
@@ -78,12 +80,17 @@ El rol de app **no** es superusuario — es exactamente lo que quieres para que 
 
 ```
 # staging
-postgresql://app_staging:<secreto>@<endpoint>:5432/awkplatform_staging?schema=public&sslmode=require
+postgresql://app_staging:<secreto>@<endpoint>:5432/awkplatform_staging?sslmode=require
 # production
-postgresql://app_production:<secreto>@<endpoint>:5432/awkplatform_production?schema=public&sslmode=require
+postgresql://app_production:<secreto>@<endpoint>:5432/awkplatform_production?sslmode=require
 ```
 
-`sslmode=require` no es opcional: Lightsail sirve TLS y la app debe usarlo.
+`sslmode=require` no es opcional: Lightsail sirve TLS y la app debe usarlo. **No** lleva `?schema=public`: el schema `core` lo gestiona Prisma vía multiSchema (`schemas = ["core"]`), no el search_path de la URL.
+
+**¿Dónde vive este valor?** La API lee `process.env.DATABASE_URL` en CLI (`prisma.config.ts`) y runtime (`prisma.service.ts`), con fallback al Postgres de Docker local. Por tanto:
+- **Dev local** → `apps/api/.env` apuntando al **Postgres de Docker** (`docker-compose.dev.yml`), NUNCA a la managed. El dev diario no toca staging/prod.
+- **Staging/production** → estas URLs son secretos del **entorno del deploy** (compose en el Lightsail de 32 GB / SSM). No existe destino hasta que se construya esa infra (tarea pendiente); mientras tanto, guárdalas en el gestor de secretos.
+- **Migraciones contra la managed**: como la BD es **privada** (solo recursos Lightsail de su región), `prisma migrate deploy` + seed se ejecutan **desde el Lightsail de 32 GB o el runner de CI**, jamás desde un portátil. Es parte del pipeline de deploy, no un paso manual local.
 
 ## Verificación (cerrar solo cuando todo esté ✅)
 
