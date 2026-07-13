@@ -28,6 +28,9 @@ services:
       # muestra el replicado vacío y el sync devuelve 503, sin tumbar la API.
       MOODLE_URL: ${MOODLE_URL:-}
       MOODLE_TOKEN: ${MOODLE_TOKEN:-}
+      # Timeout (ms) por llamada a Moodle WS, default 60000 en el código si se
+      # omite. Subir en instancias grandes (validado 2026-07-13, ver STATUS.md).
+      MOODLE_REQUEST_TIMEOUT_MS: ${MOODLE_REQUEST_TIMEOUT_MS:-}
     ports:
       - '127.0.0.1:${API_PORT_HOST}:3000'
     healthcheck:

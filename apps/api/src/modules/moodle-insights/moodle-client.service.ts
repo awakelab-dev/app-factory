@@ -8,7 +8,13 @@ import type {
 } from './moodle-client.types';
 
 const SITE_COURSE_ID = 1; // "Site home" — no es un curso real, todas las instalaciones lo tienen.
-const REQUEST_TIMEOUT_MS = 15_000;
+// Default generoso: en instancias grandes (cientos de cursos, miles de
+// alumnos) gradereport_user_get_grade_items puede tardar bastante más que
+// unos pocos segundos por curso — Moodle recalcula el gradebook al vuelo.
+// 15s (valor original) abortaba de forma real contra una instancia así
+// ("The operation was aborted due to timeout", validado 2026-07-13).
+// Configurable por si una instancia concreta necesita más margen todavía.
+const REQUEST_TIMEOUT_MS = Number(process.env.MOODLE_REQUEST_TIMEOUT_MS) || 60_000;
 
 /**
  * Cliente REST de Moodle Web Services (D-022): una sola instancia por
