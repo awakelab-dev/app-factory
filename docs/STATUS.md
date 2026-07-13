@@ -22,19 +22,18 @@
   - `deploy/docker-compose.yml` (único, sin secretos, valores por `.env` fuera del repo en `/opt/awkfactory/<entorno>/.env`) + `deploy/nginx/{staging,production}.conf` sirviendo **staging.factory.wiloxagency.com** y **production.factory.wiloxagency.com** por HTTPS (certbot). Puertos confirmados libres: 18100/18101 (staging), 18102/18103 (production).
   - Roles `app_staging`/`app_production` con mínimo privilegio; migración `core_init` + seed aplicados en ambas bases vía la imagen auxiliar `awkplatform-api-migrator` (stage `migrator` de `apps/api/Dockerfile`, D-013) y `deploy/scripts/migrate.sh`.
   - `dev-login` verificado: 200 con JWT admin en staging; **403 "deshabilitado en producción"** en production (correcto por diseño, D-011 — solo el IdP lo habilitará ahí).
-  - `.github/workflows/deploy.yml`: staging automático tras CI verde en `main`; producción por promoción manual `workflow_dispatch` (re-tag del sha ya validado en staging). Falta cablear los 3 GitHub Secrets (`LIGHTSAIL_HOST`/`LIGHTSAIL_SSH_USER`/`LIGHTSAIL_SSH_KEY`) para que el job de staging deje de fallar con "missing server host" — no bloqueante, el deploy manual ya funciona.
+  - `.github/workflows/deploy.yml`: staging automático tras CI verde en `main`; producción por promoción manual `workflow_dispatch` (re-tag del sha ya validado en staging). **GitHub Secrets cableados y deploy automático confirmado en verde** (`LIGHTSAIL_HOST`/`LIGHTSAIL_SSH_USER`/`LIGHTSAIL_SSH_KEY`; la llave pública `awk-deploy` quedó autorizada en `~/.ssh/authorized_keys` del server — el primer intento falló por eso, `handshake failed`, y quedó resuelto).
   - **Bug crítico encontrado y corregido en el camino**: `apps/api/Dockerfile` quedó con el stage `migrator` *después* de `runtime`; sin `target:` explícito en `ci.yml`, Docker construye por defecto el *último* stage del archivo, así que el job `docker` publicó brevemente el contenido de `migrator` bajo el tag `awkplatform-api` → crash loop en producción (intentaba `prisma migrate deploy` en vez de levantar el servidor). Corregido añadiendo `target: runtime` explícito en `ci.yml` (aplica a ambos Dockerfiles, que ya tienen un stage llamado `runtime`). **Lección para cualquier Dockerfile futuro con stages auxiliares (D-016): declarar siempre `target:` explícito en CI, nunca depender del último stage del archivo.**
   - Otros bugs de una sola vez ya corregidos y documentados en `docs/runbooks/lightsail-deploy.md`/`lightsail-postgres.md`: `docker run --env-file` no interpreta comillas (rompía `DATABASE_URL`/`JWT_SECRET` citados); `GRANT ALL ON DATABASE` no alcanza el schema `public` donde Prisma pone `_prisma_migrations`; `pg`/`@prisma/adapter-pg` trata `sslmode=require` como `verify-full` y falla contra el cert de Lightsail (necesita `uselibpqcompat=true`); `pnpm exec` (no solo `pnpm turbo`) dispara el chequeo de deps de pnpm 11 y borra devDependencies sin TTY — usar binarios directos `node_modules/.bin/<bin>`.
 
 ## En curso
 
-(nada abierto) Pendiente no bloqueante: Leonardo terminando de cablear los 3 GitHub Secrets del deploy automático (paso 8 de `docs/runbooks/lightsail-deploy.md`).
+(nada abierto — deploy de D-016/D-017 cerrado por completo, incluido el deploy automático)
 
 ## Siguiente (en orden)
 
-1. Confirmar que el deploy automático a staging corre en verde tras cablear los GitHub Secrets (un push cualquiera a `main` debería disparar `Deploy` → job `staging` sin intervención).
-2. Primer módulo ejemplar construido a mano (elegir prototipo real sencillo) → plantilla de módulo.
-3. (Opcional, no bloqueante) Rotar la contraseña de MongoDB expuesta en `backend/.env` en el historial de git y evaluar purgarla con `git-filter-repo` (ver "Bloqueos"). También considerar rotar el password de `app_staging`/`app_production` y los `JWT_SECRET`: quedaron pegados en texto plano en un chat de Cowork durante esta sesión (no se guardaron en memoria ni en el repo, pero el historial del chat los tiene).
+1. Primer módulo ejemplar construido a mano (elegir prototipo real sencillo) → plantilla de módulo.
+2. (Opcional, no bloqueante) Rotar la contraseña de MongoDB expuesta en `backend/.env` en el historial de git y evaluar purgarla con `git-filter-repo` (ver "Bloqueos"). También considerar rotar el password de `app_staging`/`app_production` y los `JWT_SECRET`: quedaron pegados en texto plano en un chat de Cowork durante esta sesión (no se guardaron en memoria ni en el repo, pero el historial del chat los tiene).
 
 ### Mensaje inicial sugerido para la próxima tarea (copiar/pegar)
 
