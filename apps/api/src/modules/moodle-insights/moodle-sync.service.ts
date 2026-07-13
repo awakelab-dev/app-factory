@@ -3,6 +3,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import type { MoodleSyncRun } from '@awk/types';
 import { AuditService } from '../../core/audit/audit.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import type { MoodleEnrolledUserDto, MoodleGradeReportDto } from './moodle-client.types';
 import { MoodleClientService } from './moodle-client.service';
 import { toSyncRunResponse } from './moodle-insights.mappers';
 import { moodleBoolean, moodleDate } from './moodle-insights.util';
@@ -153,10 +154,28 @@ export class MoodleSyncService {
             startDate: moodleDate(course.startdate)
           });
 
-          const [students, gradeReport] = await Promise.all([
-            this.client.getEnrolledStudents(course.id),
-            this.client.getCourseGradeReport(course.id)
-          ]);
+          // Cada llamada se aísla con su propio catch: en una instancia grande
+          // (cientos de cursos) un solo curso con datos que Moodle no puede
+          // validar (p.ej. gradereport_user_get_grade_items respondiendo
+          // "invalidresponse" por un grade item con un campo nulo que Moodle
+          // no debería permitir — bug de esa instancia, no de este cliente,
+          // validado 2026-07-13) no debe tumbar el sync completo de los demás
+          // cursos. Ese curso queda sin alumnos y/o sin notas para esta
+          // corrida, con un warning en el log identificándolo.
+          const students = await this.client.getEnrolledStudents(course.id).catch((err) => {
+            const message = err instanceof Error ? err.message : String(err);
+            this.logger.warn(
+              `moodle-insights: no se pudieron traer alumnos del curso ${course.shortname} (id ${course.id}): ${message}`
+            );
+            return [] as MoodleEnrolledUserDto[];
+          });
+          const gradeReport = await this.client.getCourseGradeReport(course.id).catch((err) => {
+            const message = err instanceof Error ? err.message : String(err);
+            this.logger.warn(
+              `moodle-insights: no se pudieron traer notas del curso ${course.shortname} (id ${course.id}): ${message}`
+            );
+            return { usergrades: [] } as MoodleGradeReportDto;
+          });
 
           const courseGradeByStudentId = new Map<number, { grade: number | null; gradeMax: number | null }>();
           for (const userGrades of gradeReport.usergrades) {

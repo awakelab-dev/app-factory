@@ -93,6 +93,56 @@ describe('MoodleSyncService.run — camino feliz', () => {
   });
 });
 
+describe('MoodleSyncService.run — resiliencia por curso', () => {
+  it('si un curso falla al traer notas/alumnos, el sync sigue en success con los demás cursos completos', async () => {
+    const prisma = makePrisma();
+    const audit = makeAudit();
+    // Reproduce el caso real (2026-07-13): Moodle responde "invalidresponse"
+    // en gradereport_user_get_grade_items para un curso puntual (dato de esa
+    // instancia, no un fallo de red) — no debe tumbar el sync de los demás
+    // cientos de cursos.
+    const client = {
+      isConfigured: true,
+      getCourses: vi.fn().mockResolvedValue([
+        { id: 12, shortname: 'MAT101', fullname: 'Matemáticas I', categoryid: 3, visible: 1, startdate: 0 },
+        { id: 13, shortname: 'HIST101', fullname: 'Historia I', categoryid: 3, visible: 1, startdate: 0 }
+      ]),
+      getCategories: vi.fn().mockResolvedValue([{ id: 3, name: 'Ciencias' }]),
+      getEnrolledStudents: vi
+        .fn()
+        .mockResolvedValue([{ id: 1, fullname: 'Alumna Uno', email: 'a1@test.dev', roles: [{ shortname: 'student' }] }]),
+      getCourseGradeReport: vi.fn().mockImplementation((courseId: number) => {
+        if (courseId === 13) {
+          return Promise.reject(
+            new Error('Moodle rechazó gradereport_user_get_grade_items (invalidresponse): Detectado valor de respuesta no válido')
+          );
+        }
+        return Promise.resolve({
+          usergrades: [
+            { userid: 1, gradeitems: [{ itemtype: 'course', itemname: 'Total del curso', graderaw: 8.5, grademax: 10 }] }
+          ]
+        });
+      })
+    } as unknown as MoodleClientService;
+
+    const result = await new MoodleSyncService(prisma, client, audit).run('admin-1');
+
+    // El sync como un todo tiene éxito — un curso con datos inválidos en
+    // Moodle no aborta el replicado completo.
+    expect(result.status).toBe('success');
+    expect(result.coursesCount).toBe(2);
+
+    // Ambos cursos quedan con su alumno (getEnrolledStudents no falló para
+    // ninguno); solo el curso 12 aporta una fila de nota — el 13 queda sin
+    // nota para esta corrida, sin que el resto se pierda.
+    // El array exacto de un elemento ya confirma que el curso 13 no aportó
+    // fila de nota (toHaveBeenCalledWith exige longitud exacta del array).
+    expect(prisma.moodleGrade.createMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ grade: 8.5, gradeMax: 10 })]
+    });
+  });
+});
+
 describe('MoodleSyncService.run — camino de error', () => {
   it('si Moodle falla, marca el run como error sin tocar $transaction', async () => {
     const prisma = makePrisma();

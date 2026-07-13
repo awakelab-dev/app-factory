@@ -218,6 +218,22 @@ Repite para producción con `deploy/nginx/production.conf` y
 tráfico real hasta la primera promoción — pasos 2-4 y Nginx/certbot sí
 conviene dejarlos listos ahora).
 
+> **Cuidado al editar el server block DESPUÉS de correr certbot** (p. ej. para
+> subir `proxy_read_timeout` u otro ajuste, ver moodle-insights/D-022):
+> `certbot --nginx` reescribe el archivo en vivo en `/etc/nginx/sites-available/`
+> para añadirle el bloque `listen 443 ssl` + `ssl_certificate`/`ssl_certificate_key`
+> + el redirect 80→443 — el `staging.conf`/`production.conf` del repo son solo
+> la plantilla HTTP original, **sin ese bloque**. Reproducido el 2026-07-13:
+> sobreescribir el archivo del server con un `scp` directo del `.conf` del
+> repo borró el bloque SSL y el navegador mostró "This Connection Is Not
+> Private" (certificado no coincide). El certificado en `/etc/letsencrypt/`
+> no se pierde — la forma correcta de arreglarlo es volver a correr
+> `sudo certbot --nginx -d <dominio>` (detecta el cert existente y
+> reconstruye el bloque 443 sin tocar los `location` ya presentes). **Para
+> cualquier cambio a un server block ya emitido con certbot, editar el
+> archivo en el server a mano (`nano`) con solo la línea que cambia — nunca
+> volver a `scp` la plantilla completa por encima.**
+
 DNS: confirma que ambos subdominios de `apps.awakelab.world` ya apuntan
 (registro A) a `13.38.161.213` antes de pedir el certificado — certbot
 falla si el dominio no resuelve al server.
