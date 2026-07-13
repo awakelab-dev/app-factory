@@ -95,12 +95,26 @@ El rol de app **no** es superusuario — es exactamente lo que quieres para que 
 
 ```
 # staging
-postgresql://app_staging:<secreto>@<endpoint>:5432/awkplatform_staging?sslmode=require
+postgresql://app_staging:<secreto>@<endpoint>:5432/awkplatform_staging?sslmode=require&uselibpqcompat=true
 # production
-postgresql://app_production:<secreto>@<endpoint>:5432/awkplatform_production?sslmode=require
+postgresql://app_production:<secreto>@<endpoint>:5432/awkplatform_production?sslmode=require&uselibpqcompat=true
 ```
 
 `sslmode=require` no es opcional: Lightsail sirve TLS y la app debe usarlo. **No** lleva `?schema=public`: el schema `core` lo gestiona Prisma vía multiSchema (`schemas = ["core"]`), no el search_path de la URL.
+
+**`uselibpqcompat=true` tampoco es opcional** (reproducido en staging real,
+2026-07-12): el driver adapter `@prisma/adapter-pg` usa `pg`/
+`pg-connection-string`, que en la versión actual trata `sslmode=require`
+como alias de `verify-full` (verificación completa de cadena de
+certificados) en vez de la semántica estándar de libpq ("solo cifra, no
+verifica"). El certificado de Lightsail falla esa verificación estricta →
+`self-signed certificate in certificate chain` / `P1011`. Esto **no** afecta
+al motor de migraciones (usa otra ruta de TLS y sí funciona solo con
+`sslmode=require`), pero sí a todo lo que pase por `@prisma/adapter-pg`:
+el seed (`prisma/seed.ts`) y la API en runtime (`prisma.service.ts`) por
+igual. `uselibpqcompat=true` restaura la semántica estándar (cifra, no
+verifica) — que es lo que esta arquitectura ya asume (modo privado de
+Lightsail como control de acceso, no PKI).
 
 **¿Dónde vive este valor?** La API lee `process.env.DATABASE_URL` en CLI (`prisma.config.ts`) y runtime (`prisma.service.ts`), con fallback al Postgres de Docker local. Por tanto:
 - **Dev local** → `apps/api/.env` apuntando al **Postgres de Docker** (`docker-compose.dev.yml`), NUNCA a la managed. El dev diario no toca staging/prod.
