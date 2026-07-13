@@ -92,11 +92,22 @@ jobs:
 
       # En PRs se construye sin publicar (valida que el Dockerfile compila);
       # en main se publica con tag de sha + latest (D-003: rollback = tag anterior).
+      #
+      # target: runtime es OBLIGATORIO explícito: ambos Dockerfiles (api y
+      # web) tienen un stage llamado "runtime" que es el que debe publicarse.
+      # Sin "target", Docker construye por defecto el ÚLTIMO stage del
+      # archivo — y apps/api/Dockerfile tiene el stage "migrator" (D-016)
+      # DESPUÉS de "runtime", así que sin este target explícito se publicaba
+      # "migrator" (con prisma CLI, sin servidor HTTP) bajo el tag
+      # awkplatform-api, y el contenedor entraba en crash loop en producción
+      # al intentar correr "prisma migrate deploy" en vez de levantar la API.
+      # Reproducido y diagnosticado en el Lightsail real (2026-07-13).
       - name: Build (y push en main)
         uses: docker/build-push-action@v6
         with:
           context: .
           file: apps/${{ matrix.app }}/Dockerfile
+          target: runtime
           push: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
           tags: |
             ghcr.io/${{ env.IMAGE_OWNER }}/awkplatform-${{ matrix.app }}:${{ github.sha }}
