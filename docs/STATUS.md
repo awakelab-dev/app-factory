@@ -2,8 +2,8 @@
 
 > Actualizar al cerrar CADA sesión de trabajo. Este archivo es lo primero que lee cualquier tarea nueva.
 
-**Última actualización**: 2026-07-13 (sesión infra: **deploy en producción verificado end-to-end** — D-016. Leonardo ejecutó el runbook a mano por SSH desde su Mac, con Claude guiando/depurando en vivo; el sandbox de Cowork nunca tuvo ruta de red al Lightsail)
-**Fase actual**: Fase 0 — Fundaciones (core mínimo + CI en verde; managed PostgreSQL y Docker listos; **staging y production sirviendo por HTTPS en sus dominios reales, verificados**)
+**Última actualización**: 2026-07-13 (sesión infra: **migración de dominio preparada en el repo** — D-018, `staging.factory.wiloxagency.com`/`production.factory.wiloxagency.com` → `staging.apps.awakelab.world`/`apps.awakelab.world`. Falta el cutover manual en el server, mismo motivo que D-016/D-017: el sandbox de Cowork no tiene ruta de red al Lightsail)
+**Fase actual**: Fase 0 — Fundaciones (core mínimo + CI en verde; managed PostgreSQL y Docker listos; staging y production sirviendo por HTTPS **sobre el dominio viejo todavía** — el cutover a `apps.awakelab.world` está listo pero pendiente de ejecutar)
 
 ## Hecho
 
@@ -19,7 +19,7 @@
 
 - **Docker en el Lightsail de cómputo** (2026-07-12, D-015): Engine 29.6.1 + Compose v2 (`docker compose`, v5.3.1) instalados desde el repo oficial; usuario `ubuntu` en el grupo `docker`. El server (existente/compartido, ver memoria) ya está listo para levantar compose sin tocar Nginx/certbot/pm2.
 - **Deploy de staging+production en el Lightsail — VERIFICADO end-to-end** (2026-07-13, D-016, ejecutado por Leonardo por SSH desde su Mac con Claude guiando/depurando en vivo; el sandbox de Cowork nunca tuvo ruta de red al Lightsail — `13.38.161.213:22` → `Network is unreachable`, confirmado, así que no lo ejecutó Claude directamente):
-  - `deploy/docker-compose.yml` (único, sin secretos, valores por `.env` fuera del repo en `/opt/awkfactory/<entorno>/.env`) + `deploy/nginx/{staging,production}.conf` sirviendo **staging.factory.wiloxagency.com** y **production.factory.wiloxagency.com** por HTTPS (certbot). Puertos confirmados libres: 18100/18101 (staging), 18102/18103 (production).
+  - `deploy/docker-compose.yml` (único, sin secretos, valores por `.env` fuera del repo en `/opt/awkfactory/<entorno>/.env`) + `deploy/nginx/{staging,production}.conf` sirviendo **staging.factory.wiloxagency.com** y **production.factory.wiloxagency.com** por HTTPS (certbot). Puertos confirmados libres: 18100/18101 (staging), 18102/18103 (production). **Dominios migrados a `apps.awakelab.world` por D-018 (ver "En curso")** — los ficheros de `deploy/nginx/` ya reflejan el dominio nuevo; estos dominios viejos son los que sirven tráfico real hasta que se ejecute el cutover.
   - Roles `app_staging`/`app_production` con mínimo privilegio; migración `core_init` + seed aplicados en ambas bases vía la imagen auxiliar `awkplatform-api-migrator` (stage `migrator` de `apps/api/Dockerfile`, D-013) y `deploy/scripts/migrate.sh`.
   - `dev-login` verificado: 200 con JWT admin en staging; **403 "deshabilitado en producción"** en production (correcto por diseño, D-011 — solo el IdP lo habilitará ahí).
   - `.github/workflows/deploy.yml`: staging automático tras CI verde en `main`; producción por promoción manual `workflow_dispatch` (re-tag del sha ya validado en staging). **GitHub Secrets cableados y deploy automático confirmado en verde** (`LIGHTSAIL_HOST`/`LIGHTSAIL_SSH_USER`/`LIGHTSAIL_SSH_KEY`; la llave pública `awk-deploy` quedó autorizada en `~/.ssh/authorized_keys` del server — el primer intento falló por eso, `handshake failed`, y quedó resuelto).
@@ -28,7 +28,7 @@
 
 ## En curso
 
-(nada abierto — deploy de D-016/D-017 cerrado por completo, incluido el deploy automático)
+- **Migración de dominio (D-018)**: preparada en el repo (`deploy/nginx/{staging,production}.conf`, `docs/runbooks/lightsail-deploy.md` actualizados a `staging.apps.awakelab.world`/`apps.awakelab.world`; nuevo runbook `docs/runbooks/migracion-dominio-2026-07.md` con el cutover paso a paso sin downtime). DNS de ambos subdominios nuevos ya apunta al mismo server (`13.38.161.213`), confirmado por Leonardo. **Falta ejecutar en el server** (SSH manual, mismo motivo que D-016/D-017: sin ruta de red desde el sandbox): nuevos server blocks + certbot en paralelo a los viejos → verificar → retirar server blocks/certificados viejos. Sin cambios en `.github/workflows/deploy.yml` ni en GitHub Secrets (no referencian el dominio).
 
 ## Siguiente (en orden)
 

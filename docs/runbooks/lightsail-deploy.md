@@ -2,7 +2,10 @@
 
 > Runbook operativo. Ejecuta D-003/D-013/D-015/**D-016** sobre el Lightsail de
 > 32 GB **existente y compartido** del grupo (Nginx nativo + certbot + pm2 +
-> otras apps; no se toca nada de eso). Última revisión: 2026-07-12.
+> otras apps; no se toca nada de eso). Última revisión: 2026-07-13 (dominios
+> actualizados a `apps.awakelab.world` por D-018 — ver
+> `docs/runbooks/migracion-dominio-2026-07.md` para el cutover del dominio
+> anterior en el server ya provisionado).
 >
 > **Por qué este runbook es manual y no lo corrió Claude directamente**: el
 > sandbox de Cowork corre en una red aislada con proxy/allowlist — no tiene
@@ -25,8 +28,14 @@
 
 | Entorno | Dominio | API (host) | Web (host) |
 |---|---|---|---|
-| staging | `staging.factory.wiloxagency.com` | 127.0.0.1:18100 | 127.0.0.1:18101 |
-| production | `production.factory.wiloxagency.com` | 127.0.0.1:18102 | 127.0.0.1:18103 |
+| staging | `staging.apps.awakelab.world` | 127.0.0.1:18100 | 127.0.0.1:18101 |
+| production | `apps.awakelab.world` | 127.0.0.1:18102 | 127.0.0.1:18103 |
+
+> Dominios migrados desde `staging.factory.wiloxagency.com` /
+> `production.factory.wiloxagency.com` el 2026-07-13 (D-018). Si esta página
+> se usa para reconstruir el server desde cero, usa directamente los dominios
+> de arriba. Si el server ya existe con los dominios viejos, sigue primero
+> `docs/runbooks/migracion-dominio-2026-07.md`.
 
 Los puertos 18100-18103 son una elección "poco común" **a confirmar** en el
 paso 1 — no chocan con nada conocido, pero nadie con acceso al server los
@@ -195,23 +204,23 @@ Copia el server block desde tu Mac (mismo patrón que los pasos anteriores):
 
 ```bash
 # desde tu Mac:
-scp deploy/nginx/staging.conf AWK-Dev:~/staging.factory.wiloxagency.com
+scp deploy/nginx/staging.conf AWK-Dev:~/staging.apps.awakelab.world
 
 # ya en el server:
-sudo mv ~/staging.factory.wiloxagency.com /etc/nginx/sites-available/staging.factory.wiloxagency.com
-sudo ln -s /etc/nginx/sites-available/staging.factory.wiloxagency.com /etc/nginx/sites-enabled/
+sudo mv ~/staging.apps.awakelab.world /etc/nginx/sites-available/staging.apps.awakelab.world
+sudo ln -s /etc/nginx/sites-available/staging.apps.awakelab.world /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
-sudo certbot --nginx -d staging.factory.wiloxagency.com
+sudo certbot --nginx -d staging.apps.awakelab.world
 ```
 
 Repite para producción con `deploy/nginx/production.conf` y
-`production.factory.wiloxagency.com` (el compose de producción puede
-quedar arriba sin tráfico real hasta la primera promoción — pasos 2-4 y
-Nginx/certbot sí conviene dejarlos listos ahora).
+`apps.awakelab.world` (el compose de producción puede quedar arriba sin
+tráfico real hasta la primera promoción — pasos 2-4 y Nginx/certbot sí
+conviene dejarlos listos ahora).
 
-DNS: confirma que ambos subdominios de `factory.wiloxagency.com` ya
-apuntan (registro A) a `13.38.161.213` antes de pedir el certificado —
-certbot falla si el dominio no resuelve al server.
+DNS: confirma que ambos subdominios de `apps.awakelab.world` ya apuntan
+(registro A) a `13.38.161.213` antes de pedir el certificado — certbot
+falla si el dominio no resuelve al server.
 
 ## 8 · GitHub Secrets para el deploy automático
 
@@ -230,8 +239,8 @@ se validó en staging.
 
 ## 9 · Verificación final (cerrar solo cuando todo ✅)
 
-- [ ] `https://staging.factory.wiloxagency.com/api/hello` responde 200 por HTTPS.
-- [ ] `https://staging.factory.wiloxagency.com` sirve el shell web.
+- [ ] `https://staging.apps.awakelab.world/api/hello` responde 200 por HTTPS.
+- [ ] `https://staging.apps.awakelab.world` sirve el shell web.
 - [ ] Dev-login (`POST /api/auth/dev-login`) funciona contra staging con
       `leonardo.barreto@awakelab.dev` (admin) — confirma que apunta a la
       managed real, no a un Postgres local.
