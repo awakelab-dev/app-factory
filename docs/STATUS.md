@@ -2,8 +2,8 @@
 
 > Actualizar al cerrar CADA sesión de trabajo. Este archivo es lo primero que lee cualquier tarea nueva.
 
-**Última actualización**: 2026-07-13 (sesión infra: **migración de dominio preparada en el repo** — D-018, `staging.factory.wiloxagency.com`/`production.factory.wiloxagency.com` → `staging.apps.awakelab.world`/`apps.awakelab.world`. Falta el cutover manual en el server, mismo motivo que D-016/D-017: el sandbox de Cowork no tiene ruta de red al Lightsail)
-**Fase actual**: Fase 0 — Fundaciones (core mínimo + CI en verde; managed PostgreSQL y Docker listos; staging y production sirviendo por HTTPS **sobre el dominio viejo todavía** — el cutover a `apps.awakelab.world` está listo pero pendiente de ejecutar)
+**Última actualización**: 2026-07-13 (sesión infra: **migración de dominio ejecutada y confirmada** — D-018/D-019. Leonardo ejecutó `docs/runbooks/migracion-dominio-2026-07.md` a mano por SSH desde su Mac, mismo motivo que D-016/D-017: el sandbox de Cowork no tiene ruta de red al Lightsail)
+**Fase actual**: Fase 0 — Fundaciones (core mínimo + CI en verde; managed PostgreSQL y Docker listos; **staging y production sirviendo por HTTPS en `apps.awakelab.world`, dominio viejo retirado**)
 
 ## Hecho
 
@@ -19,7 +19,7 @@
 
 - **Docker en el Lightsail de cómputo** (2026-07-12, D-015): Engine 29.6.1 + Compose v2 (`docker compose`, v5.3.1) instalados desde el repo oficial; usuario `ubuntu` en el grupo `docker`. El server (existente/compartido, ver memoria) ya está listo para levantar compose sin tocar Nginx/certbot/pm2.
 - **Deploy de staging+production en el Lightsail — VERIFICADO end-to-end** (2026-07-13, D-016, ejecutado por Leonardo por SSH desde su Mac con Claude guiando/depurando en vivo; el sandbox de Cowork nunca tuvo ruta de red al Lightsail — `13.38.161.213:22` → `Network is unreachable`, confirmado, así que no lo ejecutó Claude directamente):
-  - `deploy/docker-compose.yml` (único, sin secretos, valores por `.env` fuera del repo en `/opt/awkfactory/<entorno>/.env`) + `deploy/nginx/{staging,production}.conf` sirviendo **staging.factory.wiloxagency.com** y **production.factory.wiloxagency.com** por HTTPS (certbot). Puertos confirmados libres: 18100/18101 (staging), 18102/18103 (production). **Dominios migrados a `apps.awakelab.world` por D-018 (ver "En curso")** — los ficheros de `deploy/nginx/` ya reflejan el dominio nuevo; estos dominios viejos son los que sirven tráfico real hasta que se ejecute el cutover.
+  - `deploy/docker-compose.yml` (único, sin secretos, valores por `.env` fuera del repo en `/opt/awkfactory/<entorno>/.env`) + `deploy/nginx/{staging,production}.conf` sirviendo por HTTPS (certbot). Puertos confirmados libres: 18100/18101 (staging), 18102/18103 (production). Dominios originales `staging.factory.wiloxagency.com` / `production.factory.wiloxagency.com` — **migrados a `staging.apps.awakelab.world` / `apps.awakelab.world` el 2026-07-13 (D-018/D-019), ver "Hecho" más abajo; ya no están en uso**.
   - Roles `app_staging`/`app_production` con mínimo privilegio; migración `core_init` + seed aplicados en ambas bases vía la imagen auxiliar `awkplatform-api-migrator` (stage `migrator` de `apps/api/Dockerfile`, D-013) y `deploy/scripts/migrate.sh`.
   - `dev-login` verificado: 200 con JWT admin en staging; **403 "deshabilitado en producción"** en production (correcto por diseño, D-011 — solo el IdP lo habilitará ahí).
   - `.github/workflows/deploy.yml`: staging automático tras CI verde en `main`; producción por promoción manual `workflow_dispatch` (re-tag del sha ya validado en staging). **GitHub Secrets cableados y deploy automático confirmado en verde** (`LIGHTSAIL_HOST`/`LIGHTSAIL_SSH_USER`/`LIGHTSAIL_SSH_KEY`; la llave pública `awk-deploy` quedó autorizada en `~/.ssh/authorized_keys` del server — el primer intento falló por eso, `handshake failed`, y quedó resuelto).
@@ -28,7 +28,7 @@
 
 ## En curso
 
-- **Migración de dominio (D-018)**: preparada en el repo (`deploy/nginx/{staging,production}.conf`, `docs/runbooks/lightsail-deploy.md` actualizados a `staging.apps.awakelab.world`/`apps.awakelab.world`; nuevo runbook `docs/runbooks/migracion-dominio-2026-07.md` con el cutover paso a paso sin downtime). DNS de ambos subdominios nuevos ya apunta al mismo server (`13.38.161.213`), confirmado por Leonardo. **Falta ejecutar en el server** (SSH manual, mismo motivo que D-016/D-017: sin ruta de red desde el sandbox): nuevos server blocks + certbot en paralelo a los viejos → verificar → retirar server blocks/certificados viejos. Sin cambios en `.github/workflows/deploy.yml` ni en GitHub Secrets (no referencian el dominio).
+(nada abierto — migración de dominio D-018/D-019 cerrada por completo)
 
 ## Siguiente (en orden)
 
@@ -93,6 +93,7 @@ Si `prisma migrate dev` reportara drift contra `core_init`: regenerar la migraci
 
 ## Resuelto recientemente
 
+- **Migración de dominio ejecutada (D-018/D-019)**: `docs/runbooks/migracion-dominio-2026-07.md` corrido por Leonardo en el Lightsail real — server blocks y certbot nuevos para `staging.apps.awakelab.world`/`apps.awakelab.world` levantados en paralelo a los viejos (cero downtime), verificados, y solo entonces retirados los server blocks y certificados de `staging.factory.wiloxagency.com`/`production.factory.wiloxagency.com`. Sin cambios en `.github/workflows/deploy.yml` ni en GitHub Secrets (no referencian el dominio) — el deploy automático a staging sigue intacto.
 - **CI en verde en GitHub Actions (primer push real a `main`)**: los tres jobs de `ci.yml` (`build · lint · typecheck · test`, `Docker api`, `Docker web`) corrieron y pasaron en `awakelab-dev/app-factory`, con publicación de ambas imágenes en GHCR (push habilitado solo en `main`). Cierra el ciclo de esta tarea de CI/Docker completo.
 - **Push rechazado por GitHub (blob de 170MB) → historia reescrita (D-014)**: `git push -u origin main` desde la Mac falló con `pre-receive hook declined` por `backend/uploads/....zip` (170MB, > límite de 100MB de GitHub). Se instaló `git-filter-repo` (`pip install git-filter-repo --break-system-packages`, no viene con git) y se purgaron `backend/node_modules`, `frontend/node_modules` y `backend/uploads` de **todo** el historial (basura pre-D-008). `.git` bajó de 183MB a ~500KB, los 15 commits y sus mensajes quedaron intactos (solo cambian los hashes), y el `legacy/` actual (23 archivos) no se tocó. Como el remoto nunca había aceptado un push, no fue necesario force-push. Se hizo un backup de `.git` antes de reescribir (`/tmp/app-factory-git-backup-pre-filter-repo` en el sandbox, no persiste). Pendiente: repetir el push (ver "En curso").
 - **Verificación local con BD terminada** (Leonardo, Docker Desktop): Postgres 18 arriba vía `docker-compose.dev.yml`, dev-login y lectura de usuarios funcionando end-to-end en :5173. (Nota aparte, no funcional: en Docker Desktop el contenedor aparece agrupado bajo el nombre del proyecto Compose "app-factory" sin ID/imagen/puerto visibles hasta expandir la fila — es la agrupación normal de Compose, no un problema.)

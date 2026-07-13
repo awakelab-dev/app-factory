@@ -109,15 +109,17 @@ CI verde en `main` sigue funcionando igual, sin tocar nada aquí.
 
 ## 7 · Checklist final (cerrar solo cuando todo ✅)
 
-- [ ] `https://staging.apps.awakelab.world/api/hello` → 200 por HTTPS.
-- [ ] `https://staging.apps.awakelab.world` sirve el shell web.
-- [ ] Dev-login funciona contra el dominio nuevo de staging.
-- [ ] `https://apps.awakelab.world/api/hello` → 200 (production).
-- [ ] Server blocks y certificados del dominio viejo retirados; el dominio
+- [x] `https://staging.apps.awakelab.world/api/hello` → 200 por HTTPS.
+- [x] `https://staging.apps.awakelab.world` sirve el shell web.
+- [x] Dev-login funciona contra el dominio nuevo de staging.
+- [x] `https://apps.awakelab.world/api/hello` → 200 (production).
+- [x] Server blocks y certificados del dominio viejo retirados; el dominio
       viejo ya no sirve la plataforma.
-- [ ] Un deploy real (push a `main` con CI verde) llega a staging por el
+- [x] Un deploy real (push a `main` con CI verde) llega a staging por el
       dominio nuevo sin cambios en `deploy.yml` ni en GitHub Secrets.
-- [ ] `docs/STATUS.md` actualizado con el resultado real de este runbook.
+- [x] `docs/STATUS.md` actualizado con el resultado real de este runbook.
+
+**Ejecutado y cerrado por Leonardo el 2026-07-13 (D-019).**
 
 ## Referencias
 
