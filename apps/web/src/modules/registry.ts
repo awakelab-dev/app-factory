@@ -2,13 +2,14 @@ import { canAccess } from '@awk/auth';
 import type { AuthUser, NavItem } from '@awk/types';
 import { coreAdminModule } from './core-admin';
 import { helloModule } from './hello';
+import { moodleInsightsModule } from './moodle-insights';
 import type { ModuleRegistration } from './types';
 
 /**
  * Registro de módulos del shell. Cada módulo nuevo (generado por la fábrica
  * o hecho a mano) se añade aquí — y NADA más: menú y rutas salen del manifest.
  */
-export const modules: ModuleRegistration[] = [helloModule, coreAdminModule];
+export const modules: ModuleRegistration[] = [helloModule, coreAdminModule, moodleInsightsModule];
 
 /** Módulos a los que el usuario puede entrar (regla canAccess de @awk/auth). */
 export function accessibleModules(

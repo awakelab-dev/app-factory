@@ -7,3 +7,15 @@ import { afterEach } from 'vitest';
 afterEach(() => {
   cleanup();
 });
+
+// jsdom no implementa ResizeObserver; recharts (moodle-insights y cualquier
+// módulo futuro con gráficos) lo necesita vía ResponsiveContainer.
+class ResizeObserverStub {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+}
+if (!('ResizeObserver' in globalThis)) {
+  (globalThis as unknown as { ResizeObserver: typeof ResizeObserverStub }).ResizeObserver =
+    ResizeObserverStub;
+}

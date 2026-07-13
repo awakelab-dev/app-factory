@@ -16,7 +16,7 @@ generator client {
 // y el runtime recibe el adapter (@prisma/adapter-pg) en el constructor.
 datasource db {
   provider = "postgresql"
-  schemas  = ["core"]
+  schemas  = ["core", "moodle"]
 }
 
 /// Usuario de la plataforma. La identidad vendrá del IdP (SSO pendiente,
@@ -77,4 +77,107 @@ model AuditEvent {
   @@index([action, createdAt])
   @@map("audit_events")
   @@schema("core")
+}
+
+// ---------------------------------------------------------------------------
+// Módulo moodle-insights (primer módulo ejemplar, D-020/D-022): réplica
+// PARCIAL y de solo lectura de una única instancia Moodle (single-tenant,
+// credenciales por variables de entorno — ver .env.example) vía Moodle Web
+// Services. Se repuebla por completo en cada sync ("full refresh": el botón
+// "Actualizar datos" reemplaza todo el contenido de estas 4 tablas dentro de
+// una transacción) — nunca sincroniza en segundo plano ni por webhook.
+// Volumen esperado (una instancia, no las 36 del grupo): cientos de cursos y
+// alumnos, no millones de filas — el patrón full-refresh es intencionalmente
+// simple para ese volumen; si un módulo futuro necesita más escala, cambiar a
+// upsert+diff.
+// ---------------------------------------------------------------------------
+
+enum MoodleSyncStatus {
+  running
+  success
+  error
+
+  @@schema("moodle")
+}
+
+/// Un registro por cada click en "Actualizar datos": auditoría propia del
+/// módulo (además de core.audit_events, que registra solo quién disparó qué).
+model MoodleSyncRun {
+  id              String           @id @default(uuid(7)) @db.Uuid
+  status          MoodleSyncStatus @default(running)
+  triggeredById   String?          @db.Uuid
+  startedAt       DateTime         @default(now())
+  finishedAt      DateTime?
+  coursesCount    Int              @default(0)
+  studentsCount   Int              @default(0)
+  enrollmentsCount Int             @default(0)
+  errorMessage    String?
+
+  @@index([startedAt])
+  @@map("sync_runs")
+  @@schema("moodle")
+}
+
+/// Curso replicado desde `core_course_get_courses` (+ `core_course_get_categories`
+/// para categoryName, que el wsfunction de cursos no trae).
+model MoodleCourse {
+  id           String            @id @default(uuid(7)) @db.Uuid
+  moodleId     Int               @unique
+  shortname    String
+  fullname     String
+  categoryId   Int?
+  categoryName String?
+  visible      Boolean           @default(true)
+  startDate    DateTime?
+  syncedAt     DateTime          @default(now())
+  enrollments  MoodleEnrollment[]
+  grades       MoodleGrade[]
+
+  @@map("courses")
+  @@schema("moodle")
+}
+
+/// Alumno replicado desde `core_enrol_get_enrolled_users` (rol student).
+model MoodleStudent {
+  id          String            @id @default(uuid(7)) @db.Uuid
+  moodleId    Int               @unique
+  fullname    String
+  email       String
+  syncedAt    DateTime          @default(now())
+  enrollments MoodleEnrollment[]
+  grades      MoodleGrade[]
+
+  @@map("students")
+  @@schema("moodle")
+}
+
+/// Matrícula curso↔alumno (rol "student" en `core_enrol_get_enrolled_users`).
+model MoodleEnrollment {
+  id        String        @id @default(uuid(7)) @db.Uuid
+  courseId  String        @db.Uuid
+  studentId String        @db.Uuid
+  course    MoodleCourse  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  student   MoodleStudent @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  syncedAt  DateTime      @default(now())
+
+  @@unique([courseId, studentId])
+  @@map("enrollments")
+  @@schema("moodle")
+}
+
+/// Calificación total de curso por alumno, del item `itemtype = "course"` que
+/// devuelve `gradereport_user_get_grade_items`.
+model MoodleGrade {
+  id        String        @id @default(uuid(7)) @db.Uuid
+  courseId  String        @db.Uuid
+  studentId String        @db.Uuid
+  course    MoodleCourse  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  student   MoodleStudent @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  grade     Float?
+  gradeMax  Float?
+  syncedAt  DateTime      @default(now())
+
+  @@unique([courseId, studentId])
+  @@map("grades")
+  @@schema("moodle")
 }

@@ -56,20 +56,22 @@ describe('App (shell)', () => {
     render(<App />);
 
     expect(await screen.findByTestId('shell-nav')).toBeInTheDocument();
-    // admin ve el módulo demo y el de administración (manifest core-admin)
+    // admin ve el módulo demo, el de administración (core-admin) y moodle-insights (sin requiredRoles)
     expect(screen.getByText('Demo Hello')).toBeInTheDocument();
     expect(screen.getByText('Usuarios')).toBeInTheDocument();
+    expect(screen.getByText('Moodle Insights')).toBeInTheDocument();
     // el índice redirige al primer ítem visible: la página del módulo hello
     expect(await screen.findByTestId('hello-ok')).toBeInTheDocument();
   });
 
-  it('un usuario sin rol admin no ve el módulo de administración', async () => {
+  it('un usuario sin rol admin no ve el módulo de administración (moodle-insights sí)', async () => {
     localStorage.setItem('awk.token', 'token-test');
     mockApi(userFixture);
     render(<App />);
 
     expect(await screen.findByTestId('shell-nav')).toBeInTheDocument();
     expect(screen.getByText('Demo Hello')).toBeInTheDocument();
+    expect(screen.getByText('Moodle Insights')).toBeInTheDocument();
     expect(screen.queryByText('Usuarios')).not.toBeInTheDocument();
   });
 

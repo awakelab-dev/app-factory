@@ -7,5 +7,5 @@ export const coreAdminManifest: ModuleManifest = {
   description: 'Usuarios, roles y auditoría de la plataforma',
   basePath: '/admin',
   requiredRoles: ['admin'],
-  nav: [{ label: 'Usuarios', path: '/admin/usuarios', requiredRoles: ['admin'] }]
+  nav: [{ label: 'Usuarios', path: '/admin/usuarios', requiredRoles: ['admin'], icon: 'ShieldCheck' }]
 };

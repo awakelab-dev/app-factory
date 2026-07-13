@@ -1,8 +1,27 @@
+import { GraduationCap, LayoutGrid, ShieldCheck, Sparkles } from 'lucide-react';
+import type { ComponentType } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { Button } from '@awk/ui';
 import type { AuthUser } from '@awk/types';
 import { useAuth } from '../auth/auth-context';
 import { visibleNav } from '../modules/registry';
+
+/**
+ * Registro de iconos de sidebar (estilo consola AWS: un icono por app/módulo).
+ * Los manifests solo declaran el NOMBRE (string serializable, ver @awk/types);
+ * cada módulo nuevo añade su icono aquí. LayoutGrid es el fallback si el
+ * manifest no declara icono o declara uno que el shell no reconoce todavía.
+ */
+const NAV_ICONS: Record<string, ComponentType<{ className?: string }>> = {
+  Sparkles,
+  ShieldCheck,
+  GraduationCap
+};
+
+function NavIcon({ name }: { name?: string }) {
+  const Icon = (name && NAV_ICONS[name]) || LayoutGrid;
+  return <Icon className="h-4 w-4 shrink-0" />;
+}
 
 /**
  * Shell de la plataforma: sidebar con el menú construido desde los
@@ -29,13 +48,14 @@ export function Layout({ user }: { user: AuthUser }) {
               key={item.path}
               to={item.path}
               className={({ isActive }) =>
-                `block rounded-lg px-3 py-2 text-sm transition-colors ${
+                `flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
                   isActive
                     ? 'bg-awk-blue-700 text-awk-cyan-300'
                     : 'text-awk-blue-100 hover:bg-awk-blue-800'
                 }`
               }
             >
+              <NavIcon name={item.icon} />
               {item.label}
             </NavLink>
           ))}

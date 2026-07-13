@@ -74,7 +74,9 @@ export const navItemSchema = z.object({
   /** Ruta absoluta dentro del shell (p. ej. "/admin/usuarios"). */
   path: z.string().startsWith('/'),
   /** Roles que ven este ítem; ausente o vacío = visible para cualquier usuario autenticado. */
-  requiredRoles: z.array(z.string()).optional()
+  requiredRoles: z.array(z.string()).optional(),
+  /** Nombre de icono de lucide-react (p. ej. "GraduationCap"); el shell cae a uno por defecto si falta o no lo reconoce. */
+  icon: z.string().optional()
 });
 
 export type NavItem = z.infer<typeof navItemSchema>;
@@ -93,3 +95,61 @@ export const moduleManifestSchema = z.object({
 });
 
 export type ModuleManifest = z.infer<typeof moduleManifestSchema>;
+
+// ---------------------------------------------------------------------------
+// Módulo moodle-insights (primer módulo ejemplar, D-020/D-021/D-022): réplica
+// parcial de una instancia Moodle (cursos, alumnos, calificaciones) vía Moodle
+// Web Services, disparada a mano con el botón "Actualizar datos" — no hay
+// sincronización automática. Ver docs/DECISIONES.md D-022 para el detalle del
+// contrato (funciones wsfunction usadas, alcance single-tenant).
+// ---------------------------------------------------------------------------
+
+export const moodleSyncStatusSchema = z.enum(['running', 'success', 'error']);
+export type MoodleSyncStatus = z.infer<typeof moodleSyncStatusSchema>;
+
+export const moodleSyncRunSchema = z.object({
+  id: z.string(),
+  status: moodleSyncStatusSchema,
+  startedAt: z.iso.datetime(),
+  finishedAt: z.iso.datetime().nullable(),
+  coursesCount: z.number().int(),
+  studentsCount: z.number().int(),
+  enrollmentsCount: z.number().int(),
+  errorMessage: z.string().nullable()
+});
+export type MoodleSyncRun = z.infer<typeof moodleSyncRunSchema>;
+
+export const moodleSummarySchema = z.object({
+  totalCourses: z.number().int(),
+  visibleCourses: z.number().int(),
+  totalStudents: z.number().int(),
+  totalEnrollments: z.number().int(),
+  avgGrade: z.number().nullable(),
+  coursesByCategory: z.array(z.object({ categoryName: z.string(), count: z.number().int() })),
+  lastSync: moodleSyncRunSchema.nullable()
+});
+export type MoodleSummary = z.infer<typeof moodleSummarySchema>;
+
+export const moodleCourseRowSchema = z.object({
+  id: z.string(),
+  moodleId: z.number().int(),
+  shortname: z.string(),
+  fullname: z.string(),
+  categoryName: z.string().nullable(),
+  visible: z.boolean(),
+  studentsCount: z.number().int(),
+  avgGrade: z.number().nullable()
+});
+export type MoodleCourseRow = z.infer<typeof moodleCourseRowSchema>;
+export const moodleCoursesResponseSchema = z.array(moodleCourseRowSchema);
+
+export const moodleStudentRowSchema = z.object({
+  id: z.string(),
+  moodleId: z.number().int(),
+  fullname: z.string(),
+  email: z.string(),
+  coursesCount: z.number().int(),
+  avgGrade: z.number().nullable()
+});
+export type MoodleStudentRow = z.infer<typeof moodleStudentRowSchema>;
+export const moodleStudentsResponseSchema = z.array(moodleStudentRowSchema);

@@ -10,5 +10,5 @@ export const helloManifest: ModuleManifest = {
   name: 'Demo Hello',
   description: 'Verificación end-to-end del contrato tipado api↔web (Fase 0)',
   basePath: '/hello',
-  nav: [{ label: 'Demo Hello', path: '/hello' }]
+  nav: [{ label: 'Demo Hello', path: '/hello', icon: 'Sparkles' }]
 };

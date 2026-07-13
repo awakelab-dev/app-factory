@@ -24,6 +24,10 @@ services:
       PORT: 3000
       DATABASE_URL: ${DATABASE_URL}
       JWT_SECRET: ${JWT_SECRET}
+      # Módulo moodle-insights (D-022): opcionales — sin ellas el módulo
+      # muestra el replicado vacío y el sync devuelve 503, sin tumbar la API.
+      MOODLE_URL: ${MOODLE_URL:-}
+      MOODLE_TOKEN: ${MOODLE_TOKEN:-}
     ports:
       - '127.0.0.1:${API_PORT_HOST}:3000'
     healthcheck:

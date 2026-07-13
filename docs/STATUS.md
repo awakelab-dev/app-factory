@@ -2,8 +2,8 @@
 
 > Actualizar al cerrar CADA sesión de trabajo. Este archivo es lo primero que lee cualquier tarea nueva.
 
-**Última actualización**: 2026-07-13 (sesión de doc/alcance, sin cambios de código: aclarado el alcance del "primer módulo ejemplar" — D-020 descarta `legacy/` como candidato, ver D-005/docs/04 para por qué su dashboard de Fase 1 tampoco lleva carga de ZIP; D-021 fija que ese módulo se construye con Claude en el mismo proceso colaborativo de siempre, no por Leonardo al margen de Cowork. Sigue pendiente que Leonardo elija el prototipo real de negocio antes de arrancar)
-**Fase actual**: Fase 0 — Fundaciones (core mínimo + CI en verde; managed PostgreSQL y Docker listos; **staging y production sirviendo por HTTPS en `apps.awakelab.world`, dominio viejo retirado**)
+**Última actualización**: 2026-07-13 (**primer módulo ejemplar construido**: `moodle-insights`, dashboard denso de solo lectura sobre una réplica parcial de una instancia Moodle vía Web Services, D-022. Backend + frontend completos, 45 tests nuevos en verde, build/lint/typecheck verdes en una copia de verificación fuera del mount — ver D-023 para por qué. Pendiente: Leonardo valida contra un Moodle real)
+**Fase actual**: Fase 0 — Fundaciones (core mínimo + CI en verde; managed PostgreSQL y Docker listos; staging y production sirviendo por HTTPS en `apps.awakelab.world`; **primer módulo ejemplar sobre el patrón D-011 construido — falta validarlo contra un Moodle real y cerrar Fase 0**)
 
 ## Hecho
 
@@ -26,50 +26,43 @@
   - **Bug crítico encontrado y corregido en el camino**: `apps/api/Dockerfile` quedó con el stage `migrator` *después* de `runtime`; sin `target:` explícito en `ci.yml`, Docker construye por defecto el *último* stage del archivo, así que el job `docker` publicó brevemente el contenido de `migrator` bajo el tag `awkplatform-api` → crash loop en producción (intentaba `prisma migrate deploy` en vez de levantar el servidor). Corregido añadiendo `target: runtime` explícito en `ci.yml` (aplica a ambos Dockerfiles, que ya tienen un stage llamado `runtime`). **Lección para cualquier Dockerfile futuro con stages auxiliares (D-016): declarar siempre `target:` explícito en CI, nunca depender del último stage del archivo.**
   - Otros bugs de una sola vez ya corregidos y documentados en `docs/runbooks/lightsail-deploy.md`/`lightsail-postgres.md`: `docker run --env-file` no interpreta comillas (rompía `DATABASE_URL`/`JWT_SECRET` citados); `GRANT ALL ON DATABASE` no alcanza el schema `public` donde Prisma pone `_prisma_migrations`; `pg`/`@prisma/adapter-pg` trata `sslmode=require` como `verify-full` y falla contra el cert de Lightsail (necesita `uselibpqcompat=true`); `pnpm exec` (no solo `pnpm turbo`) dispara el chequeo de deps de pnpm 11 y borra devDependencies sin TTY — usar binarios directos `node_modules/.bin/<bin>`.
 
+- **Primer módulo ejemplar: `moodle-insights`** (2026-07-13, D-020/D-021/D-022 — resuelve el bloqueo "elegir prototipo real de negocio"): dashboard denso de solo lectura sobre una réplica parcial de una instancia Moodle (cursos, alumnos, calificaciones), con un botón "Actualizar datos" como único disparador de sync (sin cron ni webhook). Resumen (detalle completo en D-022):
+  - **Backend** (`apps/api/src/modules/moodle-insights/`): `MoodleClientService` (Moodle Web Services por REST/fetch nativo, 4 wsfunctions), `MoodleSyncService` (full-refresh transaccional + registro en `moodle.sync_runs` + auditoría), `MoodleQueryService` (KPIs/tablas), `MoodleInsightsController` (`POST /sync` solo admin, `GET /summary|/courses|/students` cualquier autenticado). Nuevo schema PG `moodle` (multiSchema junto a `core`, migración a mano `20260713120000_moodle_insights_init` — mismo motivo que `core_init`: sin schema-engine en el sandbox). Variables `MOODLE_URL`/`MOODLE_TOKEN` (opcionales, ver `.env.example`; sin ellas el módulo funciona con el replicado vacío y el sync responde 503) propagadas a `turbo.json`, `deploy/docker-compose.yml` y las plantillas `.env` de staging/producción.
+  - **Frontend** (`apps/web/src/modules/moodle-insights/`): `MoodleDashboardPage` — KPIs, 2 gráficos (`recharts`, primera dependencia de charts de la plataforma) y 2 tablas densas (cursos/alumnos, estilo consola AWS pedido por Leonardo), botón de sync deshabilitado para no-admin. `NavItem` (`@awk/types`) gana el campo opcional `icon` (nombre de `lucide-react`, primera dependencia de iconos) y el shell (`Layout.tsx`) ya lo pinta en el sidebar — aplicado también a `hello`/`core-admin`.
+  - **Tests**: 35 nuevos en `apps/api` (cliente Moodle con fixtures/mocks de fetch, sync con Prisma mockeado, queries) + 10 en `apps/web` (incluye `MoodleDashboardPage.test.tsx` con `App` completo y fetch mockeado). Sin acceso a un Moodle real en el sandbox (sin ruta de red saliente, igual que D-016) — desarrollado 100% contra fixtures fieles a la documentación pública de Moodle; **pendiente que Leonardo lo valide contra su Moodle real** (ver "Bloqueos").
+  - **Verificación**: turbo build/lint/typecheck/test corridos en verde (14/14, 45/45 tests nuevos + toda la suite existente sigue verde) sobre una copia del repo fuera del mount de Cowork — el mount no permite recrear `node_modules` ni el output de `prisma generate` (D-023, con el workaround documentado ahí). `pnpm-lock.yaml` real del repo ya actualizado con `recharts`+`lucide-react` (copiado desde la verificación, no solo editado a mano) para que `pnpm install --frozen-lockfile` de CI no falle.
+
 ## En curso
 
-(nada abierto — migración de dominio D-018/D-019 cerrada por completo)
+(nada abierto — módulo `moodle-insights` completo en código; queda la validación contra Moodle real, ver "Bloqueos" y "Siguiente")
 
 ## Siguiente (en orden)
 
-1. Primer módulo ejemplar (elegir prototipo real de negocio, no legacy/ — D-020) → plantilla de módulo. Construido por Claude en el mismo proceso colaborativo de siempre, no por Leonardo al margen de Cowork (D-021).
-2. (Opcional, no bloqueante) Rotar la contraseña de MongoDB expuesta en `backend/.env` en el historial de git y evaluar purgarla con `git-filter-repo` (ver "Bloqueos"). También considerar rotar el password de `app_staging`/`app_production` y los `JWT_SECRET`: quedaron pegados en texto plano en un chat de Cowork durante esta sesión (no se guardaron en memoria ni en el repo, pero el historial del chat los tiene).
+1. Leonardo valida `moodle-insights` contra un Moodle real: habilitar un servicio externo con las 4 funciones de `.env.example`, generar el token, configurar `MOODLE_URL`/`MOODLE_TOKEN` (local y/o staging), correr un sync real y revisar que los datos calcen. Si algo en el contrato real de Moodle difiere de los fixtures (nombres de campos, formato de `gradereport_user_get_grade_items`, etc.), corregir `moodle-client.service.ts` — está aislado justo para que ese cambio no toque sync/query/controller.
+2. Con el módulo ejemplar validado, Fase 0 queda cerrada (ver docs/06-roadmap.md) → decidir el arranque de Fase 1 (pipeline con spec intermedia, docs/04) o si conviene un segundo módulo de negocio antes.
+3. (Opcional, no bloqueante) Rotar la contraseña de MongoDB expuesta en `backend/.env` en el historial de git y evaluar purgarla con `git-filter-repo` (ver "Bloqueos"). También considerar rotar el password de `app_staging`/`app_production` y los `JWT_SECRET`: quedaron pegados en texto plano en un chat de Cowork durante esta sesión (no se guardaron en memoria ni en el repo, pero el historial del chat los tiene).
 
 ### Mensaje inicial sugerido para la próxima tarea (copiar/pegar)
 
-> Modelo recomendado: Sonnet para infra mecánica; Opus si el primer módulo
-> ejemplar requiere diseño de dominio no trivial.
+> Modelo recomendado: Sonnet — es validación/ajuste de integración contra un
+> sistema externo real, no diseño de dominio nuevo.
 
 ```
-[factory] Primer módulo ejemplar
+[module:moodle-insights] Validar contra un Moodle real
 
-Objetivo: elegir UN PROTOTIPO REAL DE NEGOCIO (uno del tipo que un gerente
-construiría en Cowork — no legacy/) y construirlo siguiendo el patrón
-fijado en D-011 (auth/RBAC/manifest) para que sirva de plantilla de
-módulo replicable por la fábrica.
+Objetivo: el módulo moodle-insights (D-022) está completo en código pero
+se construyó 100% contra fixtures — el sandbox de Cowork no tiene ruta de
+red a un Moodle real (mismo motivo que D-016). Necesito validarlo con la
+instancia real que voy a configurar (URL + token de un servicio externo
+con core_course_get_courses, core_course_get_categories,
+core_enrol_get_enrolled_users y gradereport_user_get_grade_items — ver
+apps/api/.env.example) y corregir moodle-client.service.ts si el
+contrato real difiere de lo documentado.
 
-Proceso (D-021): igual que el resto de Fase 0 — Claude implementa de
-forma iterativa (diseño, código, tests, buenas prácticas) y Leonardo
-supervisa/decide sobre negocio y requerimientos, ejecutando solo los
-pasos que de verdad requieran su Mac (red al Lightsail, etc., como en
-D-016/D-018). "Construido a mano" (docs/06-roadmap.md) distingue esto
-del pipeline automatizado de la fábrica (spec + gates + generación por
-Agent SDK, Fase 1-3, aún no existe) — no implica prescindir de Claude.
+Terminado cuando: un sync real (POST /api/moodle-insights/sync) contra mi
+Moodle trae cursos/alumnos/calificaciones correctos en el dashboard.
 
-Antes de arrancar, Leonardo debe aportar/elegir el prototipo real de
-negocio (no lo inventa Claude): en ausencia del pipeline de intake de
-docs/04, aquí Leonardo cumple el rol de "gerente" (necesidad de negocio)
-y de "revisor técnico".
-
-IMPORTANTE (D-020): legacy/ (carga de ZIP + dashboard de seguimiento de
-estado) NO es candidato a módulo ejemplar. Es el panel de control interno
-de la fábrica (docs/06-roadmap.md, Fase 1: "conservar conceptualmente el
-dashboard y el stepper") y se reconstruye ahí, no ahora. Su único uso aquí
-es como referencia de estilo/patrón general de una app fullstack simple,
-nunca como base de código ni como el prototipo elegido.
-
-Antes de empezar: leer docs/STATUS.md, docs/DECISIONES.md completo (D-001
-a D-021) y docs/07-metodo-de-trabajo.md.
+Antes de empezar: leer docs/STATUS.md y docs/DECISIONES.md D-022/D-023.
 ```
 
 ### Receta de verificación local con BD (ya completada — queda de referencia para levantar el entorno de nuevo)
@@ -104,10 +97,11 @@ Si `prisma migrate dev` reportara drift contra `core_init`: regenerar la migraci
 - El `node_modules` del repo quedó linkeado al store del propio repo (`.pnpm-store/`, gitignored): las tareas de sandbox instalan con `pnpm install --store-dir "$PWD/.pnpm-store"` (rápido: el store persiste en el repo). En el Mac local, `pnpm install` normal relinkea.
 - turbo 2 corre en strict env: las vars extra (p. ej. `PRISMA_*`) pasan por `globalPassThroughEnv` en `turbo.json` (ya configurado).
 - Los procesos en background mueren entre llamadas del sandbox: usar comandos foreground con `timeout` (pnpm install es reanudable).
+- **La carpeta de usuario montada (`/Users/leonardobarreto/projects/app-factory` tal como la ve una tarea de Cowork) no permite `unlink()`** — ni siquiera de symlinks dentro de `node_modules` o del output gitignored de `prisma generate`. `pnpm install` (recrea `node_modules`) y `prisma generate` (limpia su carpeta antes de escribir) fallan ahí con `EPERM`/`ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY`. Sobrescribir CONTENIDO sí funciona (`cp`, Write/Edit) — el límite es específicamente borrar/recrear. Workaround (D-023): `rsync` el repo (sin `node_modules/.git/.turbo/src/generated`) a algo como `/tmp/verify/app-factory`, instalar/generar/buildear/testear ahí libremente, y `cp` de vuelta solo los artefactos versionados que cambien (típicamente `pnpm-lock.yaml`) — el código fuente se sigue editando siempre en el mount real con Write/Edit, nunca en la copia temporal.
 
 ## Bloqueos / pendientes de decisión
 
-- Elección del prototipo real de negocio que servirá de módulo ejemplar (no puede ser legacy/, ver D-020).
+- **Validar `moodle-insights` (D-022) contra un Moodle real** — desarrollado con fixtures en el sandbox (sin ruta de red saliente, ver D-023/D-016); Leonardo debe habilitar el servicio externo y las credenciales (ver `apps/api/.env.example`) y correr un sync real. Ver "Siguiente".
 - IdP para SSO: ¿el grupo usa Microsoft 365/Entra ID? (condiciona Keycloak vs Entra). El dev-login actual queda encapsulado en AuthService: al llegar el IdP solo se sustituye ese método.
 - **Seguridad**: rotar la contraseña de MongoDB expuesta en el historial de git (`backend/.env`, IP pública 84.247.191.200) y restringir ese Mongo a red privada si sigue en uso. Sigue en el historial después de la purga de D-014 (esa purga solo sacó `node_modules` y `uploads`, no tocó `.env`); rotar la contraseña primero, y de paso evaluar si conviene purgar también `backend/.env` con `git-filter-repo` (ya instalado y probado esta sesión) ya que el repo remoto sigue sin nada publicado.
 

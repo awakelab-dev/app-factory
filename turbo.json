@@ -1,6 +1,13 @@
 {
   "$schema": "https://turborepo.com/schema.json",
-  "globalPassThroughEnv": ["DATABASE_URL", "JWT_SECRET", "NODE_ENV", "PRISMA_*"],
+  "globalPassThroughEnv": [
+    "DATABASE_URL",
+    "JWT_SECRET",
+    "NODE_ENV",
+    "PRISMA_*",
+    "MOODLE_URL",
+    "MOODLE_TOKEN"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
