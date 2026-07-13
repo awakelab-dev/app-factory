@@ -2,7 +2,7 @@
 
 > Actualizar al cerrar CADA sesión de trabajo. Este archivo es lo primero que lee cualquier tarea nueva.
 
-**Última actualización**: 2026-07-13 (sesión infra: **migración de dominio ejecutada y confirmada** — D-018/D-019. Leonardo ejecutó `docs/runbooks/migracion-dominio-2026-07.md` a mano por SSH desde su Mac, mismo motivo que D-016/D-017: el sandbox de Cowork no tiene ruta de red al Lightsail)
+**Última actualización**: 2026-07-13 (sesión de doc/alcance, sin cambios de código: aclarado el alcance del "primer módulo ejemplar" — D-020 descarta `legacy/` como candidato, ver D-005/docs/04 para por qué su dashboard de Fase 1 tampoco lleva carga de ZIP; D-021 fija que ese módulo se construye con Claude en el mismo proceso colaborativo de siempre, no por Leonardo al margen de Cowork. Sigue pendiente que Leonardo elija el prototipo real de negocio antes de arrancar)
 **Fase actual**: Fase 0 — Fundaciones (core mínimo + CI en verde; managed PostgreSQL y Docker listos; **staging y production sirviendo por HTTPS en `apps.awakelab.world`, dominio viejo retirado**)
 
 ## Hecho
@@ -32,7 +32,7 @@
 
 ## Siguiente (en orden)
 
-1. Primer módulo ejemplar construido a mano (elegir prototipo real sencillo) → plantilla de módulo.
+1. Primer módulo ejemplar (elegir prototipo real de negocio, no legacy/ — D-020) → plantilla de módulo. Construido por Claude en el mismo proceso colaborativo de siempre, no por Leonardo al margen de Cowork (D-021).
 2. (Opcional, no bloqueante) Rotar la contraseña de MongoDB expuesta en `backend/.env` en el historial de git y evaluar purgarla con `git-filter-repo` (ver "Bloqueos"). También considerar rotar el password de `app_staging`/`app_production` y los `JWT_SECRET`: quedaron pegados en texto plano en un chat de Cowork durante esta sesión (no se guardaron en memoria ni en el repo, pero el historial del chat los tiene).
 
 ### Mensaje inicial sugerido para la próxima tarea (copiar/pegar)
@@ -41,15 +41,35 @@
 > ejemplar requiere diseño de dominio no trivial.
 
 ```
-[factory] Primer módulo ejemplar construido a mano
+[factory] Primer módulo ejemplar
 
-Objetivo: elegir un prototipo real sencillo (ver legacy/ como referencia
-conceptual, no como base de código, D-008) y construirlo a mano siguiendo
-el patrón fijado en D-011 (auth/RBAC/manifest) para que sirva de plantilla
-de módulo replicable por la fábrica.
+Objetivo: elegir UN PROTOTIPO REAL DE NEGOCIO (uno del tipo que un gerente
+construiría en Cowork — no legacy/) y construirlo siguiendo el patrón
+fijado en D-011 (auth/RBAC/manifest) para que sirva de plantilla de
+módulo replicable por la fábrica.
+
+Proceso (D-021): igual que el resto de Fase 0 — Claude implementa de
+forma iterativa (diseño, código, tests, buenas prácticas) y Leonardo
+supervisa/decide sobre negocio y requerimientos, ejecutando solo los
+pasos que de verdad requieran su Mac (red al Lightsail, etc., como en
+D-016/D-018). "Construido a mano" (docs/06-roadmap.md) distingue esto
+del pipeline automatizado de la fábrica (spec + gates + generación por
+Agent SDK, Fase 1-3, aún no existe) — no implica prescindir de Claude.
+
+Antes de arrancar, Leonardo debe aportar/elegir el prototipo real de
+negocio (no lo inventa Claude): en ausencia del pipeline de intake de
+docs/04, aquí Leonardo cumple el rol de "gerente" (necesidad de negocio)
+y de "revisor técnico".
+
+IMPORTANTE (D-020): legacy/ (carga de ZIP + dashboard de seguimiento de
+estado) NO es candidato a módulo ejemplar. Es el panel de control interno
+de la fábrica (docs/06-roadmap.md, Fase 1: "conservar conceptualmente el
+dashboard y el stepper") y se reconstruye ahí, no ahora. Su único uso aquí
+es como referencia de estilo/patrón general de una app fullstack simple,
+nunca como base de código ni como el prototipo elegido.
 
 Antes de empezar: leer docs/STATUS.md, docs/DECISIONES.md completo (D-001
-a D-016) y docs/07-metodo-de-trabajo.md.
+a D-021) y docs/07-metodo-de-trabajo.md.
 ```
 
 ### Receta de verificación local con BD (ya completada — queda de referencia para levantar el entorno de nuevo)
@@ -87,7 +107,7 @@ Si `prisma migrate dev` reportara drift contra `core_init`: regenerar la migraci
 
 ## Bloqueos / pendientes de decisión
 
-- Elección del prototipo real que servirá de módulo ejemplar.
+- Elección del prototipo real de negocio que servirá de módulo ejemplar (no puede ser legacy/, ver D-020).
 - IdP para SSO: ¿el grupo usa Microsoft 365/Entra ID? (condiciona Keycloak vs Entra). El dev-login actual queda encapsulado en AuthService: al llegar el IdP solo se sustituye ese método.
 - **Seguridad**: rotar la contraseña de MongoDB expuesta en el historial de git (`backend/.env`, IP pública 84.247.191.200) y restringir ese Mongo a red privada si sigue en uso. Sigue en el historial después de la purga de D-014 (esa purga solo sacó `node_modules` y `uploads`, no tocó `.env`); rotar la contraseña primero, y de paso evaluar si conviene purgar también `backend/.env` con `git-filter-repo` (ya instalado y probado esta sesión) ya que el repo remoto sigue sin nada publicado.
 
