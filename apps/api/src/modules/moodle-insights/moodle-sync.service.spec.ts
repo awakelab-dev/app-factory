@@ -62,13 +62,31 @@ function makeAudit(): AuditService {
   return { log: vi.fn().mockResolvedValue(undefined) } as unknown as AuditService;
 }
 
-describe('MoodleSyncService.run — camino feliz', () => {
+describe('MoodleSyncService.start', () => {
+  it('crea el sync_run en running y responde sin esperar el fetch a Moodle', async () => {
+    const prisma = makePrisma();
+    const client = makeClient();
+    const audit = makeAudit();
+
+    const result = await new MoodleSyncService(prisma, client, audit).start('admin-1');
+
+    expect(result.status).toBe('running');
+    expect(prisma.moodleSyncRun.create).toHaveBeenCalledWith({
+      data: { triggeredById: 'admin-1', status: 'running' }
+    });
+    // start() no dispara el fetch real — eso es processPendingSync, y el
+    // controller lo invoca por separado sin esperarlo (fire-and-forget).
+    expect(client.getCourses).not.toHaveBeenCalled();
+  });
+});
+
+describe('MoodleSyncService.processPendingSync — camino feliz', () => {
   it('reemplaza el replicado, marca el run como success y audita', async () => {
     const prisma = makePrisma();
     const client = makeClient();
     const audit = makeAudit();
 
-    const result = await new MoodleSyncService(prisma, client, audit).run('admin-1');
+    const result = await new MoodleSyncService(prisma, client, audit).processPendingSync('run-1', 'admin-1');
 
     expect(result.status).toBe('success');
     expect(result.coursesCount).toBe(1);
@@ -93,7 +111,7 @@ describe('MoodleSyncService.run — camino feliz', () => {
   });
 });
 
-describe('MoodleSyncService.run — resiliencia por curso', () => {
+describe('MoodleSyncService.processPendingSync — resiliencia por curso', () => {
   it('si un curso falla al traer notas/alumnos, el sync sigue en success con los demás cursos completos', async () => {
     const prisma = makePrisma();
     const audit = makeAudit();
@@ -125,7 +143,7 @@ describe('MoodleSyncService.run — resiliencia por curso', () => {
       })
     } as unknown as MoodleClientService;
 
-    const result = await new MoodleSyncService(prisma, client, audit).run('admin-1');
+    const result = await new MoodleSyncService(prisma, client, audit).processPendingSync('run-1', 'admin-1');
 
     // El sync como un todo tiene éxito — un curso con datos inválidos en
     // Moodle no aborta el replicado completo.
@@ -134,16 +152,16 @@ describe('MoodleSyncService.run — resiliencia por curso', () => {
 
     // Ambos cursos quedan con su alumno (getEnrolledStudents no falló para
     // ninguno); solo el curso 12 aporta una fila de nota — el 13 queda sin
-    // nota para esta corrida, sin que el resto se pierda.
-    // El array exacto de un elemento ya confirma que el curso 13 no aportó
-    // fila de nota (toHaveBeenCalledWith exige longitud exacta del array).
+    // nota para esta corrida, sin que el resto se pierda. El array exacto de
+    // un elemento ya confirma que el curso 13 no aportó fila de nota
+    // (toHaveBeenCalledWith exige longitud exacta del array).
     expect(prisma.moodleGrade.createMany).toHaveBeenCalledWith({
       data: [expect.objectContaining({ grade: 8.5, gradeMax: 10 })]
     });
   });
 });
 
-describe('MoodleSyncService.run — camino de error', () => {
+describe('MoodleSyncService.processPendingSync — camino de error', () => {
   it('si Moodle falla, marca el run como error sin tocar $transaction', async () => {
     const prisma = makePrisma();
     const client = {
@@ -155,7 +173,7 @@ describe('MoodleSyncService.run — camino de error', () => {
     } as unknown as MoodleClientService;
     const audit = makeAudit();
 
-    const result = await new MoodleSyncService(prisma, client, audit).run();
+    const result = await new MoodleSyncService(prisma, client, audit).processPendingSync('run-1');
 
     expect(result.status).toBe('error');
     expect(result.errorMessage).toBe('Moodle no responde');

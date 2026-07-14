@@ -1,7 +1,8 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthUser, MoodleCourseRow, MoodleStudentRow, MoodleSummary, MoodleSyncRun } from '@awk/types';
 import { App } from '../../App';
+import { MOODLE_SYNC_POLL_INTERVAL_MS } from './MoodleDashboardPage';
 
 function minutesAgo(n: number): string {
   return new Date(Date.now() - n * 60_000).toISOString();
@@ -53,8 +54,13 @@ const studentsFixture: MoodleStudentRow[] = [
   { id: 's-1', moodleId: 1, fullname: 'Alumna Uno', email: 'a1@test.dev', coursesCount: 1, avgGrade: 8 }
 ];
 const syncRunFixture: MoodleSyncRun = { ...summaryFixture.lastSync! };
+// POST /sync ahora responde 'running' apenas se crea el sync_run — el fetch
+// real a Moodle sigue en background (ver MOODLE_SYNC_POLL_INTERVAL_MS en el
+// componente); el fixture 'success' de arriba es lo que /summary ya refleja
+// una vez que el polling lo detecta.
+const runningSyncRunFixture: MoodleSyncRun = { ...syncRunFixture, status: 'running', finishedAt: null };
 
-function mockApi(me: AuthUser, syncResponse: () => Promise<unknown> = () => ok(syncRunFixture)) {
+function mockApi(me: AuthUser, syncResponse: () => Promise<unknown> = () => ok(runningSyncRunFixture)) {
   vi.stubGlobal(
     'fetch',
     vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
@@ -92,7 +98,20 @@ describe('MoodleDashboardPage', () => {
     const syncButton = screen.getByTestId('sync-button');
     expect(syncButton).not.toBeDisabled();
 
-    fireEvent.click(syncButton);
+    // POST /sync responde 'running' de inmediato; el componente espera
+    // MOODLE_SYNC_POLL_INTERVAL_MS antes de volver a consultar /summary (que
+    // ya refleja 'success' en el fixture) — fake timers para no esperar de
+    // verdad esos segundos en el test.
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(syncButton);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(MOODLE_SYNC_POLL_INTERVAL_MS);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
     expect(await screen.findByText('Actualizado hace 5 min')).toBeInTheDocument();
 
     const fetchMock = vi.mocked(fetch);
@@ -120,5 +139,55 @@ describe('MoodleDashboardPage', () => {
     expect(await screen.findByTestId('sync-error')).toHaveTextContent(
       'MOODLE_URL/MOODLE_TOKEN no están configuradas todavía'
     );
+  });
+
+  it('si el sync termina en error durante el polling en background, muestra el aviso', async () => {
+    // Reproduce el caso real (2026-07-13): POST /sync responde 'running' de
+    // inmediato, y es GET /summary (por polling) el que eventualmente refleja
+    // que Moodle rechazó el sync — no una respuesta directa de POST /sync.
+    let summaryCallCount = 0;
+    const erroredSummary: MoodleSummary = {
+      ...summaryFixture,
+      lastSync: {
+        ...summaryFixture.lastSync!,
+        status: 'error',
+        finishedAt: minutesAgo(0),
+        errorMessage: 'Moodle rechazó gradereport_user_get_grade_items (invalidresponse)'
+      }
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? 'GET';
+        if (url.endsWith('/api/auth/me')) return ok(adminFixture);
+        if (url.endsWith('/api/moodle-insights/summary')) {
+          summaryCallCount += 1;
+          // La primera llamada es la carga inicial del dashboard; recién a
+          // partir de la segunda (el polling tras el click) Moodle "responde"
+          // con el error.
+          return ok(summaryCallCount === 1 ? summaryFixture : erroredSummary);
+        }
+        if (url.endsWith('/api/moodle-insights/courses')) return ok(coursesFixture);
+        if (url.endsWith('/api/moodle-insights/students')) return ok(studentsFixture);
+        if (url.endsWith('/api/moodle-insights/sync') && method === 'POST') return ok(runningSyncRunFixture);
+        return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) });
+      })
+    );
+
+    render(<App />);
+    expect(await screen.findByText('Matemáticas I')).toBeInTheDocument();
+
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(screen.getByTestId('sync-button'));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(MOODLE_SYNC_POLL_INTERVAL_MS);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(await screen.findByTestId('sync-error')).toHaveTextContent('invalidresponse');
   });
 });

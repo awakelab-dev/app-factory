@@ -47,6 +47,18 @@ interface GradeRow {
  * reemplaza por completo el replicado en una transacción ("full refresh",
  * ver comentario en schema.prisma). Nunca se dispara solo — cada click queda
  * como un MoodleSyncRun (éxito o error) y un evento en core.audit_events.
+ *
+ * **Asíncrono desde 2026-07-13** (validado contra una instancia real de 627
+ * cursos/5512 alumnos: el fetch+escritura completo tardó ~9m45s). Sostener
+ * eso dentro de una sola request HTTP síncrona es frágil (timeout de
+ * Nginx/proxy, pestaña del navegador cerrada, redeploy a medio camino) — el
+ * controller llama a `start()` (rápido: un insert) para responder de
+ * inmediato, y dispara `processPendingSync()` sin esperarlo (fire-and-forget,
+ * mismo proceso Node, sin cola nueva: esto lo dispara un admin a mano de vez
+ * en cuando, no hay concurrencia real que justificar más infraestructura). El
+ * dashboard hace polling de `GET /summary` (`lastSync.status`) hasta que deja
+ * de estar `running`. `processPendingSync` nunca rechaza — cualquier error se
+ * captura y se refleja como `status: 'error'` en el propio MoodleSyncRun.
  */
 @Injectable()
 export class MoodleSyncService {
@@ -58,11 +70,21 @@ export class MoodleSyncService {
     private readonly audit: AuditService
   ) {}
 
-  async run(triggeredById?: string): Promise<MoodleSyncRun> {
+  /** Crea el sync_run en 'running' y responde ya — no espera el fetch real. */
+  async start(triggeredById?: string): Promise<MoodleSyncRun> {
     const run = await this.prisma.moodleSyncRun.create({
       data: { triggeredById, status: 'running' }
     });
+    return toSyncRunResponse(run);
+  }
 
+  /**
+   * Hace el trabajo real (fetch a Moodle + transacción de reemplazo) sobre un
+   * sync_run ya creado por `start()`. Pensado para invocarse sin `await` desde
+   * el controller — nunca lanza: cualquier error queda como `status: 'error'`
+   * en el propio run devuelto.
+   */
+  async processPendingSync(runId: string, triggeredById?: string): Promise<MoodleSyncRun> {
     try {
       const { courseRows, studentRows, enrollmentRows, gradeRows } = await this.fetchAll();
 
@@ -80,7 +102,7 @@ export class MoodleSyncService {
       ]);
 
       const finished = await this.prisma.moodleSyncRun.update({
-        where: { id: run.id },
+        where: { id: runId },
         data: {
           status: 'success',
           finishedAt: new Date(),
@@ -107,7 +129,7 @@ export class MoodleSyncService {
       this.logger.warn(`Sync de moodle-insights falló: ${message}`);
 
       const finished = await this.prisma.moodleSyncRun.update({
-        where: { id: run.id },
+        where: { id: runId },
         data: { status: 'error', finishedAt: new Date(), errorMessage: message }
       });
       await this.audit.log({

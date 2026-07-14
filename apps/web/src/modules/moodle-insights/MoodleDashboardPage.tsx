@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   moodleCoursesResponseSchema,
@@ -43,6 +43,74 @@ const CHART_TOOLTIP_STYLE = {
 };
 const CHART_CURSOR = { fill: 'rgba(39, 51, 79, 0.4)' };
 
+// "Cursos por categoría": nombre de categoría limitado a 2 líneas, con "…" si
+// no entra. Wrap por palabra (no por caracter suelto) para que se lea bien.
+const CATEGORY_LABEL_MAX_CHARS_PER_LINE = 13;
+const CATEGORY_LABEL_MAX_LINES = 2;
+
+function wrapCategoryLabel(label: string): string[] {
+  const words = label.split(' ');
+  const lines: string[] = [];
+  let current = '';
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length > CATEGORY_LABEL_MAX_CHARS_PER_LINE && current) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) lines.push(current);
+
+  if (lines.length <= CATEGORY_LABEL_MAX_LINES) return lines;
+
+  const visible = lines.slice(0, CATEGORY_LABEL_MAX_LINES);
+  const last = visible[CATEGORY_LABEL_MAX_LINES - 1] ?? '';
+  visible[CATEGORY_LABEL_MAX_LINES - 1] =
+    last.length > CATEGORY_LABEL_MAX_CHARS_PER_LINE - 1
+      ? `${last.slice(0, CATEGORY_LABEL_MAX_CHARS_PER_LINE - 1)}…`
+      : `${last}…`;
+  return visible;
+}
+
+/** Forma mínima que necesitamos del prop `tick` de recharts (Bar/XAxis/YAxis). */
+interface AxisTickProps {
+  x?: number;
+  y?: number;
+  payload?: { value: string | number };
+}
+
+function CategoryAxisTick({ x, y, payload }: AxisTickProps) {
+  const lines = wrapCategoryLabel(String(payload?.value ?? ''));
+  const lineHeight = 12;
+  const firstLineDy = lines.length > 1 ? -((lines.length - 1) * lineHeight) / 2 + 4 : 4;
+  return (
+    <text x={x} y={y} textAnchor="end" fill={CHART_AXIS} fontSize={11}>
+      {lines.map((line, i) => (
+        <tspan key={i} x={x} dy={i === 0 ? firstLineDy : lineHeight}>
+          {line}
+        </tspan>
+      ))}
+    </text>
+  );
+}
+
+// "Top 10 cursos por promedio": shortname limitado a 5 caracteres + "…" en el
+// eje (el hover/Tooltip sigue mostrando el nombre completo porque lee el dato
+// original, no el texto truncado del tick).
+const COURSE_LABEL_MAX_CHARS = 5;
+
+function ShortnameAxisTick({ x, y, payload }: AxisTickProps) {
+  const value = String(payload?.value ?? '');
+  const label = value.length > COURSE_LABEL_MAX_CHARS ? `${value.slice(0, COURSE_LABEL_MAX_CHARS)}…` : value;
+  return (
+    <text x={x} y={(y ?? 0) + 12} textAnchor="middle" fill={CHART_AXIS} fontSize={12}>
+      {label}
+    </text>
+  );
+}
+
 function formatRelative(iso: string): string {
   const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60_000);
   if (minutes < 1) return 'hace un momento';
@@ -54,6 +122,23 @@ function formatRelative(iso: string): string {
 
 function formatGrade(value: number | null): string {
   return value === null ? '—' : value.toFixed(1);
+}
+
+// El backend responde a POST /sync apenas crea el sync_run ('running') — el
+// fetch real a Moodle sigue en background y puede tardar varios minutos en
+// instancias grandes (~9m45s validado con 627 cursos/5512 alumnos,
+// 2026-07-13). En vez de sostener esa request HTTP abierta (frágil: timeout
+// de proxy, pestaña cerrada, red inestable — el 504 real que motivó este
+// cambio), el dashboard hace polling de GET /summary hasta que
+// `lastSync.status` deja de ser 'running'.
+export const MOODLE_SYNC_POLL_INTERVAL_MS = 3_000;
+// ~15 min de margen sobre el peor caso medido (~10 min) antes de dejar de
+// insistir y solo avisar — no es un límite del backend, el sync real sigue
+// corriendo igual y una recarga manual del dashboard ya lo reflejaría.
+const MOODLE_SYNC_MAX_POLL_ATTEMPTS = 300;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -69,6 +154,13 @@ export function MoodleDashboardPage() {
   const [state, setState] = useState<DashboardState>({ status: 'loading' });
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const isMountedRef = useRef(true);
+  useEffect(
+    () => () => {
+      isMountedRef.current = false;
+    },
+    []
+  );
 
   const load = useCallback(async () => {
     try {
@@ -87,25 +179,45 @@ export function MoodleDashboardPage() {
     void load();
   }, [load]);
 
+  async function waitForSyncToFinish() {
+    for (let attempt = 0; attempt < MOODLE_SYNC_MAX_POLL_ATTEMPTS; attempt++) {
+      await sleep(MOODLE_SYNC_POLL_INTERVAL_MS);
+      if (!isMountedRef.current) return;
+
+      const summary = await apiFetch('/api/moodle-insights/summary', moodleSummarySchema);
+      if (summary.lastSync && summary.lastSync.status !== 'running') {
+        if (summary.lastSync.status === 'error') {
+          setSyncError(summary.lastSync.errorMessage ?? 'La sincronización terminó con error.');
+        }
+        return;
+      }
+    }
+    setSyncError('La sincronización sigue corriendo en segundo plano — recarga en un momento para ver el resultado.');
+  }
+
   async function onSync() {
     setSyncing(true);
     setSyncError(null);
     try {
       const run = await apiFetch('/api/moodle-insights/sync', moodleSyncRunSchema, { method: 'POST' });
-      if (run.status === 'error') {
+      if (run.status === 'running') {
+        await waitForSyncToFinish();
+      } else if (run.status === 'error') {
         setSyncError(run.errorMessage ?? 'La sincronización terminó con error.');
       }
-      await load();
+      if (isMountedRef.current) await load();
     } catch (err) {
-      setSyncError(
-        err instanceof ApiError && err.status === 503
-          ? 'MOODLE_URL/MOODLE_TOKEN no están configuradas todavía (ver .env.example).'
-          : err instanceof Error
-            ? err.message
-            : String(err)
-      );
+      if (isMountedRef.current) {
+        setSyncError(
+          err instanceof ApiError && err.status === 503
+            ? 'MOODLE_URL/MOODLE_TOKEN no están configuradas todavía (ver .env.example).'
+            : err instanceof Error
+              ? err.message
+              : String(err)
+        );
+      }
     } finally {
-      setSyncing(false);
+      if (isMountedRef.current) setSyncing(false);
     }
   }
 
@@ -194,6 +306,15 @@ function DashboardBody({
     .sort((a, b) => (b.avgGrade ?? 0) - (a.avgGrade ?? 0))
     .slice(0, 10);
 
+  // Redondeado a 1 decimal para el chart (tooltip incluido) — el promedio
+  // "de verdad" (sin redondear) sigue disponible en la tabla de cursos.
+  const gradedCoursesForChart = gradedCourses.map((course) => ({
+    ...course,
+    avgGrade: course.avgGrade === null ? null : Math.round(course.avgGrade * 10) / 10
+  }));
+
+  const topCategories = [...summary.coursesByCategory].sort((a, b) => b.count - a.count).slice(0, 10);
+
   return (
     <>
       <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -209,15 +330,22 @@ function DashboardBody({
       </section>
 
       <section className="grid gap-6 lg:grid-cols-2">
-        <ChartCard title="Cursos por categoría">
-          {summary.coursesByCategory.length === 0 ? (
+        <ChartCard title="Top 10 cursos por categoría">
+          {topCategories.length === 0 ? (
             <EmptyHint />
           ) : (
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={summary.coursesByCategory} layout="vertical" margin={{ left: 16, right: 16 }}>
+            <ResponsiveContainer width="100%" height={320}>
+              <BarChart data={topCategories} layout="vertical" margin={{ left: 16, right: 16 }}>
                 <CartesianGrid stroke={CHART_GRID} horizontal={false} />
                 <XAxis type="number" stroke={CHART_AXIS} fontSize={12} allowDecimals={false} />
-                <YAxis type="category" dataKey="categoryName" stroke={CHART_AXIS} fontSize={12} width={110} />
+                <YAxis
+                  type="category"
+                  dataKey="categoryName"
+                  stroke={CHART_AXIS}
+                  fontSize={12}
+                  width={110}
+                  tick={<CategoryAxisTick />}
+                />
                 <Tooltip contentStyle={CHART_TOOLTIP_STYLE} cursor={CHART_CURSOR} />
                 <Bar dataKey="count" name="Cursos" fill="#11eaea" radius={[0, 4, 4, 0]} />
               </BarChart>
@@ -226,15 +354,19 @@ function DashboardBody({
         </ChartCard>
 
         <ChartCard title="Top 10 cursos por promedio de calificación">
-          {gradedCourses.length === 0 ? (
+          {gradedCoursesForChart.length === 0 ? (
             <EmptyHint />
           ) : (
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={gradedCourses} margin={{ left: 8, right: 8 }}>
+            <ResponsiveContainer width="100%" height={320}>
+              <BarChart data={gradedCoursesForChart} margin={{ left: 8, right: 8 }}>
                 <CartesianGrid stroke={CHART_GRID} vertical={false} />
-                <XAxis dataKey="shortname" stroke={CHART_AXIS} fontSize={12} />
+                <XAxis dataKey="shortname" stroke={CHART_AXIS} fontSize={12} tick={<ShortnameAxisTick />} />
                 <YAxis stroke={CHART_AXIS} fontSize={12} />
-                <Tooltip contentStyle={CHART_TOOLTIP_STYLE} cursor={CHART_CURSOR} />
+                <Tooltip
+                  contentStyle={CHART_TOOLTIP_STYLE}
+                  cursor={CHART_CURSOR}
+                  formatter={(value: unknown) => (typeof value === 'number' ? value.toFixed(1) : String(value ?? ''))}
+                />
                 <Bar dataKey="avgGrade" name="Promedio" fill="#0fced3" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>

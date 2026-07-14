@@ -32,9 +32,14 @@ export function Layout({ user }: { user: AuthUser }) {
   const nav = visibleNav(user);
 
   return (
-    <div className="flex min-h-screen bg-awk-navy-900 font-sans text-awk-blue-50">
-      <aside className="flex w-64 flex-col border-r border-awk-blue-800 bg-awk-navy-800">
-        <div className="border-b border-awk-blue-800 px-6 py-5">
+    // h-screen (no min-h-screen) + overflow-hidden: el layout queda anclado
+    // al viewport y es <main> el que scrollea su propio contenido — así el
+    // sidebar (incluida la tarjeta de usuario/logout al fondo) no se arrastra
+    // con el alto de la página cuando el contenido es más largo que la
+    // pantalla.
+    <div className="flex h-screen overflow-hidden bg-awk-navy-900 font-sans text-awk-blue-50">
+      <aside className="flex h-full w-64 shrink-0 flex-col border-r border-awk-blue-800 bg-awk-navy-800">
+        <div className="shrink-0 border-b border-awk-blue-800 px-6 py-5">
           <img
             src="https://media.awakelab.world/MARCA_AWK26/awakelab_logo_fondo-oscuro_transparente.png"
             alt="Awakelab"
@@ -42,7 +47,7 @@ export function Layout({ user }: { user: AuthUser }) {
           />
         </div>
 
-        <nav className="flex-1 space-y-1 px-3 py-4" data-testid="shell-nav">
+        <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4" data-testid="shell-nav">
           {nav.map((item) => (
             <NavLink
               key={item.path}
@@ -61,7 +66,7 @@ export function Layout({ user }: { user: AuthUser }) {
           ))}
         </nav>
 
-        <div className="border-t border-awk-blue-800 px-6 py-4">
+        <div className="shrink-0 border-t border-awk-blue-800 px-6 py-4">
           <p className="truncate text-sm text-awk-blue-100">{user.displayName}</p>
           <p className="truncate text-xs text-awk-blue-400">{user.email}</p>
           <Button variant="ghost" size="sm" className="mt-3 w-full" onClick={logout}>
@@ -70,7 +75,7 @@ export function Layout({ user }: { user: AuthUser }) {
         </div>
       </aside>
 
-      <main className="flex-1 px-10 py-12">
+      <main className="flex-1 overflow-y-auto px-10 py-12">
         <Outlet />
       </main>
     </div>
