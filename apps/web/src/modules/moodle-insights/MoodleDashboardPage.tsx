@@ -155,6 +155,10 @@ export function MoodleDashboardPage() {
   const [syncing, setSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const isMountedRef = useRef(true);
+  // Evita retomar el polling más de una vez por montaje del componente (ver
+  // el efecto de abajo) — no tiene que ver con si el usuario ya sincronizó,
+  // solo con no disparar dos loops de polling en paralelo.
+  const hasResumedPollRef = useRef(false);
   useEffect(
     () => () => {
       isMountedRef.current = false;
@@ -178,6 +182,33 @@ export function MoodleDashboardPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // El botón depende de `syncing` (estado local), pero ese estado se pierde
+  // si el usuario navega a otra sección y vuelve — React remonta la página
+  // con `syncing = false` aunque el sync siga corriendo de verdad en el
+  // backend (fire-and-forget, D-022). Si al cargar el summary vemos
+  // `lastSync.status === 'running'`, retomamos el polling en vez de mostrar
+  // el botón como libre — evita que un segundo click dispare un sync
+  // duplicado mientras el primero sigue en curso.
+  useEffect(() => {
+    if (state.status !== 'ok' || hasResumedPollRef.current) return;
+    if (state.summary.lastSync?.status !== 'running') return;
+
+    hasResumedPollRef.current = true;
+    setSyncing(true);
+    setSyncError(null);
+    void waitForSyncToFinish()
+      .then(() => {
+        if (isMountedRef.current) return load();
+      })
+      .finally(() => {
+        if (isMountedRef.current) setSyncing(false);
+      });
+    // Nota: este repo no tiene el plugin eslint react-hooks configurado
+    // (ver eslint.config.mjs), así que no hace falta un disable de
+    // exhaustive-deps aquí — [state] es la única dependencia real que debe
+    // re-disparar este efecto.
+  }, [state]);
 
   async function waitForSyncToFinish() {
     for (let attempt = 0; attempt < MOODLE_SYNC_MAX_POLL_ATTEMPTS; attempt++) {

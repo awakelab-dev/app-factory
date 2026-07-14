@@ -190,4 +190,53 @@ describe('MoodleDashboardPage', () => {
 
     expect(await screen.findByTestId('sync-error')).toHaveTextContent('invalidresponse');
   });
+
+  it('si al cargar el último sync sigue running (p.ej. tras navegar y volver), retoma el polling en vez de mostrar el botón libre', async () => {
+    // Reproduce el caso real reportado por Leonardo (2026-07-14): el usuario
+    // dispara el sync, navega a otra sección del shell y vuelve — React
+    // remonta MoodleDashboardPage con `syncing` reiniciado a false, aunque el
+    // backend siga procesando. El summary que trae el montaje nuevo ya debe
+    // reflejar `lastSync.status === 'running'`, y el dashboard debe retomar
+    // el polling (botón deshabilitado, "Actualizando…") en vez de mostrarse
+    // libre y arriesgar un segundo click que dispare un sync duplicado.
+    let summaryCallCount = 0;
+    const runningSummary: MoodleSummary = {
+      ...summaryFixture,
+      lastSync: { ...summaryFixture.lastSync!, status: 'running', finishedAt: null }
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith('/api/auth/me')) return ok(adminFixture);
+        if (url.endsWith('/api/moodle-insights/summary')) {
+          summaryCallCount += 1;
+          // 1ra llamada (montaje): el sync sigue 'running'. De la 2da en
+          // adelante (polling retomado): ya terminó en 'success'.
+          return ok(summaryCallCount === 1 ? runningSummary : summaryFixture);
+        }
+        if (url.endsWith('/api/moodle-insights/courses')) return ok(coursesFixture);
+        if (url.endsWith('/api/moodle-insights/students')) return ok(studentsFixture);
+        return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) });
+      })
+    );
+
+    render(<App />);
+    expect(await screen.findByText('Matemáticas I')).toBeInTheDocument();
+
+    // Sin ningún click del usuario, el botón ya debe verse "sincronizando".
+    expect(await screen.findByText('Actualizando…')).toBeInTheDocument();
+    expect(screen.getByTestId('sync-button')).toBeDisabled();
+
+    // El efecto que retoma el polling agenda su `sleep()` en el mismo commit
+    // que el render de "Matemáticas I" de arriba — no queda una ventana
+    // limpia para instalar fake timers antes de eso (a diferencia de los
+    // demás tests, donde el `sleep()` lo dispara un click explícito después
+    // de instalar fake timers). Por eso este test espera el intervalo real
+    // (con timeouts ampliados) en vez de pelear con fake timers.
+    expect(
+      await screen.findByText('Actualizar datos', {}, { timeout: MOODLE_SYNC_POLL_INTERVAL_MS + 4_000 })
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('sync-button')).not.toBeDisabled();
+  }, MOODLE_SYNC_POLL_INTERVAL_MS + 8_000);
 });

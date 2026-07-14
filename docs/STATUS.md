@@ -2,8 +2,8 @@
 
 > Actualizar al cerrar CADA sesión de trabajo. Este archivo es lo primero que lee cualquier tarea nueva.
 
-**Última actualización**: 2026-07-13 (**`moodle-insights` verificado en vivo en staging**: Leonardo corrió la migración pendiente del schema `moodle` con `~/migrate.sh staging latest` y confirmó el dashboard renderizando bien — layout, KPIs en cero y tablas vacías, como corresponde sin `MOODLE_URL`/`MOODLE_TOKEN` configuradas. Antes de correr la migración el dashboard daba 500 plano al abrir: causa raíz de una sola vez, no bug de código — ver "Resuelto recientemente". Sigue pendiente que Leonardo configure las credenciales de Moodle y valide un sync real)
-**Fase actual**: Fase 0 — Fundaciones (core mínimo + CI en verde; managed PostgreSQL y Docker listos; staging y production sirviendo por HTTPS en `apps.awakelab.world`; **primer módulo ejemplar sobre el patrón D-011 construido y verificado en staging — falta configurar credenciales de un Moodle real y cerrar Fase 0**)
+**Última actualización**: 2026-07-14 (**`moodle-insights` con credenciales reales configuradas y validado parcialmente contra `plataforma-ibecon.grupoaspasia.com`** — 627 cursos/5512 alumnos, sync real corrió en ~9m45s con éxito. En el camino: fix de timeouts, resiliencia por curso ante datos inválidos de Moodle, y el sync se pasó a un patrón asíncrono (responde al toque + polling del frontend) porque sostener esa duración en una request HTTP síncrona era frágil (el 504 real que lo motivó). Más 3 ajustes de UI del dashboard. Todo commiteado y pusheado por Leonardo. **Pendiente**: Leonardo corre el sync real ya con el patrón asíncrono desplegado — pospuesto a fin del día 2026-07-14 porque la plataforma Moodle real está con uso intensivo ahora mismo. Ver "Bloqueos")
+**Fase actual**: Fase 0 — Fundaciones (core mínimo + CI en verde; managed PostgreSQL y Docker listos; staging y production sirviendo por HTTPS en `apps.awakelab.world`; **primer módulo ejemplar sobre el patrón D-011 construido, con credenciales de Moodle real configuradas y un sync ya exitoso — falta la validación final con el patrón asíncrono para cerrar Fase 0**)
 
 ## Hecho
 
@@ -39,31 +39,34 @@
 
 ## Siguiente (en orden)
 
-1. Leonardo valida `moodle-insights` contra un Moodle real: habilitar un servicio externo con las 4 funciones de `.env.example`, generar el token, configurar `MOODLE_URL`/`MOODLE_TOKEN` (local y/o staging), correr un sync real y revisar que los datos calcen. Si algo en el contrato real de Moodle difiere de los fixtures (nombres de campos, formato de `gradereport_user_get_grade_items`, etc.), corregir `moodle-client.service.ts` — está aislado justo para que ese cambio no toque sync/query/controller.
-2. Con el módulo ejemplar validado, Fase 0 queda cerrada (ver docs/06-roadmap.md) → decidir el arranque de Fase 1 (pipeline con spec intermedia, docs/04) o si conviene un segundo módulo de negocio antes.
+1. **Casi cerrado**: Leonardo ya configuró `MOODLE_URL`/`MOODLE_TOKEN` reales (`plataforma-ibecon.grupoaspasia.com`) y corrió un sync real exitoso (627 cursos/5512 alumnos, ~9m45s) que expuso y resolvió tres bugs reales (timeout de 15s en `moodle-client.service.ts`, `.env`/`docker-compose.yml`/Nginx desactualizados en el server, y un curso con `invalidresponse` de Moodle) — todo corregido, con el sync ya pasado a un patrón asíncrono (`start()`/`processPendingSync()` + polling en el frontend) porque sostener ~10 min en una request HTTP síncrona era frágil. Todo commiteado y pusheado el 2026-07-14. **Falta solo**: Leonardo pospuso la prueba final (correr el sync ya con el patrón async desplegado y confirmar que el botón muestra "Actualizando…" sin bloquear y que los datos calzan) a fin del día 2026-07-14 porque la plataforma Moodle real estaba con uso intensivo. Si moodle-client.service.ts necesitara otro ajuste de contrato, sigue aislado para no tocar sync/query/controller.
+2. Con esa última corrida confirmada, Fase 0 queda cerrada (ver docs/06-roadmap.md) → decidir el arranque de Fase 1 (pipeline con spec intermedia, docs/04) o si conviene un segundo módulo de negocio antes.
 3. (Opcional, no bloqueante) Rotar la contraseña de MongoDB expuesta en `backend/.env` en el historial de git y evaluar purgarla con `git-filter-repo` (ver "Bloqueos"). También considerar rotar el password de `app_staging`/`app_production` y los `JWT_SECRET`: quedaron pegados en texto plano en un chat de Cowork durante esta sesión (no se guardaron en memoria ni en el repo, pero el historial del chat los tiene).
 
 ### Mensaje inicial sugerido para la próxima tarea (copiar/pegar)
 
-> Modelo recomendado: Sonnet — es validación/ajuste de integración contra un
-> sistema externo real, no diseño de dominio nuevo.
+> Modelo recomendado: Sonnet — es confirmar una corrida ya preparada, no
+> diseño de dominio nuevo.
 
 ```
-[module:moodle-insights] Validar contra un Moodle real
+[module:moodle-insights] Confirmar el sync real con el patrón asíncrono ya desplegado
 
-Objetivo: el módulo moodle-insights (D-022) está completo en código pero
-se construyó 100% contra fixtures — el sandbox de Cowork no tiene ruta de
-red a un Moodle real (mismo motivo que D-016). Necesito validarlo con la
-instancia real que voy a configurar (URL + token de un servicio externo
-con core_course_get_courses, core_course_get_categories,
-core_enrol_get_enrolled_users y gradereport_user_get_grade_items — ver
-apps/api/.env.example) y corregir moodle-client.service.ts si el
-contrato real difiere de lo documentado.
+Objetivo: moodle-insights ya tuvo un sync real exitoso (627 cursos/5512
+alumnos, ~9m45s) contra mi Moodle de pruebas, pero fue con la versión
+síncrona de POST /sync (terminó bien pero el navegador mostró un 504
+porque Nginx cortó la conexión antes). Ya se corrigió: el sync ahora es
+asíncrono (POST /sync responde de inmediato, el dashboard hace polling de
+GET /summary) y quedó commiteado y pusheado el 2026-07-14. Necesito que
+confirmemos: (a) que el deploy automático a staging llegó bien, (b) correr
+el sync desde el dashboard y ver que el botón muestra "Actualizando…" sin
+bloquear la pantalla y que el polling detecta el resultado, (c) que
+cursos/alumnos/notas siguen calzando con la instancia real.
 
-Terminado cuando: un sync real (POST /api/moodle-insights/sync) contra mi
-Moodle trae cursos/alumnos/calificaciones correctos en el dashboard.
+Terminado cuando: el botón de sync funciona de punta a punta con el
+patrón asíncrono contra mi Moodle real, sin 504 ni pantalla congelada.
 
-Antes de empezar: leer docs/STATUS.md y docs/DECISIONES.md D-022/D-023.
+Antes de empezar: leer docs/STATUS.md (sección de moodle-insights,
+puntos 6-10) y docs/DECISIONES.md D-022/D-023.
 ```
 
 ### Receta de verificación local con BD (ya completada — queda de referencia para levantar el entorno de nuevo)
@@ -112,7 +115,9 @@ Si `prisma migrate dev` reportara drift contra `core_init`: regenerar la migraci
   7. **Confirmado con datos reales, y cambio de arquitectura decidido con Leonardo**: `GET /summary` (`lastSync`) mostró el sync real completo en `success` — **627 cursos, 5512 alumnos, 9m45s** (23:05:45 → 23:15:30 UTC). El 504 del navegador fue Nginx cortando la conexión mientras el backend seguía trabajando (confirmado: `$transaction` es atómico, si los cursos ya se veían en el dashboard es porque terminó bien). Con esa duración real, seguir subiendo el timeout de Nginx es un parche de vida corta (pestaña cerrada, red inestable, redeploy a medio sync siguen rompiéndolo) — **Leonardo decidió pasar `POST /sync` a un patrón asíncrono** en vez de seguir ese camino.
   8. **Implementado y verificado**: `MoodleSyncService.run()` se separó en `start()` (crea el `sync_run` en `running`, un insert rápido, responde ya) y `processPendingSync(runId, triggeredById)` (el fetch a Moodle + transacción real; nunca lanza, cualquier error queda como `status: 'error'` en el propio run). `MoodleInsightsController.triggerSync` llama a `start()` (awaited) y dispara `processPendingSync` **sin esperarlo** (fire-and-forget dentro del mismo proceso Node — sin cola nueva, es un botón que aprieta un admin de vez en cuando, no concurrencia real). El frontend (`MoodleDashboardPage.tsx`) ahora hace polling de `GET /summary` cada `MOODLE_SYNC_POLL_INTERVAL_MS` (3s, hasta 300 intentos ≈ 15 min de margen sobre el peor caso medido) mientras `lastSync.status === 'running'`, mostrando "Actualizando…" sin bloquear la pestaña con una request abierta. Tests nuevos/ajustados en ambos lados (incluye un caso que reproduce el error apareciendo recién en el polling, no en la respuesta directa de `POST /sync`). **Verificado en la copia temporal fuera del mount** (D-023): `turbo run build lint typecheck test` — 19/19 verde, 37 tests en `apps/api` (+1 sobre la corrida anterior) y 11 en `apps/web` (+1).
   9. **Ajustes de UI pedidos por Leonardo antes del commit** (mismo día): (a) `Layout.tsx` — el shell pasó de `min-h-screen` a `h-screen overflow-hidden` con `<main>` scrolleando su propio contenido, así el sidebar (y el bloque usuario/logout al fondo) queda anclado al viewport en vez de arrastrarse con el alto de la página; (b) "Cursos por categoría" ahora es top 10 por cantidad de cursos (antes mostraba todas las categorías), con la fila de ambos charts más alta (240px → 320px) y el nombre de categoría truncado a 2 líneas + "…" vía un tick custom de recharts (`CategoryAxisTick`, wrap por palabra); (c) "Top 10 cursos por promedio" trunca el shortname del eje a 5 caracteres + "…" (`ShortnameAxisTick`) sin afectar el hover/Tooltip (que sigue leyendo el dato original, no el texto truncado) y el promedio mostrado en el tooltip se redondea a 1 decimal. **Verificado en la copia temporal fuera del mount**: `turbo run build lint typecheck test` — 19/19 verde (sin tests nuevos, son solo cambios visuales sin lógica de negocio que cubrir).
-  **Pendiente para cerrar esta tarea**: (a) commitear+pushear estos cambios desde la Mac de Leonardo (el sandbox no tiene acceso de red a GitHub, D-014) para que CI publique las imágenes nuevas de `apps/api`/`apps/web` y el deploy automático a staging las recoja; (b) opcional pero recomendado: bajar `proxy_read_timeout` en `deploy/nginx/{staging,production}.conf` de vuelta a un valor normal (30-60s) ahora que `POST /sync` responde casi al toque y ya no necesita sostener una request larga — **recordar editar el `.conf` del server a mano (`nano`), nunca volver a `scp` el archivo completo** (ver el incidente del certificado más arriba); (c) volver a correr el sync real desde el dashboard y confirmar que el botón muestra "Actualizando…", el polling detecta el `success`, y cursos/alumnos/notas calzan con la instancia real.
+  10. **Commit hecho y pusheado por Leonardo** (2026-07-14): incluye el sync asíncrono (`start()`/`processPendingSync()` + polling en el frontend), la resiliencia por curso, los fixes de timeout (`MOODLE_REQUEST_TIMEOUT_MS`, Nginx `proxy_read_timeout`) y los tres ajustes de UI — todo verificado en verde antes del commit (ver puntos 6-9 arriba). CI debería publicar las imágenes nuevas y el deploy automático a staging recogerlas. Los ajustes de UI ya fueron confirmados como correctos por Leonardo directamente en el dashboard desplegado.
+  11. **Bug real encontrado por Leonardo al retomar esta tarea (2026-07-14) y corregido**: con el patrón asíncrono ya desplegado, Leonardo disparó el sync, navegó a otra sección del shell (Demo Hello, Usuarios) y al volver ~10s después el botón "Actualizar datos" ya se veía libre — aunque el sync seguía corriendo de verdad en el backend (imposible que terminara en 10s contra esa instancia). Causa: el estado del botón (`syncing`) vivía solo en un `useState` local de `MoodleDashboardPage`, que se reinicia a `false` cada vez que React remonta el componente (navegar fuera y volver desmonta/remonta la página) — perdiendo el vínculo con el `sync_run` real. Un segundo click en ese estado habría disparado un sync duplicado innecesario contra una instancia ya sobrecargada. **Corregido**: nuevo efecto en `MoodleDashboardPage.tsx` que, al cargar el summary, si `lastSync.status === 'running'` retoma el polling automáticamente (mismo `waitForSyncToFinish`) en vez de mostrar el botón como libre — con un `useRef` (`hasResumedPollRef`) para no arrancar dos loops de polling en paralelo. Nuevo test que reproduce el escenario exacto (montar con `lastSync` ya en `running`, sin ningún click, y verificar que el botón queda deshabilitado hasta que el polling detecta el `success`). **Verificado en la copia temporal fuera del mount**: 19/19 tareas verdes, 12 tests en `apps/web` (+1).
+  **Pendiente, explícitamente pospuesto por Leonardo a fin del día 2026-07-14** (la plataforma real de `plataforma-ibecon.grupoaspasia.com` está con uso intensivo en este momento — no quiere disparar un sync de ~10 min contra ella mientras tanto): commitear+pushear este fix, y luego correr el sync real desde el dashboard de staging y confirmar que (a) el botón muestra "Actualizando…" sin bloquear la pantalla y sigue así aunque el usuario navegue a otra sección y vuelva, (b) el polling detecta el `success` sin necesidad de subir más el timeout de Nginx, y (c) cursos/alumnos/notas calzan con la instancia real. Opcional, no bloqueante: bajar `proxy_read_timeout` en `deploy/nginx/{staging,production}.conf` de vuelta a un valor normal (30-60s) ahora que `POST /sync` responde casi al toque — recordar editar el `.conf` del server a mano (`nano`), nunca volver a `scp` el archivo completo (ver el incidente del certificado más arriba).
 - IdP para SSO: ¿el grupo usa Microsoft 365/Entra ID? (condiciona Keycloak vs Entra). El dev-login actual queda encapsulado en AuthService: al llegar el IdP solo se sustituye ese método.
 - **Seguridad**: rotar la contraseña de MongoDB expuesta en el historial de git (`backend/.env`, IP pública 84.247.191.200) y restringir ese Mongo a red privada si sigue en uso. Sigue en el historial después de la purga de D-014 (esa purga solo sacó `node_modules` y `uploads`, no tocó `.env`); rotar la contraseña primero, y de paso evaluar si conviene purgar también `backend/.env` con `git-filter-repo` (ya instalado y probado esta sesión) ya que el repo remoto sigue sin nada publicado.
 
