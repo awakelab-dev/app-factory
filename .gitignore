@@ -12,3 +12,4 @@ coverage/
 *.tsbuildinfo
 .pnpm-store/
 apps/api/src/generated/
+apps/factory/src/generated/

@@ -2,7 +2,7 @@
 
 > Actualizar al cerrar CADA sesión de trabajo. Este archivo es lo primero que lee cualquier tarea nueva.
 
-**Última actualización**: 2026-07-15 (**Rediseño de marca Refactika del frontend público de `orientador-ia` (D-028)**, pedido por Leonardo tras revisar 6 capturas del prototipo original + el PDF de referencia: landing/wizard reconstruido con la identidad Refactika (no Awakelab, que sigue exclusiva del panel admin), nueva sección libre "Inteligencia de mercado" (`/orientador-ia/mercado`), entrada de voz opcional, "Comprar online" → "Próximamente", y PDF del itinerario rediseñado a 3 páginas. 29/29 tests en `apps/web` verdes, `turbo run lint typecheck test` en verde sobre el grafo afectado — ver "Hecho" para el detalle completo. Con esto, el primer caso real de Fase 1 (`orientador-ia`) queda otra vez completo y en línea con lo que Leonardo pidió como dueño del producto. Siguiente paso de D-026: (1) mecánica del pipeline con Agent SDK.)
+**Última actualización**: 2026-07-15 (**Mecánica del pipeline con Agent SDK (D-029, paso 1 de D-026)**: nueva app `apps/factory` — modelo de datos del pipeline (Project/Spec/Gate/Run) + máquina de estados + runners de análisis y generación reales sobre `@anthropic-ai/claude-agent-sdk`, operados por CLI. Ver "Hecho" para el detalle completo y D-029 para las decisiones de arquitectura. Siguiente paso de D-026: (2) control plane como UI sobre estos datos reales.)
 **Fase actual**: Fase 1 — EN CURSO (pipeline con spec intermedia y gates, docs/04/docs/06; primer caso `orientador-ia` completo end-to-end, backend+frontend). Fase 0 queda CERRADA (core mínimo + CI en verde; managed PostgreSQL y Docker listos; staging y production sirviendo por HTTPS en `apps.awakelab.world`; primer módulo ejemplar `moodle-insights` sobre el patrón D-011 construido y validado en vivo contra un Moodle real).
 
 ## Hecho
@@ -60,17 +60,28 @@
   - **Tests**: reescritos para el nuevo step machine (`OrientadorCandidatePage.test.tsx`, incluye un caso nuevo para el 429 que verifica que el formulario no se pierde), nuevos `MarketIntelPage.test.tsx` (3 tests) e `itinerary-pdf.test.ts` (3 tests, generación de las 3 páginas sin lanzar, con/sin academia, con/sin huecos de formación), `registry.test.ts`/`OrientadorAdminPage.test.tsx` actualizados a la nueva ruta pública y el nuevo texto de sector.
   - **Verificación**: `pnpm turbo run lint typecheck test --filter=@awk/web --filter=@awk/types --filter=@awk/auth --filter=@awk/ui` en verde (14/14 tareas) — 29/29 tests en `apps/web`. `apps/api` no se tocó, no se re-verificó. Corrido en el mount real (`pnpm` no estaba en el PATH de este sandbox — instalado en `~/.npm-global` vía `npm config set prefix`, ya que `npm install -g` directo a `/usr` falló por permisos).
 
+- **Mecánica del pipeline con Agent SDK — `apps/factory` (2026-07-15, D-029, paso 1 de D-026)**: nueva app del monorepo, sistema separado de la Plataforma (docs/03), sin servidor HTTP todavía — se opera 100% por CLI.
+  - **Modelo de datos** (`apps/factory/prisma/schema.prisma`, BD separada `FACTORY_DATABASE_URL` en la misma instancia managed, migración a mano `20260715180000_factory_init`): `Project` (estado del pipeline + `moduleSlug` único), `Spec` (versión de spec funcional+técnica, nunca editada in-place), `Gate` (functional/technical/pr_review/manager_acceptance; approved/rejected/changes_requested — las tres salidas del revisor de docs/05), `Run` (una ejecución del Agent SDK: analysis o generation, con rama/PR/costo/tokens).
+  - **Máquina de estados** (`pipeline/state-machine.ts`): transiciones de `docs/03-arquitectura.md` ("Estados del proyecto") + reintentos (`verifying`/`error` → `generating`) y revisión de spec (`spec_ready` → `analyzing`). Único punto de escritura de `status`: `ProjectsService.transition`.
+  - **`AnalysisRunnerService`** (real, no stub): invoca `@anthropic-ai/claude-agent-sdk` (nueva dependencia) headless para que lea el material fuente + explore `apps/api|web/src/modules/` (antiduplicación) y escriba `docs/pipeline/<slug>/{spec-funcional.md,spec-tecnica.md,meta.json}` — el runner los relee, crea la `Spec` v1, abre los gates funcional+técnico y deja el proyecto en `pending_approval`.
+  - **`GenerationRunnerService`** (real, no stub): exige ambos gates `approved` (docs/05), crea la rama `factory/<slug>`, corre el Agent SDK con escritura acotada por un callback `canUseTool` (guardarraíl real — el `systemPrompt` es solo instrucción) a las carpetas del módulo + `schema.prisma`, y — si hay red/`gh` CLI — abre la PR; sin red, el commit queda local y el proyecto igual avanza a `verifying` (limitación operativa documentada, no bug).
+  - **CLI** (`apps/factory/src/cli.ts`, `NestFactory.createApplicationContext`): `create-project`, `analyze`, `decide-gate`, `generate`, `advance`, `status`.
+  - **Sin cola de trabajos/contenedores ni auth propia todavía** (Fase 1: un dev lanza, Leonardo doble rol gerente+revisor como D-021) — llegan con el paso 2 de D-026 (control plane) y Fase 3 respectivamente.
+  - **Tests**: 28 nuevos en `apps/factory` (máquina de estados, ProjectsService, GatesService, ambos runners con Agent SDK/git mockeados). **Verificación**: `pnpm exec turbo run build lint typecheck test` en verde sobre las 6 apps/paquetes (28/28 nuevos + 48/48 `@awk/api` + 29/29 `@awk/web` sin regresiones), corrido en copia temporal fuera del mount (D-023) con `pnpm-lock.yaml` actualizado copiado de vuelta.
+  - **Pendiente de infraestructura real (no bloqueante para esta tarea)**: crear las bases `awkfactory_staging`/`awkfactory_production` + rol de mínimo privilegio en el Lightsail managed PG (mismo runbook que D-004/D-016); `PLATFORM_REPO_PATH` (checkout dedicado para que los runners lean/escriban/corran git) solo se puede verificar en un entorno con red real y sin las restricciones de unlink/rename del mount de Cowork (D-023) — Mac de Leonardo o el Lightsail, igual que otras piezas de infra.
+
 ## En curso
 
-Nada en curso — `orientador-ia` completo (backend D-024/D-025 + frontend D-027 + rediseño de marca D-028). Siguiente paso de Fase 1: mecánica del pipeline (ver "Siguiente").
+Nada en curso — mecánica del pipeline completa (D-029). Siguiente paso de Fase 1: control plane (ver "Siguiente").
 
 ## Siguiente (en orden)
 
-**Orden de arranque de Fase 1 confirmado por Leonardo (2026-07-15, D-026)**: (0) frontend de `orientador-ia` [✅ completo, D-027 + rediseño de marca D-028] → (1) mecánica del pipeline con Agent SDK → (2) control plane como UI sobre los datos reales del pipeline. Invierte el orden literal de docs/06.
+**Orden de arranque de Fase 1 confirmado por Leonardo (2026-07-15, D-026)**: (0) frontend de `orientador-ia` [✅ completo, D-027 + rediseño de marca D-028] → (1) mecánica del pipeline con Agent SDK [✅ completo, D-029] → (2) control plane como UI sobre los datos reales del pipeline.
 
-1. **Mecánica del pipeline con Agent SDK** (paso 1 de D-026, docs/04 pasos 2-6): modelo de datos de proyectos/specs/gates/runs/estados + runner de generación. `orientador-ia` (D-024/D-025/D-027/D-028) es la referencia de lo que ese pipeline tendría que producir de punta a punta (spec funcional+técnica → gate → backend → frontend), corrido a mano esta vez.
-2. (Opcional, no bloqueante) Rotar la contraseña de MongoDB expuesta en `backend/.env` en el historial de git y evaluar purgarla con `git-filter-repo` (ver "Bloqueos"). También considerar rotar el password de `app_staging`/`app_production` y los `JWT_SECRET`: quedaron pegados en texto plano en un chat de Cowork durante una sesión anterior (no se guardaron en memoria ni en el repo, pero el historial del chat los tiene).
-3. (Opcional, no bloqueante) Bajar `proxy_read_timeout` en `deploy/nginx/{staging,production}.conf` de vuelta a un valor normal (30-60s) ahora que `POST /sync` de moodle-insights responde casi al toque y ya no necesita sostener una request larga — editar el `.conf` del server a mano (`nano`), nunca `scp` el archivo completo (ver el incidente del certificado en "Resuelto recientemente").
+1. **Control plane** (paso 2 de D-026, docs/04 "El dashboard"): UI de solo lectura/aprobación sobre los datos reales de `apps/factory` (D-029) — timeline de estados por proyecto, visor de la spec funcional/técnica con botón aprobar/comentar (llama a `decide-gate`), preview de módulos generados, historial. Necesita primero exponer HTTP sobre `PipelineModule` (controllers + `app.listen()` en `apps/factory/src/app.module.ts`, los servicios ya están listos) antes de construir la vista.
+2. **Validar `apps/factory` con un caso real** (no bloqueante para el punto 1, pero valida D-029 en la práctica): correr `create-project` + `analyze` desde un entorno con `PLATFORM_REPO_PATH`/`ANTHROPIC_API_KEY`/red reales (Mac de Leonardo o el Lightsail, nunca el sandbox de Cowork por las restricciones de D-023) contra un prototipo real, y confirmar que el Agent SDK produce una spec usable de punta a punta.
+3. (Opcional, no bloqueante) Rotar la contraseña de MongoDB expuesta en `backend/.env` en el historial de git y evaluar purgarla con `git-filter-repo` (ver "Bloqueos"). También considerar rotar el password de `app_staging`/`app_production` y los `JWT_SECRET`: quedaron pegados en texto plano en un chat de Cowork durante una sesión anterior (no se guardaron en memoria ni en el repo, pero el historial del chat los tiene).
+4. (Opcional, no bloqueante) Bajar `proxy_read_timeout` en `deploy/nginx/{staging,production}.conf` de vuelta a un valor normal (30-60s) ahora que `POST /sync` de moodle-insights responde casi al toque y ya no necesita sostener una request larga — editar el `.conf` del server a mano (`nano`), nunca `scp` el archivo completo (ver el incidente del certificado en "Resuelto recientemente").
 
 ## Primer caso Fase 1: `orientador-ia`
 
@@ -80,33 +91,33 @@ Decisiones tomadas por Leonardo en el gate inicial (2026-07-14): (1) el MVP sí 
 
 ### Mensaje inicial sugerido para la próxima tarea (copiar/pegar)
 
-> Nota: `orientador-ia` queda completo de punta a punta (backend D-024/D-025 +
-> frontend D-027 + rediseño de marca Refactika D-028). La próxima tarea es el
-> paso 1 de D-026: la mecánica del pipeline con Agent SDK (modelo de datos +
-> runner de generación, docs/04 pasos 2-6) — esta vez sí es trabajo de
-> arquitectura, no de un módulo puntual.
+> Nota: la mecánica del pipeline queda completa (`apps/factory`, D-029, paso 1
+> de D-026) — modelo de datos, máquina de estados, runners de análisis y
+> generación reales con el Agent SDK, todo operado por CLI. La próxima tarea
+> es el paso 2 de D-026: el control plane (dashboard) como UI sobre estos
+> datos reales — es diseño de UI/API sobre un modelo ya fijado, no
+> arquitectura desde cero.
 
-> Modelo recomendado: **Opus** (o el modelo de mayor razonamiento disponible)
-> — es diseño del activo central de la fábrica (spec/gate/run como modelo de
-> datos + runner de generación), no implementación acotada sobre un patrón ya
-> fijado.
+> Modelo recomendado: **Sonnet** — es desarrollo estándar (controllers HTTP +
+> UI React sobre servicios/datos que ya existen), salvo que al diseñar la
+> vista aparezca una decisión estructural nueva (p. ej. cómo autenticar
+> `apps/factory`), en cuyo caso pausar y proponerla antes de implementar.
 
 ```
-[core] Mecánica del pipeline (paso 1 de D-026)
+[factory] Control plane (paso 2 de D-026)
 
 Antes de empezar: leer docs/STATUS.md completo, docs/04-integracion-cowork.md
-(pasos 2-6 del pipeline: spec, gate, generación, verificación) y
-docs/pipeline/orientador-ia/ (spec funcional+técnica ya aprobadas — es la
-referencia concreta de lo que este pipeline debe modelar/producir, corrido a
-mano en D-024/D-025/D-027).
+("El dashboard") y D-029 en docs/DECISIONES.md (modelo de datos y servicios
+ya construidos en apps/factory/src/pipeline/ — no reimplementar, consumir).
 
-Objetivo: diseñar e implementar el modelo de datos y el runner mínimo del
-pipeline (proyectos/specs/gates/runs/estados) — NO un segundo módulo de
-negocio a mano. Antes de escribir código, proponer a Leonardo el diseño
-concreto (schema de datos, estados/transiciones, qué corre el Agent SDK y
-dónde) — es una decisión de arquitectura, documentar en docs/DECISIONES.md.
+Objetivo: exponer HTTP sobre PipelineModule (controllers en apps/factory,
+sin tocar los servicios existentes) y construir la UI de seguimiento/
+aprobación (timeline de estados, visor de spec con aprobar/comentar,
+historial) — probablemente como nuevo módulo dentro de apps/web o como app
+propia, a decidir con Leonardo antes de implementar (afecta auth: apps/factory
+no comparte BD/JWT con la Plataforma, D-029).
 
-Al cerrar: actualizar docs/STATUS.md y commitear ([core] ...).
+Al cerrar: actualizar docs/STATUS.md y commitear ([factory] ...).
 ```
 
 ### Receta de verificación local con BD (ya completada — queda de referencia para levantar el entorno de nuevo)

@@ -27,8 +27,9 @@ export default tseslint.config(
   },
   {
     // La DI de NestJS necesita imports de valor (emitDecoratorMetadata):
-    // forzar `import type` rompería la inyección por constructor.
-    files: ['apps/api/**/*.ts'],
+    // forzar `import type` rompería la inyección por constructor. apps/factory
+    // (D-029) usa el mismo patrón NestJS que apps/api, aunque sin HTTP todavía.
+    files: ['apps/api/**/*.ts', 'apps/factory/**/*.ts'],
     rules: {
       '@typescript-eslint/consistent-type-imports': 'off'
     }

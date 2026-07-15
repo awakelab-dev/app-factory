@@ -9,7 +9,9 @@
     "MOODLE_TOKEN",
     "MOODLE_REQUEST_TIMEOUT_MS",
     "ANTHROPIC_API_KEY",
-    "ANTHROPIC_MODEL"
+    "ANTHROPIC_MODEL",
+    "FACTORY_DATABASE_URL",
+    "PLATFORM_REPO_PATH"
   ],
   "tasks": {
     "build": {

@@ -1,0 +1,190 @@
+// Modelo de datos de la Fábrica (awkfactory, docs/03-arquitectura.md).
+// Sistema SEPARADO de la Plataforma (apps/api/prisma/schema.prisma): otra
+// base de datos lógica en la MISMA instancia Postgres managed (D-029), sin
+// esquemas ni tablas compartidas con `core`/`moodle`/`orientador`.
+//
+// Entidades (docs/04-integracion-cowork.md, pasos 2-6 del pipeline):
+// Project (un prototipo/encargo en curso por la fábrica), Spec (spec
+// funcional+técnica de una versión concreta), Gate (aprobación humana sobre
+// una spec — funcional, técnica, de PR o de aceptación del gerente) y Run
+// (una ejecución del Agent SDK: análisis o generación).
+//
+// Generador: mismo patrón que apps/api (D-010) — `prisma-client` sin engines
+// Rust, cliente TS en src/generated/prisma (gitignored), driver adapter
+// @prisma/adapter-pg en runtime.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Estado del proyecto en el pipeline (docs/03-arquitectura.md, "Estados del
+/// proyecto"). Único campo que mueve el runner/CLI; nunca se edita a mano.
+enum ProjectStatus {
+  received // INTAKE: proyecto creado, aún no se corrió ningún análisis
+  analyzing // Run de análisis en curso
+  spec_ready // Spec generada (versión N), gates recién abiertos
+  pending_approval // Esperando decisión de uno o ambos gates (funcional/técnica)
+  generating // Run de generación en curso (Agent SDK escribiendo código)
+  verifying // Rama/PR generados; build/lint/test corriendo o ya corrido
+  pr_review // PR abierta, esperando revisión humana (docs/05)
+  staging // PR mergeada y desplegada a staging, esperando validación del gerente
+  manager_acceptance // Gerente validando en staging
+  deployed // Promovido a producción — estado terminal de éxito
+  changes_requested // Gate de PR o de aceptación pidió cambios — vuelve a generating
+  rejected // Gate funcional/técnico rechazó el proyecto — terminal
+  error // Un run falló y no quedó en un estado recuperable sin intervención
+
+  @@map("project_status")
+}
+
+enum ProjectSourceType {
+  manual // Aportado directamente por Leonardo (Fase 1, sin Cowork todavía)
+  cowork_prototype // Entrada vía conector MCP submit_prototype (Fase 2, docs/04)
+
+  @@map("project_source_type")
+}
+
+/// Un prototipo/encargo que atraviesa el pipeline. `moduleSlug` es el nombre
+/// final de carpeta en la Plataforma (apps/api/src/modules/<slug>,
+/// apps/web/src/modules/<slug>) — se fija en la creación porque el gate y la
+/// generación ya lo necesitan como convención de rutas.
+model Project {
+  id          String            @id @default(uuid(7)) @db.Uuid
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  moduleSlug  String            @unique
+  displayName String
+  sourceType  ProjectSourceType @default(manual)
+  /// Ruta o descripción del material fuente (carpeta del prototipo, texto
+  /// libre). No es un contrato tipado todavía — eso es la skill de
+  /// prototipado de Fase 2 (docs/04, prototype.manifest.json).
+  sourceRef   String
+  requestedBy String
+  status      ProjectStatus     @default(received)
+
+  specs Spec[]
+  runs  Run[]
+
+  @@map("projects")
+}
+
+/// Una versión de la spec intermedia (docs/04, paso 2). Nueva versión cada
+/// vez que un gate pide "complementar" (docs/05) — nunca se edita in-place,
+/// para conservar el historial completo de qué se aprobó.
+model Spec {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  createdAt DateTime @default(now())
+  projectId String   @db.Uuid
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  version   Int
+
+  /// Markdown, mismo formato que docs/pipeline/<slug>/spec-funcional.md.
+  functionalContent String @db.Text
+  /// Markdown, mismo formato que docs/pipeline/<slug>/spec-tecnica.md.
+  technicalContent  String @db.Text
+
+  /// Score de complejidad (docs/05: nº de entidades, integraciones externas,
+  /// lógica no trivial) — informa si el gate puede auto-aprobarse por
+  /// muestreo o es obligatorio.
+  complexityScore Int?
+  /// Flags detectados por el análisis (docs/05: datos personales/RGPD,
+  /// dependencia externa nueva, primer módulo de un tipo, migración a core).
+  sensitivityFlags Json @default("[]")
+  /// Qué resuelve el core o módulos existentes (antiduplicación, docs/04
+  /// list_modules) — texto libre del análisis.
+  reuseNotes String? @db.Text
+
+  gates Gate[]
+  runs  Run[]
+
+  @@unique([projectId, version])
+  @@map("specs")
+}
+
+enum GateType {
+  functional // Aprueba el gerente (docs/05)
+  technical // Aprueba el revisor técnico (docs/05)
+  pr_review // Aprueba el revisor técnico sobre el PR generado (paso 6)
+  manager_acceptance // Aprueba el gerente en staging (paso 8)
+
+  @@map("gate_type")
+}
+
+enum GateStatus {
+  pending
+  approved
+  rejected
+  changes_requested // "Complementar" (docs/05): vuelve a spec_ready con nueva versión
+
+  @@map("gate_status")
+}
+
+/// Un punto de aprobación humana. docs/05 da tres salidas al revisor:
+/// aprobar / rechazar con motivo / complementar — `changes_requested` cubre
+/// "complementar" (nunca se parchea código a mano, se regenera desde spec).
+model Gate {
+  id            String     @id @default(uuid(7)) @db.Uuid
+  createdAt     DateTime   @default(now())
+  specId        String     @db.Uuid
+  spec          Spec       @relation(fields: [specId], references: [id], onDelete: Cascade)
+  gateType      GateType
+  status        GateStatus @default(pending)
+  /// Email/nombre de quien decide. Sin FK a `core.users`: la Fábrica no
+  /// comparte base de datos con la Plataforma (D-029) — en Fase 1 este campo
+  /// es texto libre porque el único operador es Leonardo (D-021, doble rol).
+  reviewer      String?
+  decisionNotes String?    @db.Text
+  decidedAt     DateTime?
+
+  @@map("gates")
+}
+
+enum RunType {
+  analysis // Paso 2: Agent SDK produce la spec funcional+técnica
+  generation // Paso 4: Agent SDK escribe código en una rama del monorepo
+
+  @@map("run_type")
+}
+
+enum RunStatus {
+  pending
+  running
+  success
+  error
+
+  @@map("run_status")
+}
+
+/// Una ejecución del Agent SDK (headless, docs/03). `specId` nullable porque
+/// un run de análisis crea la spec — no puede referenciarla de antemano.
+model Run {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  createdAt      DateTime  @default(now())
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  projectId      String    @db.Uuid
+  project        Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  specId         String?   @db.Uuid
+  spec           Spec?     @relation(fields: [specId], references: [id], onDelete: SetNull)
+  runType        RunType
+  status         RunStatus @default(pending)
+  /// Rama `factory/<slug>` creada por un run de generación (docs/05: nunca
+  /// escribe directo a main).
+  branchName     String?
+  prUrl          String?
+  /// session_id del Agent SDK (trazabilidad, ver agent-sdk.client.ts).
+  agentSessionId String?
+  outputSummary  String?   @db.Text
+  errorMessage   String?   @db.Text
+  costUsd        Float?
+  inputTokens    Int?
+  outputTokens   Int?
+
+  @@map("runs")
+}
