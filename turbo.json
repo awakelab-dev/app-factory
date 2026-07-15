@@ -11,6 +11,7 @@
     "ANTHROPIC_API_KEY",
     "ANTHROPIC_MODEL",
     "FACTORY_DATABASE_URL",
+    "FACTORY_PORT",
     "PLATFORM_REPO_PATH"
   ],
   "tasks": {

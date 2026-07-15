@@ -7,7 +7,10 @@ export default defineConfig({
   server: {
     // En dev el shell llama a la API por el mismo origen; en prod lo resuelve Nginx.
     proxy: {
-      '/api': 'http://localhost:3000'
+      '/api': 'http://localhost:3000',
+      // Control plane de la Fábrica (apps/factory, D-030) — levantar con
+      // `pnpm --filter=@awk/factory serve` cuando se trabaje en /factory.
+      '/factory-api': 'http://localhost:3100'
     }
   },
   test: {

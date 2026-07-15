@@ -2,7 +2,7 @@
 
 > Actualizar al cerrar CADA sesión de trabajo. Este archivo es lo primero que lee cualquier tarea nueva.
 
-**Última actualización**: 2026-07-15 (**Mecánica del pipeline con Agent SDK (D-029, paso 1 de D-026)**: nueva app `apps/factory` — modelo de datos del pipeline (Project/Spec/Gate/Run) + máquina de estados + runners de análisis y generación reales sobre `@anthropic-ai/claude-agent-sdk`, operados por CLI. Ver "Hecho" para el detalle completo y D-029 para las decisiones de arquitectura. Siguiente paso de D-026: (2) control plane como UI sobre estos datos reales.)
+**Última actualización**: 2026-07-15 (**Control plane de la Fábrica (D-030, paso 2 de D-026 — COMPLETA la secuencia D-026)**: HTTP sobre `PipelineModule` (`/factory-api`, guard JWT de plataforma compartiendo solo `JWT_SECRET`) + módulo `factory-console` en `apps/web` (`/factory`, solo admin: lista, stepper de estados, visor de spec con decisión de gates, historial). Ver "Hecho" y D-030. Pendiente operativo: bases `awkfactory_*` en la managed PG + bloque Nginx en el server; siguiente hito: validar el pipeline con un caso real.)
 **Fase actual**: Fase 1 — EN CURSO (pipeline con spec intermedia y gates, docs/04/docs/06; primer caso `orientador-ia` completo end-to-end, backend+frontend). Fase 0 queda CERRADA (core mínimo + CI en verde; managed PostgreSQL y Docker listos; staging y production sirviendo por HTTPS en `apps.awakelab.world`; primer módulo ejemplar `moodle-insights` sobre el patrón D-011 construido y validado en vivo contra un Moodle real).
 
 ## Hecho
@@ -70,16 +70,26 @@
   - **Tests**: 28 nuevos en `apps/factory` (máquina de estados, ProjectsService, GatesService, ambos runners con Agent SDK/git mockeados). **Verificación**: `pnpm exec turbo run build lint typecheck test` en verde sobre las 6 apps/paquetes (28/28 nuevos + 48/48 `@awk/api` + 29/29 `@awk/web` sin regresiones), corrido en copia temporal fuera del mount (D-023) con `pnpm-lock.yaml` actualizado copiado de vuelta.
   - **Pendiente de infraestructura real (no bloqueante para esta tarea)**: crear las bases `awkfactory_staging`/`awkfactory_production` + rol de mínimo privilegio en el Lightsail managed PG (mismo runbook que D-004/D-016); `PLATFORM_REPO_PATH` (checkout dedicado para que los runners lean/escriban/corran git) solo se puede verificar en un entorno con red real y sin las restricciones de unlink/rename del mount de Cowork (D-023) — Mac de Leonardo o el Lightsail, igual que otras piezas de infra.
 
+- **Control plane de la Fábrica (2026-07-15, D-030, paso 2 de D-026 — cierra la secuencia de arranque de Fase 1)**: decisiones confirmadas por Leonardo — UI como módulo `factory-console` de `apps/web` (no app propia), auth validando el JWT de plataforma con `JWT_SECRET` compartido (sin compartir BD, D-029 intacta), y la UI solo decide gates (analyze/generate siguen por CLI).
+  - **HTTP en `apps/factory`** (`src/main.ts` + `src/control-plane/`): prefijo `/factory-api`, puerto `FACTORY_PORT` (3100), `pnpm --filter=@awk/factory serve` en dev. `FactoryAuthGuard` global (verifica JWT HS256 de apps/api, exige rol `admin`; único endpoint público: `/factory-api/health` para el healthcheck del contenedor). Endpoints: `GET /projects` (resumen con última spec y gates pendientes), `GET /projects/:id` (specs+gates+runs completos), `POST /gates/:id/decision` (reviewer del JWT, body validado con Zod). `ProjectsService.list()` es el único cambio en los servicios D-029 (aditivo); el CLI ahora usa `CliModule` (sin HTTP/JWT).
+  - **Contrato en `@awk/types`** (`factory*Schema`/`Factory*`): mismo patrón que el resto de módulos — el mismo schema Zod valida en el controller y tipa el fetch del frontend. Se comparte contrato, no BD.
+  - **Módulo `factory-console`** (`apps/web/src/modules/factory-console/`, `/factory`, `requiredRoles: ['admin']`, nav "Fábrica"): `FactoryProjectsPage` (tabla de proyectos) y `FactoryProjectDetailPage` (stepper del camino feliz de docs/03 con alerta para changes_requested/rejected/error; visor de spec funcional/técnica con selector de versión, flags de sensibilidad y notas de reutilización; decisión de gates con comentario obligatorio para rechazar/pedir cambios; historial cronológico reconstruido de specs/gates/runs). Proxy `/factory-api` añadido a `vite.config.ts`.
+  - **Deploy/CI**: `apps/factory/Dockerfile` (stages `runtime`+`migrator`, `target:` explícito en CI — lección D-016), matriz Docker de `ci.yml` ahora `[api, web, factory]` + job `docker-factory-migrator`, servicio `factory` en `deploy/docker-compose.yml` (18104/18105), locations `/factory-api/` en los `.conf` de Nginx (añadir al server EDITANDO A MANO, nunca scp — incidente certbot), `FACTORY_DATABASE_URL`/`FACTORY_PORT_HOST` en plantillas `.env`, `deploy/scripts/migrate-factory.sh`.
+  - **Bug latente de D-029 corregido**: los Dockerfiles de api/web no copiaban `apps/factory/package.json` en su stage `deps` y el lockfile ya tenía ese importer — `pnpm install --frozen-lockfile` habría roto el próximo build de Docker en CI. Añadido el COPY en ambos.
+  - **Tests**: 9 nuevos en `apps/factory` (guard: public/401/403/admin; controllers: mapeo de DTOs, saneo de `sensitivityFlags`, reviewer del JWT) y 6 nuevos en `apps/web` (lista, vacío, detalle con stepper/spec/gates/historial, aprobar con recarga, comentario obligatorio, alerta de desvío) + `registry.test.ts` actualizado.
+  - **Verificación**: `pnpm exec turbo run build lint typecheck test` en verde — build/typecheck/lint 17/17 tareas, tests 8/8 paquetes (`@awk/factory` 37/37, `@awk/web` 35/35, `@awk/api` 48/48 sin regresiones, `@awk/auth`/`@awk/ui`/`@awk/types` intactos). Corrido en copia fuera del mount (`~/verify`, D-023 — `/tmp/verify` estaba ocupado por un dueño ajeno en este sandbox; deps nuevas en factory: `@nestjs/jwt`, `@nestjs/platform-express`, `zod`, `@awk/auth`, `@awk/types`), `pnpm-lock.yaml` copiado de vuelta al mount.
+  - **Pendiente operativo antes de desplegar el servicio factory** (no bloqueante): crear `awkfactory_staging`/`awkfactory_production` + roles `app_factory_*` en la managed PG (runbook lightsail-postgres.md), re-copiar `docker-compose.yml` al server (lección D-016/orientador: el deploy automático no lo actualiza), añadir el bloque `/factory-api/` a los `.conf` reales y las vars nuevas a los `.env` del server, y correr `migrate-factory.sh`.
+
 ## En curso
 
-Nada en curso — mecánica del pipeline completa (D-029). Siguiente paso de Fase 1: control plane (ver "Siguiente").
+Nada en curso — control plane completo (D-030). La secuencia de arranque de Fase 1 (D-026: frontend orientador-ia → mecánica del pipeline → control plane) queda cerrada. Siguiente: validar el pipeline end-to-end con un caso real (ver "Siguiente").
 
 ## Siguiente (en orden)
 
-**Orden de arranque de Fase 1 confirmado por Leonardo (2026-07-15, D-026)**: (0) frontend de `orientador-ia` [✅ completo, D-027 + rediseño de marca D-028] → (1) mecánica del pipeline con Agent SDK [✅ completo, D-029] → (2) control plane como UI sobre los datos reales del pipeline.
+**Orden de arranque de Fase 1 confirmado por Leonardo (2026-07-15, D-026)**: (0) frontend de `orientador-ia` [✅ D-027/D-028] → (1) mecánica del pipeline con Agent SDK [✅ D-029] → (2) control plane [✅ D-030]. **Secuencia completa.**
 
-1. **Control plane** (paso 2 de D-026, docs/04 "El dashboard"): UI de solo lectura/aprobación sobre los datos reales de `apps/factory` (D-029) — timeline de estados por proyecto, visor de la spec funcional/técnica con botón aprobar/comentar (llama a `decide-gate`), preview de módulos generados, historial. Necesita primero exponer HTTP sobre `PipelineModule` (controllers + `app.listen()` en `apps/factory/src/app.module.ts`, los servicios ya están listos) antes de construir la vista.
-2. **Validar `apps/factory` con un caso real** (no bloqueante para el punto 1, pero valida D-029 en la práctica): correr `create-project` + `analyze` desde un entorno con `PLATFORM_REPO_PATH`/`ANTHROPIC_API_KEY`/red reales (Mac de Leonardo o el Lightsail, nunca el sandbox de Cowork por las restricciones de D-023) contra un prototipo real, y confirmar que el Agent SDK produce una spec usable de punta a punta.
+1. **Validar el pipeline + control plane con un caso real end-to-end** (valida D-029 y D-030 en la práctica): desde un entorno con `PLATFORM_REPO_PATH`/`ANTHROPIC_API_KEY`/red reales (Mac de Leonardo o el Lightsail, nunca el sandbox de Cowork por D-023) — `create-project` + `analyze` por CLI contra un prototipo real, levantar `apps/factory` (`pnpm --filter=@awk/factory serve`) y `apps/web`, y decidir los gates desde `/factory` en el navegador. Confirma que el Agent SDK produce una spec usable y que el dashboard refleja el flujo completo.
+2. **Infra del servicio factory en staging/production** (cuando se quiera desplegar el control plane, no antes): crear bases `awkfactory_staging`/`awkfactory_production` + roles `app_factory_*` en la managed PG (runbook lightsail-postgres.md), añadir `FACTORY_DATABASE_URL`/`FACTORY_PORT_HOST` a los `.env` del server, re-copiar `docker-compose.yml`, añadir el bloque `/factory-api/` a los `.conf` reales A MANO (nunca scp, incidente certbot) y correr `~/migrate-factory.sh`.
 3. (Opcional, no bloqueante) Rotar la contraseña de MongoDB expuesta en `backend/.env` en el historial de git y evaluar purgarla con `git-filter-repo` (ver "Bloqueos"). También considerar rotar el password de `app_staging`/`app_production` y los `JWT_SECRET`: quedaron pegados en texto plano en un chat de Cowork durante una sesión anterior (no se guardaron en memoria ni en el repo, pero el historial del chat los tiene).
 4. (Opcional, no bloqueante) Bajar `proxy_read_timeout` en `deploy/nginx/{staging,production}.conf` de vuelta a un valor normal (30-60s) ahora que `POST /sync` de moodle-insights responde casi al toque y ya no necesita sostener una request larga — editar el `.conf` del server a mano (`nano`), nunca `scp` el archivo completo (ver el incidente del certificado en "Resuelto recientemente").
 
@@ -91,31 +101,29 @@ Decisiones tomadas por Leonardo en el gate inicial (2026-07-14): (1) el MVP sí 
 
 ### Mensaje inicial sugerido para la próxima tarea (copiar/pegar)
 
-> Nota: la mecánica del pipeline queda completa (`apps/factory`, D-029, paso 1
-> de D-026) — modelo de datos, máquina de estados, runners de análisis y
-> generación reales con el Agent SDK, todo operado por CLI. La próxima tarea
-> es el paso 2 de D-026: el control plane (dashboard) como UI sobre estos
-> datos reales — es diseño de UI/API sobre un modelo ya fijado, no
-> arquitectura desde cero.
+> Nota: la secuencia de arranque de Fase 1 (D-026) está completa — pipeline
+> por CLI (D-029) + control plane HTTP/UI (D-030). La próxima tarea no es de
+> código: es correr el primer caso real de punta a punta y anotar lo que
+> falle o desentone. Corre en el Mac de Leonardo o el Lightsail (nunca el
+> sandbox de Cowork, D-023) porque necesita red, ANTHROPIC_API_KEY y un
+> checkout dedicado en PLATFORM_REPO_PATH.
 
-> Modelo recomendado: **Sonnet** — es desarrollo estándar (controllers HTTP +
-> UI React sobre servicios/datos que ya existen), salvo que al diseñar la
-> vista aparezca una decisión estructural nueva (p. ej. cómo autenticar
-> `apps/factory`), en cuyo caso pausar y proponerla antes de implementar.
+> Modelo recomendado: **Sonnet** — es operación guiada + diagnóstico, no
+> arquitectura. Si el análisis del Agent SDK produce specs inservibles y hay
+> que rediseñar prompts/runners, pausar y proponerlo.
 
 ```
-[factory] Control plane (paso 2 de D-026)
+[factory] Validación end-to-end del pipeline con un caso real
 
-Antes de empezar: leer docs/STATUS.md completo, docs/04-integracion-cowork.md
-("El dashboard") y D-029 en docs/DECISIONES.md (modelo de datos y servicios
-ya construidos en apps/factory/src/pipeline/ — no reimplementar, consumir).
+Antes de empezar: leer docs/STATUS.md completo y D-029/D-030 en
+docs/DECISIONES.md. Preparar: FACTORY_DATABASE_URL (base awkfactory local o
+la de staging), ANTHROPIC_API_KEY, PLATFORM_REPO_PATH (checkout dedicado).
 
-Objetivo: exponer HTTP sobre PipelineModule (controllers en apps/factory,
-sin tocar los servicios existentes) y construir la UI de seguimiento/
-aprobación (timeline de estados, visor de spec con aprobar/comentar,
-historial) — probablemente como nuevo módulo dentro de apps/web o como app
-propia, a decidir con Leonardo antes de implementar (afecta auth: apps/factory
-no comparte BD/JWT con la Plataforma, D-029).
+Objetivo: create-project + analyze por CLI contra un prototipo real;
+levantar `pnpm --filter=@awk/factory serve` + `pnpm dev` y decidir los
+gates desde /factory en el navegador; si la spec se aprueba, generate y
+revisar la rama/PR. Anotar en STATUS.md qué produjo el Agent SDK y qué
+hay que ajustar.
 
 Al cerrar: actualizar docs/STATUS.md y commitear ([factory] ...).
 ```

@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app.module';
+import { CliModule } from './cli.module';
 import { AnalysisRunnerService } from './pipeline/analysis-runner.service';
 import { GatesService } from './pipeline/gates.service';
 import { GenerationRunnerService } from './pipeline/generation-runner.service';
@@ -64,7 +64,7 @@ function parseGateDecision(value: string | undefined): GateDecision {
 
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
-  const app = await NestFactory.createApplicationContext(AppModule, { logger: ['error', 'warn', 'log'] });
+  const app = await NestFactory.createApplicationContext(CliModule, { logger: ['error', 'warn', 'log'] });
 
   try {
     switch (command) {

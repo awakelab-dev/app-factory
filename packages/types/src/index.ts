@@ -264,3 +264,120 @@ export const orientadorLeadRowSchema = z.object({
 });
 export type OrientadorLeadRow = z.infer<typeof orientadorLeadRowSchema>;
 export const orientadorLeadsResponseSchema = z.array(orientadorLeadRowSchema);
+
+// ---------------------------------------------------------------------------
+// Control plane de la Fábrica (D-030, paso 2 de D-026): contrato entre la API
+// HTTP de apps/factory (/factory-api) y el módulo factory-console de apps/web.
+// La Fábrica sigue siendo un sistema separado de la Plataforma (D-029: otra
+// BD, sin FKs cruzadas) — aquí solo se comparte el CONTRATO de lectura/
+// aprobación, igual que el resto de módulos comparten los suyos. Los valores
+// de los enums coinciden 1:1 con apps/factory/prisma/schema.prisma (y con
+// apps/factory/src/pipeline/types.ts — misma advertencia: si cambian allá,
+// cambian aquí).
+// ---------------------------------------------------------------------------
+
+export const factoryProjectStatusSchema = z.enum([
+  'received',
+  'analyzing',
+  'spec_ready',
+  'pending_approval',
+  'generating',
+  'verifying',
+  'pr_review',
+  'staging',
+  'manager_acceptance',
+  'deployed',
+  'changes_requested',
+  'rejected',
+  'error'
+]);
+export type FactoryProjectStatus = z.infer<typeof factoryProjectStatusSchema>;
+
+export const factoryGateTypeSchema = z.enum(['functional', 'technical', 'pr_review', 'manager_acceptance']);
+export type FactoryGateType = z.infer<typeof factoryGateTypeSchema>;
+
+export const factoryGateStatusSchema = z.enum(['pending', 'approved', 'rejected', 'changes_requested']);
+export type FactoryGateStatus = z.infer<typeof factoryGateStatusSchema>;
+
+/** Decisión que puede tomar un revisor sobre un gate pendiente (docs/05: aprobar / rechazar / complementar). */
+export const factoryGateDecisionSchema = z.enum(['approved', 'rejected', 'changes_requested']);
+export type FactoryGateDecision = z.infer<typeof factoryGateDecisionSchema>;
+
+export const factoryGateSchema = z.object({
+  id: z.string(),
+  createdAt: z.iso.datetime(),
+  gateType: factoryGateTypeSchema,
+  status: factoryGateStatusSchema,
+  reviewer: z.string().nullable(),
+  decisionNotes: z.string().nullable(),
+  decidedAt: z.iso.datetime().nullable()
+});
+export type FactoryGate = z.infer<typeof factoryGateSchema>;
+
+export const factorySpecSchema = z.object({
+  id: z.string(),
+  createdAt: z.iso.datetime(),
+  version: z.number().int(),
+  functionalContent: z.string(),
+  technicalContent: z.string(),
+  complexityScore: z.number().int().nullable(),
+  sensitivityFlags: z.array(z.string()),
+  reuseNotes: z.string().nullable(),
+  gates: z.array(factoryGateSchema)
+});
+export type FactorySpec = z.infer<typeof factorySpecSchema>;
+
+export const factoryRunTypeSchema = z.enum(['analysis', 'generation']);
+export type FactoryRunType = z.infer<typeof factoryRunTypeSchema>;
+export const factoryRunStatusSchema = z.enum(['pending', 'running', 'success', 'error']);
+export type FactoryRunStatus = z.infer<typeof factoryRunStatusSchema>;
+
+export const factoryRunSchema = z.object({
+  id: z.string(),
+  createdAt: z.iso.datetime(),
+  startedAt: z.iso.datetime().nullable(),
+  finishedAt: z.iso.datetime().nullable(),
+  runType: factoryRunTypeSchema,
+  status: factoryRunStatusSchema,
+  branchName: z.string().nullable(),
+  prUrl: z.string().nullable(),
+  outputSummary: z.string().nullable(),
+  errorMessage: z.string().nullable(),
+  costUsd: z.number().nullable(),
+  inputTokens: z.number().int().nullable(),
+  outputTokens: z.number().int().nullable()
+});
+export type FactoryRun = z.infer<typeof factoryRunSchema>;
+
+/** Fila de GET /factory-api/projects (lista del control plane). */
+export const factoryProjectSummarySchema = z.object({
+  id: z.string(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+  moduleSlug: z.string(),
+  displayName: z.string(),
+  requestedBy: z.string(),
+  sourceType: z.enum(['manual', 'cowork_prototype']),
+  status: factoryProjectStatusSchema,
+  latestSpecVersion: z.number().int().nullable(),
+  pendingGates: z.number().int()
+});
+export type FactoryProjectSummary = z.infer<typeof factoryProjectSummarySchema>;
+export const factoryProjectsResponseSchema = z.array(factoryProjectSummarySchema);
+
+/** GET /factory-api/projects/:id — proyecto completo (specs desc con gates + runs desc). */
+export const factoryProjectDetailSchema = factoryProjectSummarySchema
+  .omit({ latestSpecVersion: true, pendingGates: true })
+  .extend({
+    sourceRef: z.string(),
+    specs: z.array(factorySpecSchema),
+    runs: z.array(factoryRunSchema)
+  });
+export type FactoryProjectDetail = z.infer<typeof factoryProjectDetailSchema>;
+
+/** POST /factory-api/gates/:id/decision — el reviewer sale del JWT, nunca del body. */
+export const factoryGateDecisionRequestSchema = z.object({
+  decision: factoryGateDecisionSchema,
+  notes: z.string().max(4000).optional()
+});
+export type FactoryGateDecisionRequest = z.infer<typeof factoryGateDecisionRequestSchema>;

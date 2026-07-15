@@ -1,6 +1,7 @@
 import { canAccess } from '@awk/auth';
 import type { AuthUser, NavItem } from '@awk/types';
 import { coreAdminModule } from './core-admin';
+import { factoryConsoleModule } from './factory-console';
 import { helloModule } from './hello';
 import { moodleInsightsModule } from './moodle-insights';
 import { orientadorIaModule } from './orientador-ia';
@@ -14,7 +15,8 @@ export const modules: ModuleRegistration[] = [
   helloModule,
   coreAdminModule,
   moodleInsightsModule,
-  orientadorIaModule
+  orientadorIaModule,
+  factoryConsoleModule
 ];
 
 /** Módulos a los que el usuario puede entrar (regla canAccess de @awk/auth). */

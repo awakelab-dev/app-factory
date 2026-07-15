@@ -45,6 +45,28 @@ services:
       timeout: 5s
       retries: 5
 
+  # Control plane de la Fábrica (apps/factory, D-030): solo HTTP de lectura +
+  # decisión de gates. Los runners de análisis/generación NO corren aquí (van
+  # por CLI con PLATFORM_REPO_PATH, D-029) — por eso no recibe ANTHROPIC_*.
+  # JWT_SECRET es el MISMO de la Plataforma: la Fábrica valida los tokens que
+  # emite apps/api, no emite propios (D-030).
+  factory:
+    image: ghcr.io/awakelab-dev/awkplatform-factory:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV}
+      FACTORY_PORT: 3100
+      FACTORY_DATABASE_URL: ${FACTORY_DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET}
+    ports:
+      - '127.0.0.1:${FACTORY_PORT_HOST}:3100'
+    healthcheck:
+      # /factory-api/health es el único endpoint sin JWT (ver HealthController).
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:3100/factory-api/health || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
   web:
     image: ghcr.io/awakelab-dev/awkplatform-web:${IMAGE_TAG:-latest}
     restart: unless-stopped

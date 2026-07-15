@@ -39,6 +39,19 @@ export class ProjectsService {
     return this.prisma.project.findUniqueOrThrow({ where: { id } });
   }
 
+  /**
+   * Todos los proyectos con sus specs+gates (para la lista del control
+   * plane, D-030). Método aditivo: no cambia nada de lo que ya consumía el
+   * CLI (D-029). Los volúmenes de la Fábrica son pequeños (decenas de
+   * proyectos, no miles) — sin paginación hasta que haga falta.
+   */
+  async list() {
+    return this.prisma.project.findMany({
+      orderBy: { updatedAt: 'desc' },
+      include: { specs: { orderBy: { version: 'desc' }, include: { gates: true } } }
+    });
+  }
+
   /** Proyecto + todas sus specs (con gates) + runs, más reciente primero — lo que necesita un `status` de CLI o, más adelante, el dashboard. */
   async getFullStatus(id: string) {
     return this.prisma.project.findUniqueOrThrow({
