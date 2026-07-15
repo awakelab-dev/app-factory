@@ -42,8 +42,8 @@ describe('registry (manifests → menú/rutas)', () => {
     ]);
   });
 
-  it('publicModuleRoutes (D-027) expone la landing del candidato de orientador-ia sin depender de ningún usuario', () => {
+  it('publicModuleRoutes (D-027) expone la landing del candidato y el mercado de orientador-ia sin depender de ningún usuario', () => {
     const paths = publicModuleRoutes().map((route) => route.path);
-    expect(paths).toEqual(['/orientador-ia']);
+    expect(paths).toEqual(['/orientador-ia', '/orientador-ia/mercado']);
   });
 });

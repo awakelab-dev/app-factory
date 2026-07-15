@@ -115,7 +115,7 @@ describe('OrientadorAdminPage (rol orientador_admin, D-025)', () => {
 
     expect(await screen.findByText('Ada Candidata')).toBeInTheDocument();
     expect(screen.getByText('ada@example.com')).toBeInTheDocument();
-    expect(screen.getByText('Desarrollo web')).toBeInTheDocument();
+    expect(screen.getByText('Desarrollo Web & Software')).toBeInTheDocument();
   });
 
   it('un admin de plataforma (rol admin, sin orientador_admin) también entra al panel', async () => {

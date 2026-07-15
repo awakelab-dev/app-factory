@@ -72,6 +72,15 @@ async function goThroughWizard() {
   fireEvent.click(screen.getByTestId('consent-checkbox'));
   fireEvent.click(screen.getByTestId('consent-submit'));
 
+  // Paso 1: meta (chat) + selección de sectores.
+  fireEvent.change(await screen.findByTestId('meta-input'), {
+    target: { value: 'Quiero especializarme en IA aplicada al desarrollo de software.' }
+  });
+  fireEvent.click(screen.getByTestId('meta-submit'));
+  fireEvent.click(await screen.findByTestId('sector-chip-desarrollo'));
+  fireEvent.click(screen.getByTestId('sectors-continue'));
+
+  // Paso 2: historia + nivel + envío.
   fireEvent.change(await screen.findByTestId('story-textarea'), {
     target: { value: 'Llevo 3 años programando en JS y quiero especializarme en IA aplicada.' }
   });
@@ -79,14 +88,14 @@ async function goThroughWizard() {
 }
 
 describe('OrientadorCandidatePage (flujo público del candidato, D-025/D-027)', () => {
-  it('landing → consentimiento → historia → resultado con academia recomendada', async () => {
+  it('landing → consentimiento → meta+sectores → historia → resultado con academia recomendada', async () => {
     mockApi();
     await goThroughWizard();
 
-    // "Desarrollo web" también aparece como <option> del <select> de sector
-    // declarado en el paso anterior — se usa un testid dedicado para no
-    // depender de un texto ambiguo que existe en dos pasos del wizard a la vez.
-    expect(await screen.findByTestId('recommended-sector')).toHaveTextContent('Desarrollo web');
+    // "Desarrollo Web & Software" también aparece como chip de sector en el
+    // paso 1 — se usa un testid dedicado para no depender de un texto
+    // ambiguo que existe en dos pasos del wizard a la vez.
+    expect(await screen.findByTestId('recommended-sector')).toHaveTextContent('Desarrollo Web & Software');
     expect(screen.getByText('Escuela de IA Aplicada al Desarrollo Web')).toBeInTheDocument();
     expect(screen.getByText('Testing automatizado')).toBeInTheDocument();
     expect(screen.getByTestId('download-pdf-button')).toBeInTheDocument();
@@ -105,10 +114,32 @@ describe('OrientadorCandidatePage (flujo público del candidato, D-025/D-027)', 
     expect(await screen.findByTestId('consent-error')).toHaveTextContent('consentimiento');
   });
 
-  it('si se alcanza el límite de análisis (429), muestra un aviso claro', async () => {
+  it('requiere elegir al menos un sector antes de continuar al paso 2', async () => {
+    mockApi();
+    render(<App />);
+    fireEvent.click(await screen.findByTestId('start-button'));
+
+    fireEvent.change(screen.getByLabelText('Nombre completo'), { target: { value: 'Ada Candidata' } });
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'ada@example.com' } });
+    fireEvent.click(screen.getByTestId('consent-checkbox'));
+    fireEvent.click(screen.getByTestId('consent-submit'));
+
+    fireEvent.change(await screen.findByTestId('meta-input'), {
+      target: { value: 'Quiero especializarme en IA aplicada al desarrollo de software.' }
+    });
+    fireEvent.click(screen.getByTestId('meta-submit'));
+
+    expect(screen.getByTestId('sectors-continue')).toBeDisabled();
+  });
+
+  it('si se alcanza el límite de análisis (429), muestra un aviso claro sin perder el paso 2', async () => {
     mockApi(() => Promise.resolve({ ok: false, status: 429, json: () => Promise.resolve({}) }));
     await goThroughWizard();
 
     expect(await screen.findByTestId('input-error')).toHaveTextContent('límite de análisis');
+    // El formulario sigue montado con lo que el candidato ya había escrito.
+    expect(screen.getByTestId('story-textarea')).toHaveValue(
+      'Llevo 3 años programando en JS y quiero especializarme en IA aplicada.'
+    );
   });
 });
