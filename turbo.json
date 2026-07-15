@@ -7,7 +7,9 @@
     "PRISMA_*",
     "MOODLE_URL",
     "MOODLE_TOKEN",
-    "MOODLE_REQUEST_TIMEOUT_MS"
+    "MOODLE_REQUEST_TIMEOUT_MS",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_MODEL"
   ],
   "tasks": {
     "build": {

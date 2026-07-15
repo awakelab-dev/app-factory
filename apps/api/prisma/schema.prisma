@@ -16,7 +16,7 @@ generator client {
 // y el runtime recibe el adapter (@prisma/adapter-pg) en el constructor.
 datasource db {
   provider = "postgresql"
-  schemas  = ["core", "moodle"]
+  schemas  = ["core", "moodle", "orientador"]
 }
 
 /// Usuario de la plataforma. La identidad vendrá del IdP (SSO pendiente,
@@ -180,4 +180,122 @@ model MoodleGrade {
   @@unique([courseId, studentId])
   @@map("grades")
   @@schema("moodle")
+}
+
+// ---------------------------------------------------------------------------
+// Módulo orientador-ia (segundo caso real, primero de Fase 1 vía pipeline con
+// spec intermedia — D-024/D-025, docs/pipeline/orientador-ia/): landing +
+// orientador de carrera para el mercado laboral español, encargo de Awakelab
+// para Grupo Aspasia/Refactika. Flujo público (candidato, sin login, @Public())
+// + panel admin acotado al rol "orientador_admin" (D-011: rol declarado en el
+// manifest del módulo, sin tocar el core). A diferencia de moodle-insights,
+// el análisis por candidato es una sola llamada corta a Claude (segundos, no
+// minutos) — no se justifica el patrón asíncrono con polling, la respuesta de
+// POST /intake ya incluye el perfil generado.
+// ---------------------------------------------------------------------------
+
+enum OrientadorInputType {
+  story
+  linkedin_url
+  cv_pdf
+
+  @@schema("orientador")
+}
+
+/// Nivel declarado por el candidato o estimado por el análisis de Claude.
+enum OrientadorLevel {
+  inicial
+  aplicada
+  experto
+
+  @@schema("orientador")
+}
+
+/// Un registro por candidato que completa el consentimiento + envía su
+/// historia/CV/LinkedIn. `analysisCount` es el contador del límite de 50
+/// ejecuciones por candidato (D-025) — no hay login, así que el candidato se
+/// identifica por email.
+model OrientadorLead {
+  id               String               @id @default(uuid(7)) @db.Uuid
+  createdAt        DateTime             @default(now())
+  fullName         String
+  email            String
+  phone            String?
+  consentGiven     Boolean
+  consentMarketing Boolean              @default(false)
+  consentAt        DateTime
+  rawInputType     OrientadorInputType
+  /// Texto libre, URL de LinkedIn o texto extraído del CV (client-side con
+  /// pdf.js, igual que el prototipo original) — truncado a 2000 caracteres.
+  rawInputText     String               @db.Text
+  declaredSector   String?
+  declaredLevel    OrientadorLevel?
+  /// Tope anti-abuso: 50 llamadas reales a Claude por candidato (D-025), no
+  /// un presupuesto de uso normal (1 análisis por persona es lo esperado).
+  analysisCount    Int                  @default(0)
+  profile          OrientadorProfile?
+
+  @@index([email])
+  @@map("leads")
+  @@schema("orientador")
+}
+
+/// Resultado de la llamada a Claude (Haiku, D-025): reemplaza el motor de
+/// keyword-matching del prototipo original como fuente de la recomendación.
+model OrientadorProfile {
+  id                String          @id @default(uuid(7)) @db.Uuid
+  leadId            String          @unique @db.Uuid
+  lead              OrientadorLead  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  recommendedSector String
+  rationale         String          @db.Text
+  estimatedLevel    OrientadorLevel
+  /// Array de strings (2-3 huecos de formación) — jsonb porque es la única
+  /// parte genuinamente variable/no tabular del análisis (docs/02-stack.md).
+  skillGaps         Json
+  llmModel          String
+  llmTokensUsed     Int?
+  createdAt         DateTime        @default(now())
+
+  @@map("profiles")
+  @@schema("orientador")
+}
+
+/// Contenido comercial de las 13 "academias" (una por sector). Se mantiene
+/// tal cual el contenido del prototipo original (gate funcional D-025: sin
+/// revisión antes de producción) — id real del prototipo como PK (no uuid)
+/// para que el seed sea una copia literal y trazable de app.js del original.
+model OrientadorAcademy {
+  id            String   @id
+  sector        String
+  name          String
+  shortName     String
+  icon          String
+  color         String
+  duration      String
+  durationWeeks Int
+  synchronous   String
+  asynchronous  String
+  challenge     String   @db.Text
+  /// Arrays de strings (módulos/resultados) — jsonb, mismo motivo que skillGaps.
+  modules       Json
+  outcomes      Json
+  priceEur      String
+  priceUsd      String
+  purchaseUrl   String
+  active        Boolean  @default(true)
+  updatedAt     DateTime @updatedAt
+
+  @@map("academies")
+  @@schema("orientador")
+}
+
+/// Trazabilidad RGPD de exportaciones de leads (quién exportó cuántos y cuándo).
+model OrientadorExportLog {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  adminUserId String   @db.Uuid
+  exportedAt  DateTime @default(now())
+  leadCount   Int
+
+  @@map("exports_log")
+  @@schema("orientador")
 }

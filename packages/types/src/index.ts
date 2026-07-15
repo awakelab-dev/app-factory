@@ -153,3 +153,114 @@ export const moodleStudentRowSchema = z.object({
 });
 export type MoodleStudentRow = z.infer<typeof moodleStudentRowSchema>;
 export const moodleStudentsResponseSchema = z.array(moodleStudentRowSchema);
+
+// ---------------------------------------------------------------------------
+// Módulo orientador-ia (D-024/D-025, docs/pipeline/orientador-ia/): flujo
+// público de orientación de carrera (candidato, sin login) + panel admin
+// para el rol acotado "orientador_admin" (personal de Grupo Aspasia/Refactika,
+// cliente de este módulo). El análisis por candidato es UNA llamada corta a
+// Claude Haiku (segundos) — a diferencia de moodle-insights, no hay patrón
+// asíncrono con polling: POST /intake ya responde con el perfil generado.
+// ---------------------------------------------------------------------------
+
+/** 13 sectores del contenido original (prototipo `orientadorIA`, D-025: se mantiene tal cual). */
+export const ORIENTADOR_SECTORS = [
+  'marketing',
+  'desarrollo',
+  'ventas',
+  'logistica',
+  'gestion',
+  'operaciones',
+  'rrhh',
+  'factoria',
+  'innovacion',
+  'finanzas',
+  'sostenibilidad',
+  'tecnologia',
+  'proyectos'
+] as const;
+
+export const orientadorSectorSchema = z.enum(ORIENTADOR_SECTORS);
+export type OrientadorSector = z.infer<typeof orientadorSectorSchema>;
+
+export const orientadorInputTypeSchema = z.enum(['story', 'linkedin_url', 'cv_pdf']);
+export type OrientadorInputType = z.infer<typeof orientadorInputTypeSchema>;
+
+export const orientadorLevelSchema = z.enum(['inicial', 'aplicada', 'experto']);
+export type OrientadorLevel = z.infer<typeof orientadorLevelSchema>;
+
+/** Payload que envía el candidato tras el consentimiento (endpoint público). */
+export const orientadorIntakeRequestSchema = z.object({
+  fullName: z.string().min(1).max(200),
+  email: z.email(),
+  phone: z.string().max(40).optional(),
+  consentGiven: z.literal(true),
+  consentMarketing: z.boolean().default(false),
+  rawInputType: orientadorInputTypeSchema,
+  /** Texto libre, URL de LinkedIn, o texto ya extraído del CV (pdf.js client-side). */
+  rawInputText: z.string().min(1).max(2000),
+  declaredSector: orientadorSectorSchema.optional(),
+  declaredLevel: orientadorLevelSchema.optional()
+});
+export type OrientadorIntakeRequest = z.infer<typeof orientadorIntakeRequestSchema>;
+
+export const orientadorProfileSchema = z.object({
+  leadId: z.string(),
+  recommendedSector: orientadorSectorSchema,
+  rationale: z.string(),
+  estimatedLevel: orientadorLevelSchema,
+  skillGaps: z.array(z.string()),
+  createdAt: z.iso.datetime()
+});
+export type OrientadorProfile = z.infer<typeof orientadorProfileSchema>;
+
+/** Respuesta de POST /intake: el candidato recibe su perfil ya generado, sin polling. */
+export const orientadorIntakeResponseSchema = z.object({
+  leadId: z.string(),
+  profile: orientadorProfileSchema
+});
+export type OrientadorIntakeResponse = z.infer<typeof orientadorIntakeResponseSchema>;
+
+export const orientadorAcademySchema = z.object({
+  id: z.string(),
+  sector: orientadorSectorSchema,
+  name: z.string(),
+  shortName: z.string(),
+  icon: z.string(),
+  color: z.string(),
+  duration: z.string(),
+  durationWeeks: z.number().int(),
+  synchronous: z.string(),
+  asynchronous: z.string(),
+  challenge: z.string(),
+  modules: z.array(z.string()),
+  outcomes: z.array(z.string()),
+  priceEur: z.string(),
+  priceUsd: z.string(),
+  purchaseUrl: z.string(),
+  active: z.boolean()
+});
+export type OrientadorAcademy = z.infer<typeof orientadorAcademySchema>;
+export const orientadorAcademiesResponseSchema = z.array(orientadorAcademySchema);
+
+/** PUT /orientador-ia/admin/academies/:id (rol orientador_admin) — todo opcional, id fuera del body. */
+export const orientadorAcademyUpdateSchema = orientadorAcademySchema
+  .omit({ id: true, sector: true })
+  .partial();
+export type OrientadorAcademyUpdate = z.infer<typeof orientadorAcademyUpdateSchema>;
+
+/** Fila de la lista de leads en el panel admin (rol orientador_admin). */
+export const orientadorLeadRowSchema = z.object({
+  id: z.string(),
+  createdAt: z.iso.datetime(),
+  fullName: z.string(),
+  email: z.string(),
+  phone: z.string().nullable(),
+  consentMarketing: z.boolean(),
+  rawInputType: orientadorInputTypeSchema,
+  declaredSector: orientadorSectorSchema.nullable(),
+  analysisCount: z.number().int(),
+  profile: orientadorProfileSchema.nullable()
+});
+export type OrientadorLeadRow = z.infer<typeof orientadorLeadRowSchema>;
+export const orientadorLeadsResponseSchema = z.array(orientadorLeadRowSchema);

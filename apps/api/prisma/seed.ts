@@ -5,6 +5,7 @@
  */
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client';
+import { ORIENTADOR_ACADEMIES } from './seed-data/orientador-academies';
 
 const connectionString =
   process.env.DATABASE_URL ?? 'postgresql://awk:awk@localhost:5432/awkplatform';
@@ -21,6 +22,14 @@ async function main(): Promise<void> {
     where: { name: 'user' },
     update: {},
     create: { name: 'user', description: 'Usuario estándar de la plataforma' }
+  });
+  // orientador-ia (D-025): rol acotado al módulo, para el personal de Aspasia
+  // que administra leads/academias — no ve el resto de la plataforma salvo
+  // que además tenga 'admin' o 'user'.
+  await prisma.role.upsert({
+    where: { name: 'orientador_admin' },
+    update: {},
+    create: { name: 'orientador_admin', description: 'Panel admin del módulo orientador-ia (leads, academias)' }
   });
 
   const users: Array<{ email: string; displayName: string; roleId: string }> = [
@@ -41,11 +50,23 @@ async function main(): Promise<void> {
     });
   }
 
+  // orientador-ia (D-025): contenido real de las 13 academias, copiado
+  // literalmente del prototipo original — idempotente (upsert por id).
+  for (const academy of ORIENTADOR_ACADEMIES) {
+    await prisma.orientadorAcademy.upsert({
+      where: { id: academy.id },
+      update: { ...academy },
+      create: { ...academy }
+    });
+  }
+
   await prisma.auditEvent.create({
     data: { action: 'core.seed', metadata: { users: users.map((u) => u.email) } }
   });
 
-  console.log('Seed aplicado: roles admin/user y usuarios dev.');
+  console.log(
+    `Seed aplicado: roles admin/user/orientador_admin, usuarios dev y ${ORIENTADOR_ACADEMIES.length} academias de orientador-ia.`
+  );
 }
 
 main()
