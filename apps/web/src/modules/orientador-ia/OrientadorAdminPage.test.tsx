@@ -10,6 +10,18 @@ const orientadorAdminFixture: AuthUser = {
   roles: ['orientador_admin']
 };
 
+// 2026-07-15: tras el primer despliegue real, un admin de plataforma sin
+// `orientador_admin` se quedó fuera del panel (redirigido a /hello) y solo
+// pudo entrar tras un INSERT manual de rol en la base. Se amplió el manifest
+// y el @Roles del backend para aceptar también 'admin' — este fixture cubre
+// esa regresión.
+const platformAdminFixture: AuthUser = {
+  id: 'u-2',
+  email: 'leonardo.barreto@awakelab.dev',
+  displayName: 'Leonardo Barreto',
+  roles: ['admin']
+};
+
 const leadsFixture: OrientadorLeadRow[] = [
   {
     id: 'lead-1',
@@ -58,13 +70,13 @@ function ok(body: unknown) {
   return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) });
 }
 
-function mockApi() {
+function mockApi(me: AuthUser = orientadorAdminFixture) {
   vi.stubGlobal(
     'fetch',
     vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       const method = init?.method ?? 'GET';
-      if (url.endsWith('/api/auth/me')) return ok(orientadorAdminFixture);
+      if (url.endsWith('/api/auth/me')) return ok(me);
       if (url.endsWith('/api/orientador-ia/admin/leads')) return ok(leadsFixture);
       if (url.endsWith('/api/orientador-ia/admin/academies') && method === 'GET') return ok(academiesFixture);
       if (url.endsWith('/api/orientador-ia/admin/leads/export')) {
@@ -104,6 +116,15 @@ describe('OrientadorAdminPage (rol orientador_admin, D-025)', () => {
     expect(await screen.findByText('Ada Candidata')).toBeInTheDocument();
     expect(screen.getByText('ada@example.com')).toBeInTheDocument();
     expect(screen.getByText('Desarrollo web')).toBeInTheDocument();
+  });
+
+  it('un admin de plataforma (rol admin, sin orientador_admin) también entra al panel', async () => {
+    mockApi(platformAdminFixture);
+    render(<App />);
+
+    expect(await screen.findByTestId('shell-nav')).toBeInTheDocument();
+    expect(screen.getByText('Orientador IA')).toBeInTheDocument();
+    expect(await screen.findByText('Ada Candidata')).toBeInTheDocument();
   });
 
   it('exporta los leads a CSV', async () => {

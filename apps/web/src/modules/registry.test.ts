@@ -12,9 +12,9 @@ const plain: AuthUser = { ...admin, id: 'u-2', roles: ['user'] };
 const orientadorAdmin: AuthUser = { ...admin, id: 'u-3', roles: ['orientador_admin'] };
 
 describe('registry (manifests → menú/rutas)', () => {
-  it('admin accede a todos los módulos registrados salvo los acotados a otro rol', () => {
+  it('admin accede a todos los módulos registrados, incl. orientador-ia (admin también entra ahí desde 2026-07-15)', () => {
     const ids = accessibleModules(admin).map((mod) => mod.manifest.id);
-    expect(ids).toEqual(['hello', 'core-admin', 'moodle-insights']);
+    expect(ids).toEqual(['hello', 'core-admin', 'moodle-insights', 'orientador-ia']);
   });
 
   it('un usuario sin admin no accede a core-admin (moodle-insights sí, sin requiredRoles)', () => {
@@ -31,7 +31,8 @@ describe('registry (manifests → menú/rutas)', () => {
     expect(visibleNav(admin).map((item) => item.label)).toEqual([
       'Demo Hello',
       'Usuarios',
-      'Moodle Insights'
+      'Moodle Insights',
+      'Orientador IA'
     ]);
     expect(visibleNav(plain).map((item) => item.label)).toEqual(['Demo Hello', 'Moodle Insights']);
     expect(visibleNav(orientadorAdmin).map((item) => item.label)).toEqual([

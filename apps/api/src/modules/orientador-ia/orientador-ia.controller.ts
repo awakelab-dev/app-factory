@@ -17,9 +17,12 @@ import { OrientadorIntakeService } from './orientador-intake.service';
 import { OrientadorQueryService } from './orientador-query.service';
 
 /**
- * Rutas del candidato (@Public(), sin login) y del panel admin del cliente
- * (@Roles('orientador_admin'), acotado a este módulo — D-011/D-025). Ver
- * docs/pipeline/orientador-ia/ para la spec completa.
+ * Rutas del candidato (@Public(), sin login) y del panel admin
+ * (@Roles('orientador_admin', 'admin') — D-011/D-025). `orientador_admin` es
+ * el rol acotado del cliente (Aspasia); `admin` se agregó tras el primer
+ * despliegue real (2026-07-15) para que cualquier admin de plataforma entre
+ * sin necesitar un INSERT manual de rol en la base — debe coincidir con
+ * `requiredRoles` del manifest (`apps/web/.../orientador-ia/module.manifest.ts`).
  */
 @Controller('orientador-ia')
 export class OrientadorIaController {
@@ -46,13 +49,13 @@ export class OrientadorIaController {
     return this.queryService.academies(true);
   }
 
-  @Roles('orientador_admin')
+  @Roles('orientador_admin', 'admin')
   @Get('admin/leads')
   leads(): Promise<OrientadorLeadRow[]> {
     return this.queryService.leads();
   }
 
-  @Roles('orientador_admin')
+  @Roles('orientador_admin', 'admin')
   @Get('admin/leads/export')
   @Header('Content-Type', 'text/csv; charset=utf-8')
   @Header('Content-Disposition', 'attachment; filename="orientador-ia-leads.csv"')
@@ -61,13 +64,13 @@ export class OrientadorIaController {
   }
 
   /** Catálogo completo (incl. inactivas) para el panel admin. */
-  @Roles('orientador_admin')
+  @Roles('orientador_admin', 'admin')
   @Get('admin/academies')
   adminAcademies(): Promise<OrientadorAcademy[]> {
     return this.queryService.academies(false);
   }
 
-  @Roles('orientador_admin')
+  @Roles('orientador_admin', 'admin')
   @Put('admin/academies/:id')
   updateAcademy(
     @Param('id') id: string,
