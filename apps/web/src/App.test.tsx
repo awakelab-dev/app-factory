@@ -85,4 +85,20 @@ describe('App (shell)', () => {
     expect(await screen.findByTestId('login-page')).toBeInTheDocument();
     expect(localStorage.getItem('awk.token')).toBeNull();
   });
+
+  it('una ruta pública (D-027, landing de orientador-ia) se ve sin sesión, sin caer al login', async () => {
+    window.history.replaceState({}, '', '/orientador-ia');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith('/api/orientador-ia/academies')) return ok([]);
+        return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) });
+      })
+    );
+    render(<App />);
+
+    expect(await screen.findByTestId('orientador-candidate-page')).toBeInTheDocument();
+    expect(screen.queryByTestId('login-page')).not.toBeInTheDocument();
+  });
 });

@@ -9,6 +9,7 @@ allowBuilds:
   '@prisma/engines': true
   '@swc/core': true
   '@tailwindcss/oxide': true
+  core-js: false
   esbuild: true
   prisma: true
   unrs-resolver: true

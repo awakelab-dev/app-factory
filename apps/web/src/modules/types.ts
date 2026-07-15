@@ -15,4 +15,14 @@ export interface ModuleRoute {
 export interface ModuleRegistration {
   manifest: ModuleManifest;
   routes: ModuleRoute[];
+  /**
+   * Rutas PÚBLICAS del módulo (sin login) — p.ej. la landing de candidato de
+   * orientador-ia (D-027). Se renderizan siempre, independientemente del
+   * estado de auth y sin el <Layout> del shell (sin sidebar): son la única
+   * superficie de la plataforma pensada para visitantes sin cuenta. La
+   * mayoría de los módulos no declara ninguna — el shell sigue asumiendo
+   * "todo detrás de login" (D-011) salvo que un módulo pida explícitamente
+   * lo contrario aquí.
+   */
+  publicRoutes?: ModuleRoute[];
 }

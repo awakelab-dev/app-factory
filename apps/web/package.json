@@ -20,7 +20,9 @@
     "react-router-dom": "^7.9.0",
     "@awk/auth": "workspace:*",
     "lucide-react": "^1.24.0",
-    "recharts": "^3.9.2"
+    "recharts": "^3.9.2",
+    "jspdf": "^4.2.1",
+    "pdfjs-dist": "^6.1.200"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.2",

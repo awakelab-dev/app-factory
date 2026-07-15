@@ -1,4 +1,4 @@
-import { GraduationCap, LayoutGrid, ShieldCheck, Sparkles } from 'lucide-react';
+import { Compass, GraduationCap, LayoutGrid, ShieldCheck, Sparkles } from 'lucide-react';
 import type { ComponentType } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { Button } from '@awk/ui';
@@ -15,7 +15,8 @@ import { visibleNav } from '../modules/registry';
 const NAV_ICONS: Record<string, ComponentType<{ className?: string }>> = {
   Sparkles,
   ShieldCheck,
-  GraduationCap
+  GraduationCap,
+  Compass
 };
 
 function NavIcon({ name }: { name?: string }) {

@@ -36,3 +36,19 @@ export async function apiFetch<T>(path: string, schema: ZodType<T>, init?: Reque
   if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status}`);
   return schema.parse(await res.json());
 }
+
+/**
+ * Variante para endpoints que no responden JSON (p. ej. el export CSV de
+ * orientador-ia, `Content-Type: text/csv`) — mismo adjunto de JWT, sin
+ * validar con Zod. El caller decide qué hacer con el Blob (aquí: disparar
+ * una descarga de archivo desde el navegador).
+ */
+export async function apiFetchBlob(path: string, init?: RequestInit): Promise<Blob> {
+  const headers = new Headers(init?.headers);
+  const token = getToken();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+
+  const res = await fetch(path, { ...init, headers });
+  if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status}`);
+  return res.blob();
+}

@@ -2,8 +2,8 @@
 
 > Actualizar al cerrar CADA sesión de trabajo. Este archivo es lo primero que lee cualquier tarea nueva.
 
-**Última actualización**: 2026-07-15 (**orden de arranque de Fase 1 confirmado, D-026**: (0) frontend `orientador-ia` → (1) mecánica del pipeline → (2) control plane; invierte el orden literal de docs/06. Estado previo intacto: **`orientador-ia`: gate spec aprobado (D-025) y backend generado y verificado en verde** — primer caso real de Fase 1 llevado de principio a fin hasta backend funcional: spec funcional+técnica → gate → generación de `apps/api/src/modules/orientador-ia/` con schema PG propio `orientador`, análisis de perfil vía Claude Haiku, rate-limit de 50/candidato, panel admin con rol `orientador_admin`. `turbo run build lint typecheck test` en 19/19 sobre la copia temporal fuera del mount (D-023): 48/48 tests en `apps/api` — 11 nuevos de orientador-ia + toda la suite existente sin regresiones — y 12/12 en `apps/web` sin tocar. **Falta el frontend** (flujo del candidato + panel admin) — ver "Siguiente".)
-**Fase actual**: Fase 1 — EN CURSO (pipeline con spec intermedia + gates, docs/04/docs/06; primer caso `orientador-ia` con backend listo, frontend pendiente). Fase 0 queda CERRADA (core mínimo + CI en verde; managed PostgreSQL y Docker listos; staging y production sirviendo por HTTPS en `apps.awakelab.world`; primer módulo ejemplar `moodle-insights` sobre el patrón D-011 construido y validado en vivo contra un Moodle real).
+**Última actualización**: 2026-07-15 (**frontend de `orientador-ia` completo (paso 0 de D-026, D-027)** — ver "Hecho" para el detalle. Con esto, el primer caso real de Fase 1 queda de punta a punta: spec → gate → backend → frontend, verificado en verde. Siguiente paso de D-026: (1) mecánica del pipeline con Agent SDK.)
+**Fase actual**: Fase 1 — EN CURSO (pipeline con spec intermedia y gates, docs/04/docs/06; primer caso `orientador-ia` completo end-to-end, backend+frontend). Fase 0 queda CERRADA (core mínimo + CI en verde; managed PostgreSQL y Docker listos; staging y production sirviendo por HTTPS en `apps.awakelab.world`; primer módulo ejemplar `moodle-insights` sobre el patrón D-011 construido y validado en vivo contra un Moodle real).
 
 ## Hecho
 
@@ -42,17 +42,25 @@
   - **Wiring**: `ANTHROPIC_API_KEY`/`ANTHROPIC_MODEL` (opcionales — sin la key, `POST /intake` responde 503 igual que `moodle-insights` sin sus credenciales) propagadas a `turbo.json`, `apps/api/.env.example`, `deploy/docker-compose.yml` y ambas plantillas `.env` de staging/producción. **Sin dependencias npm nuevas** (fetch nativo para Claude, CSV a mano para export) — `pnpm-lock.yaml` no cambió.
   - **Tests**: 11 nuevos en `apps/api` (`orientador-claude.service.spec.ts`: parseo/validación de la respuesta de Claude incl. degradación de sector inválido; `orientador-intake.service.spec.ts`: éxito, 503 sin configurar, 429 al tope de 50, fallo de análisis sin perder el lead).
   - **Verificación**: `turbo run build lint typecheck test` en 19/19 sobre la copia temporal fuera del mount (D-023) — 48/48 tests en `apps/api` (11 nuevos + toda la suite existente sin regresiones) y 12/12 en `apps/web` intactos.
-  - **Pendiente (siguiente sesión)**: frontend — flujo del candidato (landing, consentimiento, perfil, plan, PDF) y panel admin. Requiere primero un cambio pequeño y genérico al core del shell web (`App.tsx`/`ModuleRegistration`): hoy CUALQUIER ruta sin sesión muestra solo `<LoginPage />` (verificado leyendo `apps/web/src/App.tsx`) — no hay forma de que un módulo declare rutas públicas. Ver "Siguiente".
+  - **Frontend completo (2026-07-15, D-027)** — ver el bullet siguiente para el detalle.
+
+- **`orientador-ia` — frontend completo (2026-07-15, D-027, cierra el paso 0 de D-026)**: `apps/web/src/modules/orientador-ia/`:
+  - **Cambio de core previo (D-027)**: `ModuleRegistration` gana `publicRoutes` (rutas sin login, sin `<Layout>`); `registry.ts` añade `publicModuleRoutes()`; `App.tsx` las inyecta en las tres ramas de `AppRoutes` (loading/anónimo/autenticado). Genérico y reutilizable por cualquier módulo futuro con landing pública — no toca RBAC ni el manifest compartido (`@Public()` de la API, D-011, ya cubría el lado backend).
+  - **Flujo del candidato** (`OrientadorCandidatePage.tsx`, ruta pública `/orientador-ia`): wizard de un solo componente con estado en memoria (landing → consentimiento RGPD → historia/LinkedIn/CV → resultado) — sin backend de sesión no hay dónde persistir el estado entre pasos salvo aquí. Extracción de texto de CV vía `pdfjs-dist` (import dinámico a propósito: el módulo toca `DOMMatrix`/canvas al cargar, incompatible con jsdom en tests si se importa en el top-level). PDF del itinerario descargable client-side vía `jsPDF` (`itinerary-pdf.ts`), igual que el prototipo original (spec técnica).
+  - **Panel admin** (`OrientadorAdminPage.tsx`, ruta `/orientador-ia/admin`, rol `orientador_admin`): tabla de leads con su perfil generado, export CSV (nuevo helper `apiFetchBlob` en `lib/api.ts`, descarga vía `Blob`+`URL.createObjectURL`), y gestión editable del catálogo de academias (`PUT .../admin/academies/:id`).
+  - **Dependencias nuevas** en `apps/web`: `jspdf` y `pdfjs-dist` (sin dependencias nuevas en `apps/api` — el backend ya estaba cerrado).
+  - **Tests**: `OrientadorCandidatePage.test.tsx` (landing→consentimiento→historia→resultado con academia recomendada; validación de consentimiento obligatorio; 429 por límite de análisis) y `OrientadorAdminPage.test.tsx` (leads, export CSV, edición de academia) + casos nuevos en `App.test.tsx`/`registry.test.ts` para las rutas públicas y el rol `orientador_admin`.
+  - **Verificación**: `turbo run build lint typecheck test` en verde (15/15 tareas) sobre `@awk/web` y sus dependencias de workspace (`@awk/types`/`@awk/auth`/`@awk/ui`) — 21/21 tests en `apps/web`, corridos **directamente en el mount** (no hizo falta el workaround `/tmp/verify` de D-023 esta sesión: `pnpm install` funcionó en el mount tras habilitar borrado de archivos vía `allow_cowork_file_delete`, y el sandbox de esta tarea sí tuvo salida de red — a diferencia de lo documentado en D-023/D-016 para sesiones anteriores). `apps/api` no se tocó, no se re-verificó.
 
 ## En curso
 
-`orientador-ia` (Fase 1, D-024/D-025): backend completo y verificado (ver "Hecho"). Falta el frontend — ver "Siguiente", punto 1.
+Nada en curso — `orientador-ia` completo (backend D-024/D-025 + frontend D-027). Siguiente paso de Fase 1: mecánica del pipeline (ver "Siguiente").
 
 ## Siguiente (en orden)
 
-**Orden de arranque de Fase 1 confirmado por Leonardo (2026-07-15, D-026)**: (0) terminar frontend de `orientador-ia` → (1) mecánica del pipeline con Agent SDK → (2) control plane como UI sobre los datos reales del pipeline. Invierte el orden literal de docs/06. La nota `[decisión] Arranque concreto de Fase 1` guardada más abajo queda superada por D-026.
+**Orden de arranque de Fase 1 confirmado por Leonardo (2026-07-15, D-026)**: (0) frontend de `orientador-ia` [✅ completo, D-027] → (1) mecánica del pipeline con Agent SDK → (2) control plane como UI sobre los datos reales del pipeline. Invierte el orden literal de docs/06.
 
-1. **Frontend de `orientador-ia`** (paso 0 de D-026): (a) primero, el ajuste de core en `apps/web` — añadir soporte a rutas públicas (candidato) en el router/`ModuleRegistration` sin romper la asunción actual de "todo detrás de login"; documentar como decisión nueva si toca `App.tsx`/`types.ts` del shell (reutilizable por cualquier módulo futuro con landing pública). (b) Reimplementar sobre `packages/ui` + identidad Awakelab las pantallas del candidato (landing, consentimiento RGPD, perfil con historia/LinkedIn/CV vía `pdf.js`, plan con PDF descargable vía `jsPDF` client-side) y el panel admin (`orientador_admin`: leads, academias, export). (c) Registrar el módulo en `apps/web/src/modules/registry.ts`. (d) Tests de frontend (patrón `MoodleDashboardPage.test.tsx`) + verificación completa en `/tmp/verify` (D-023).
+1. **Mecánica del pipeline con Agent SDK** (paso 1 de D-026, docs/04 pasos 2-6): modelo de datos de proyectos/specs/gates/runs/estados + runner de generación. `orientador-ia` (D-024/D-025/D-027) es la referencia de lo que ese pipeline tendría que producir de punta a punta (spec funcional+técnica → gate → backend → frontend), corrido a mano esta vez.
 2. (Opcional, no bloqueante) Rotar la contraseña de MongoDB expuesta en `backend/.env` en el historial de git y evaluar purgarla con `git-filter-repo` (ver "Bloqueos"). También considerar rotar el password de `app_staging`/`app_production` y los `JWT_SECRET`: quedaron pegados en texto plano en un chat de Cowork durante una sesión anterior (no se guardaron en memoria ni en el repo, pero el historial del chat los tiene).
 3. (Opcional, no bloqueante) Bajar `proxy_read_timeout` en `deploy/nginx/{staging,production}.conf` de vuelta a un valor normal (30-60s) ahora que `POST /sync` de moodle-insights responde casi al toque y ya no necesita sostener una request larga — editar el `.conf` del server a mano (`nano`), nunca `scp` el archivo completo (ver el incidente del certificado en "Resuelto recientemente").
 
@@ -64,39 +72,32 @@ Decisiones tomadas por Leonardo en el gate inicial (2026-07-14): (1) el MVP sí 
 
 ### Mensaje inicial sugerido para la próxima tarea (copiar/pegar)
 
-> Nota: el orden de arranque de Fase 1 y el prototipo piloto quedaron
-> resueltos (D-026 / D-024-D-025). La próxima tarea es el paso 0 de D-026:
-> el frontend de `orientador-ia`.
+> Nota: `orientador-ia` queda completo de punta a punta (backend D-024/D-025 +
+> frontend D-027). La próxima tarea es el paso 1 de D-026: la mecánica del
+> pipeline con Agent SDK (modelo de datos + runner de generación, docs/04
+> pasos 2-6) — esta vez sí es trabajo de arquitectura, no de un módulo puntual.
 
-> Modelo recomendado: **Sonnet** — es implementación acotada (frontend de
-> un módulo sobre un patrón ya fijado), no arquitectura.
+> Modelo recomendado: **Opus** (o el modelo de mayor razonamiento disponible)
+> — es diseño del activo central de la fábrica (spec/gate/run como modelo de
+> datos + runner de generación), no implementación acotada sobre un patrón ya
+> fijado.
 
 ```
-[módulo] Frontend de orientador-ia (paso 0 de D-026)
+[core] Mecánica del pipeline (paso 1 de D-026)
 
-Antes de empezar: leer docs/STATUS.md completo, docs/pipeline/orientador-ia/
-(spec funcional + técnica aprobadas, D-025) y apps/api/src/modules/orientador-ia/
-(backend ya generado y verificado). Patrón de referencia de frontend:
-apps/web/src/modules/moodle-insights/.
+Antes de empezar: leer docs/STATUS.md completo, docs/04-integracion-cowork.md
+(pasos 2-6 del pipeline: spec, gate, generación, verificación) y
+docs/pipeline/orientador-ia/ (spec funcional+técnica ya aprobadas — es la
+referencia concreta de lo que este pipeline debe modelar/producir, corrido a
+mano en D-024/D-025/D-027).
 
-Objetivo: completar el frontend de orientador-ia (primer caso real de Fase 1;
-backend listo y verde). En orden:
+Objetivo: diseñar e implementar el modelo de datos y el runner mínimo del
+pipeline (proyectos/specs/gates/runs/estados) — NO un segundo módulo de
+negocio a mano. Antes de escribir código, proponer a Leonardo el diseño
+concreto (schema de datos, estados/transiciones, qué corre el Agent SDK y
+dónde) — es una decisión de arquitectura, documentar en docs/DECISIONES.md.
 
-(a) Cambio de core en apps/web — soportar rutas PÚBLICAS sin login en el
-    router/ModuleRegistration sin romper la asunción actual "todo detrás de
-    RBAC" (D-011). Hoy cualquier ruta sin sesión muestra solo <LoginPage />
-    (ver apps/web/src/App.tsx). Es reutilizable por cualquier módulo con
-    landing pública → si toca App.tsx/types.ts del shell, documentar como
-    decisión nueva (D-027) en docs/DECISIONES.md.
-(b) Pantallas del candidato sobre packages/ui + identidad Awakelab 2026:
-    landing, consentimiento RGPD, perfil (historia/LinkedIn/CV vía pdf.js),
-    plan con PDF descargable (jsPDF client-side).
-(c) Panel admin (rol orientador_admin): leads, academias, export CSV.
-(d) Registrar el módulo en apps/web/src/modules/registry.ts.
-(e) Tests de frontend (patrón MoodleDashboardPage.test.tsx) + verificación
-    completa en /tmp/verify fuera del mount (workaround D-023).
-
-Al cerrar: actualizar docs/STATUS.md y commitear ([module] ...).
+Al cerrar: actualizar docs/STATUS.md y commitear ([core] ...).
 ```
 
 ### Receta de verificación local con BD (ya completada — queda de referencia para levantar el entorno de nuevo)
