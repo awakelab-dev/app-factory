@@ -64,28 +64,39 @@ Decisiones tomadas por Leonardo en el gate inicial (2026-07-14): (1) el MVP sí 
 
 ### Mensaje inicial sugerido para la próxima tarea (copiar/pegar)
 
-> Modelo recomendado: Opus u Opus/Sonnet en modo Plan — sigue siendo una
-> decisión de arquitectura/roadmap (orden de arranque + spec intermedia),
-> no una tarea de implementación acotada, hasta que el punto 1 de
-> "Siguiente" quede resuelto.
+> Nota: el orden de arranque de Fase 1 y el prototipo piloto quedaron
+> resueltos (D-026 / D-024-D-025). La próxima tarea es el paso 0 de D-026:
+> el frontend de `orientador-ia`.
+
+> Modelo recomendado: **Sonnet** — es implementación acotada (frontend de
+> un módulo sobre un patrón ya fijado), no arquitectura.
 
 ```
-[decisión] Arranque concreto de Fase 1
+[módulo] Frontend de orientador-ia (paso 0 de D-026)
 
-Contexto: D-024 (docs/DECISIONES.md, 2026-07-14) — Leonardo ya decidió
-arrancar Fase 1 (pipeline con spec intermedia + gates) en vez de un
-segundo módulo manual. Falta resolver dos cosas antes de escribir
-código de pipeline (ver docs/STATUS.md, "Siguiente", punto 1):
+Antes de empezar: leer docs/STATUS.md completo, docs/pipeline/orientador-ia/
+(spec funcional + técnica aprobadas, D-025) y apps/api/src/modules/orientador-ia/
+(backend ya generado y verificado). Patrón de referencia de frontend:
+apps/web/src/modules/moodle-insights/.
 
-1. Orden de arranque: ¿mecánica del pipeline primero (spec+gates+
-   generación con Agent SDK) o reconstrucción del control plane
-   primero, como sugiere el orden literal de docs/06-roadmap.md?
-2. Prototipo piloto: ¿cuál es el primer prototipo real de negocio que
-   pasa por el pipeline? Confirmado que no hay ninguno en la "cola" del
-   repo — lo aporta Leonardo.
+Objetivo: completar el frontend de orientador-ia (primer caso real de Fase 1;
+backend listo y verde). En orden:
 
-Antes de empezar: leer docs/STATUS.md completo, docs/04 (integración
-Cowork/pipeline) y docs/06-roadmap.md.
+(a) Cambio de core en apps/web — soportar rutas PÚBLICAS sin login en el
+    router/ModuleRegistration sin romper la asunción actual "todo detrás de
+    RBAC" (D-011). Hoy cualquier ruta sin sesión muestra solo <LoginPage />
+    (ver apps/web/src/App.tsx). Es reutilizable por cualquier módulo con
+    landing pública → si toca App.tsx/types.ts del shell, documentar como
+    decisión nueva (D-027) en docs/DECISIONES.md.
+(b) Pantallas del candidato sobre packages/ui + identidad Awakelab 2026:
+    landing, consentimiento RGPD, perfil (historia/LinkedIn/CV vía pdf.js),
+    plan con PDF descargable (jsPDF client-side).
+(c) Panel admin (rol orientador_admin): leads, academias, export CSV.
+(d) Registrar el módulo en apps/web/src/modules/registry.ts.
+(e) Tests de frontend (patrón MoodleDashboardPage.test.tsx) + verificación
+    completa en /tmp/verify fuera del mount (workaround D-023).
+
+Al cerrar: actualizar docs/STATUS.md y commitear ([module] ...).
 ```
 
 ### Receta de verificación local con BD (ya completada — queda de referencia para levantar el entorno de nuevo)
