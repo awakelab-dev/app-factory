@@ -1,4 +1,12 @@
 {
   "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // Explícito para que la forma de dist/ no dependa de la inferencia de tsc:
+    // a diferencia de apps/api (cuyo prisma/seed.ts fuerza dist/src/...), aquí
+    // solo src/ tiene .ts y tsc aplana a dist/main.js. Con rootDir fijado, el
+    // CMD del Dockerfile y el script start apuntan SIEMPRE a dist/main.js
+    // (descubierto en el primer deploy real a staging, 2026-07-16).
+    "rootDir": "src"
+  },
   "exclude": ["node_modules", "dist", "**/*.spec.ts", "vitest.config.mts", "prisma.config.ts"]
 }

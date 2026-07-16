@@ -39,8 +39,11 @@ ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=build /out/factory ./
 EXPOSE 3100
-# Igual que apps/api: sin rootDir el compilado real queda en dist/src/main.js.
-CMD ["node", "dist/src/main.js"]
+# A diferencia de apps/api (dist/src/main.js), aquí tsc aplana a dist/main.js
+# — rootDir "src" explícito en tsconfig.build.json lo garantiza. Descubierto
+# en el primer deploy real: la imagen entraba en crash loop con
+# "Cannot find module /app/dist/src/main.js" (2026-07-16).
+CMD ["node", "dist/main.js"]
 
 # Imagen auxiliar "migrator" (mismo patrón que apps/api, D-016): corre
 # `prisma migrate deploy` contra awkfactory_staging/production DESDE el
