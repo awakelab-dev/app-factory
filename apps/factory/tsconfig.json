@@ -12,5 +12,15 @@
     "declaration": false,
     "types": ["node"]
   },
-  "include": ["src", "prisma", "vitest.config.mts", "prisma.config.ts"]
+  "include": ["src", "prisma", "vitest.config.mts", "prisma.config.ts"],
+  // serve/cli corren con ts-node (transpile-only): tsx/esbuild NO emite
+  // emitDecoratorMetadata y la DI de Nest inyecta undefined en runtime
+  // (descubierto al levantar el control plane en el Mac, 2026-07-16).
+  // experimentalResolver: el cliente generado de Prisma 7 importa con
+  // extensión ESM (./internal/class.js -> class.ts) y ts-node no lo
+  // resuelve sin esto.
+  "ts-node": {
+    "transpileOnly": true,
+    "experimentalResolver": true
+  }
 }

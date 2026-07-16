@@ -6,8 +6,8 @@
   "files": ["dist"],
   "scripts": {
     "build": "prisma generate && tsc -p tsconfig.build.json",
-    "cli": "prisma generate && tsx src/cli.ts",
-    "serve": "prisma generate && tsx watch src/main.ts",
+    "cli": "prisma generate && node -r ts-node/register/transpile-only src/cli.ts",
+    "serve": "prisma generate && node --watch -r ts-node/register/transpile-only src/main.ts",
     "start": "node dist/src/main.js",
     "test": "prisma generate && vitest run",
     "lint": "eslint src",
@@ -40,6 +40,6 @@
     "typescript": "~5.9.3",
     "unplugin-swc": "^1.5.9",
     "vitest": "^4.1.10",
-    "tsx": "^4.20.6"
+    "ts-node": "^10.9.2"
   }
 }
