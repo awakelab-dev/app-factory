@@ -63,7 +63,11 @@ function parseGateDecision(value: string | undefined): GateDecision {
 }
 
 async function main(): Promise<void> {
-  const [command, ...rest] = process.argv.slice(2);
+  const argv = process.argv.slice(2);
+  // pnpm reenvía el separador "--" LITERAL al script (pnpm run cli -- create-project
+  // llega como ["--", "create-project", ...]) — se descarta si viene primero.
+  if (argv[0] === '--') argv.shift();
+  const [command, ...rest] = argv;
   const app = await NestFactory.createApplicationContext(CliModule, { logger: ['error', 'warn', 'log'] });
 
   try {
