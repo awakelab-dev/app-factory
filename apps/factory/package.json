@@ -6,8 +6,8 @@
   "files": ["dist"],
   "scripts": {
     "build": "prisma generate && tsc -p tsconfig.build.json",
-    "cli": "tsx src/cli.ts",
-    "serve": "tsx watch src/main.ts",
+    "cli": "prisma generate && tsx src/cli.ts",
+    "serve": "prisma generate && tsx watch src/main.ts",
     "start": "node dist/src/main.js",
     "test": "prisma generate && vitest run",
     "lint": "eslint src",
