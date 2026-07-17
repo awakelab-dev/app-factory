@@ -96,7 +96,7 @@ Nada en curso — factory desplegado y verificado en producción (2026-07-17). L
 **Orden de arranque de Fase 1 confirmado por Leonardo (2026-07-15, D-026)**: (0) frontend de `orientador-ia` [✅ D-027/D-028] → (1) mecánica del pipeline con Agent SDK [✅ D-029] → (2) control plane [✅ D-030] → validación end-to-end con caso real [✅ 2026-07-17] → factory en producción [✅ 2026-07-17]. **Secuencia completa, validada y desplegada en ambos entornos.**
 
 1. ~~Servicio factory en PRODUCCIÓN~~ ✅ 2026-07-17 (ver "Hecho").
-2. (Opcional, no bloqueante) Rotar la contraseña de MongoDB expuesta en `backend/.env` en el historial de git y evaluar purgarla con `git-filter-repo` (ver "Bloqueos"). También considerar rotar el password de `app_staging`/`app_production`, los `JWT_SECRET` **y el de `app_factory_staging`**: quedaron pegados en texto plano en chats de Cowork (este último el 2026-07-16, en un `grep .env` durante el deploy; no están en memoria ni en el repo, pero el historial del chat los tiene).
+2. ~~Rotar secretos expuestos~~ ✅ 2026-07-17 — rotados por Leonardo (confirmado en sesión): los secretos que habían quedado en chats de Cowork y el historial de git dejan de ser válidos. Si la purga de `backend/.env` del historial con `git-filter-repo` no se ejecutó, queda como opcional de baja prioridad (la contraseña que contiene ya está rotada).
 3. (Opcional, no bloqueante) Bajar `proxy_read_timeout` en `deploy/nginx/{staging,production}.conf` de vuelta a un valor normal (30-60s) ahora que `POST /sync` de moodle-insights responde casi al toque y ya no necesita sostener una request larga — editar el `.conf` del server a mano (`nano`), nunca `scp` el archivo completo (ver el incidente del certificado en "Resuelto recientemente").
 4. (Opcional, no bloqueante) Mejoras menores del pipeline anotadas en la validación end-to-end del 2026-07-17: (a) mensajes del CLI — `generate` con un projectId en vez de specId escupe el error crudo de Prisma ("No record was found") en vez de algo accionable, y el error de transición inválida podría sugerir el camino válido; (b) el flujo `request_change` de docs/04 (que la propia spec del agente citó como la ruta correcta para cambios sobre módulos existentes) todavía no existe en el CLI — diseñarlo cuando llegue el primer encargo real de cambio sobre un módulo vivo.
 
@@ -112,37 +112,33 @@ La tarea sugerida aquí en la sesión anterior ya corrió: caso `orientador-ia-v
 
 ### Mensaje inicial sugerido para la próxima tarea (copiar/pegar)
 
-La tarea anterior sugerida aquí (factory en producción) se ejecutó el 2026-07-17 — ver "Hecho". El próximo hito real (primer encargo de negocio por el pipeline, o arranque de Fase 2) lo decide Leonardo; mientras tanto, la pendiente con más peso es la rotación de secretos expuestos (punto 2 de "Siguiente").
+Las dos tareas anteriores sugeridas aquí (factory en producción, rotación de secretos) se ejecutaron el 2026-07-17 — ver "Hecho" y "Siguiente". El próximo hito REAL es pasar el primer encargo de negocio por el pipeline en el entorno real (necesita un prototipo de un gerente — lo aporta Leonardo cuando exista). Mientras tanto, la tarea sugerida es la limpieza corta que queda en "Siguiente" (puntos 3 y 4a):
 
-> Nota: es operación guiada por SSH/consola (como D-016/D-030), Claude guía y
-> Leonardo ejecuta — el sandbox de Cowork no tiene ruta SSH al Lightsail ni a
-> la managed PG. Requiere ventana corta de corte: rotar `DATABASE_URL`/
-> `JWT_SECRET` implica editar `.env` y recrear contenedores.
+> Nota: mixta — la parte de Nginx es guiada por SSH (Claude guía, Leonardo
+> ejecuta; el sandbox no tiene ruta al Lightsail), la parte del CLI es código
+> normal en el repo.
 
-> Modelo recomendado: **Sonnet** — es ejecución operativa, no arquitectura.
+> Modelo recomendado: **Sonnet** — ajustes menores, no arquitectura.
 
 ```
-[infra] Rotación de secretos expuestos (staging + production)
+[fix] Limpieza post-Fase-1: proxy_read_timeout + mensajes del CLI de factory
 
-Antes de empezar: leer docs/STATUS.md completo y los runbooks
-lightsail-deploy.md + lightsail-postgres.md (gotchas: SIN comillas en .env,
-ALTER ROLE ... WITH PASSWORD para rotar sin recrear roles, \c solo en su
-línea en psql, up -d --force-recreate tras cambiar el .env).
+Antes de empezar: leer docs/STATUS.md completo (puntos 3 y 4a de "Siguiente")
+y docs/runbooks/lightsail-deploy.md (gotcha: nunca scp un .conf
+certbot-izado — editar a mano con nano solo la línea que cambia).
 
-Objetivo, en orden de riesgo:
-1. Rotar la contraseña de MongoDB expuesta en el historial de git
-   (backend/.env de legacy, IP pública 84.247.191.200) si ese Mongo sigue
-   vivo, y evaluar purgar backend/.env del historial con git-filter-repo.
-2. Rotar passwords de app_staging, app_production y app_factory_staging
-   (quedaron en texto plano en chats de Cowork; el de app_factory_production
-   NO — no pasó por chat, no rotar). ALTER ROLE en la managed + actualizar
-   DATABASE_URL/FACTORY_DATABASE_URL en los .env del server + force-recreate
-   + verificar health y login en staging.
-3. Rotar JWT_SECRET de ambos entornos (openssl rand -base64 48, distinto por
-   entorno; invalida sesiones activas — sin impacto real, no hay usuarios).
+Objetivo:
+1. Bajar proxy_read_timeout de 300s a 60s en el location /api/ de ambos
+   server blocks (staging.apps.awakelab.world y apps.awakelab.world) — el
+   POST /sync de moodle-insights ya es asíncrono y responde al toque.
+   Actualizar también deploy/nginx/{staging,production}.conf en el repo para
+   que la plantilla no mienta. nginx -t + reload.
+2. Mensajes del CLI de apps/factory: `generate` con un projectId en vez de
+   specId escupe el error crudo de Prisma ("No record was found") — dar un
+   error accionable; el error de transición inválida debería sugerir el
+   camino válido. Con tests.
 
-Al cerrar: actualizar docs/STATUS.md (y tachar el punto 2 de "Siguiente") y
-commitear ([infra] ...).
+Al cerrar: actualizar docs/STATUS.md (tachar puntos 3 y 4a) y commitear.
 ```
 
 ### Receta de verificación local con BD (ya completada — queda de referencia para levantar el entorno de nuevo)
