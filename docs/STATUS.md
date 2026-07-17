@@ -2,7 +2,7 @@
 
 > Actualizar al cerrar CADA sesión de trabajo. Este archivo es lo primero que lee cualquier tarea nueva.
 
-**Última actualización**: 2026-07-17 (**Pipeline + control plane VALIDADOS end-to-end con un caso real** (D-029/D-030 en la práctica): create-project + analyze por CLI contra el prototipo `orientadorIA` real, spec revisada y gates decididos desde `/factory` en el navegador, y guardarraíl de generate verificado. La antiduplicación funcionó de verdad: el Agent SDK detectó el módulo `orientador-ia` existente y recomendó rechazar como duplicado. La validación destapó y corrigió 3 bugs más que la suite no cubría (carga de `.env`, runs huérfanos en "running", HTTP 400 al decidir el segundo gate tras un rechazo) — ver "Resuelto recientemente". Siguiente hito: factory en producción.)
+**Última actualización**: 2026-07-17 (**Servicio factory desplegado y verificado en PRODUCCIÓN** — promoción del sha `4160852` ya validado en staging; base `awkfactory_production` + rol de mínimo privilegio creados, bloque `/factory-api/` en el Nginx de `apps.awakelab.world`, 3 contenedores healthy y health OK por HTTPS. Con esto la Fábrica corre completa en ambos entornos. Misma sesión previa: **Pipeline + control plane VALIDADOS end-to-end con un caso real** (D-029/D-030 en la práctica): create-project + analyze por CLI contra el prototipo `orientadorIA` real, spec revisada y gates decididos desde `/factory` en el navegador, y guardarraíl de generate verificado. La antiduplicación funcionó de verdad: el Agent SDK detectó el módulo `orientador-ia` existente y recomendó rechazar como duplicado. La validación destapó y corrigió 3 bugs más que la suite no cubría (carga de `.env`, runs huérfanos en "running", HTTP 400 al decidir el segundo gate tras un rechazo) — ver "Resuelto recientemente". Siguiente hito: factory en producción.)
 **Fase actual**: Fase 1 — EN CURSO (pipeline con spec intermedia y gates, docs/04/docs/06; primer caso `orientador-ia` completo end-to-end, backend+frontend). Fase 0 queda CERRADA (core mínimo + CI en verde; managed PostgreSQL y Docker listos; staging y production sirviendo por HTTPS en `apps.awakelab.world`; primer módulo ejemplar `moodle-insights` sobre el patrón D-011 construido y validado en vivo contra un Moodle real).
 
 ## Hecho
@@ -78,17 +78,24 @@
   - **Bug latente de D-029 corregido**: los Dockerfiles de api/web no copiaban `apps/factory/package.json` en su stage `deps` y el lockfile ya tenía ese importer — `pnpm install --frozen-lockfile` habría roto el próximo build de Docker en CI. Añadido el COPY en ambos.
   - **Tests**: 9 nuevos en `apps/factory` (guard: public/401/403/admin; controllers: mapeo de DTOs, saneo de `sensitivityFlags`, reviewer del JWT) y 6 nuevos en `apps/web` (lista, vacío, detalle con stepper/spec/gates/historial, aprobar con recarga, comentario obligatorio, alerta de desvío) + `registry.test.ts` actualizado.
   - **Verificación**: `pnpm exec turbo run build lint typecheck test` en verde — build/typecheck/lint 17/17 tareas, tests 8/8 paquetes (`@awk/factory` 37/37, `@awk/web` 35/35, `@awk/api` 48/48 sin regresiones, `@awk/auth`/`@awk/ui`/`@awk/types` intactos). Corrido en copia fuera del mount (`~/verify`, D-023 — `/tmp/verify` estaba ocupado por un dueño ajeno en este sandbox; deps nuevas en factory: `@nestjs/jwt`, `@nestjs/platform-express`, `zod`, `@awk/auth`, `@awk/types`), `pnpm-lock.yaml` copiado de vuelta al mount.
-  - **Desplegado en staging el 2026-07-16** (Leonardo por SSH con Claude guiando, mismo formato que D-016): base `awkfactory_staging` + rol `app_factory_staging` creados (con `GRANT USAGE, CREATE ON SCHEMA public` conectado a la base nueva — mismo tropiezo documentado en el runbook para `app_staging`), vars en `.env`, compose re-copiado, `migrate-factory.sh staging latest` OK, bloque `/factory-api/` añadido a mano al `.conf` (nano, nunca scp) y servicio `factory` arriba y healthy. Verificado: health por HTTPS y `/factory` cargando en el navegador. **Producción queda pendiente** (ver "Siguiente"): mismo procedimiento con `awkfactory_production`, puerto 18105 y el `.conf` de `apps.awakelab.world`.
+  - **Desplegado en staging el 2026-07-16** (Leonardo por SSH con Claude guiando, mismo formato que D-016): base `awkfactory_staging` + rol `app_factory_staging` creados (con `GRANT USAGE, CREATE ON SCHEMA public` conectado a la base nueva — mismo tropiezo documentado en el runbook para `app_staging`), vars en `.env`, compose re-copiado, `migrate-factory.sh staging latest` OK, bloque `/factory-api/` añadido a mano al `.conf` (nano, nunca scp) y servicio `factory` arriba y healthy. Verificado: health por HTTPS y `/factory` cargando en el navegador. **Desplegado en producción el 2026-07-17** — ver el bullet siguiente.
+
+- **Servicio factory en PRODUCCIÓN (2026-07-17, cierra el punto 1 de "Siguiente" de la sesión anterior)** — misma operación guiada por SSH que staging (Claude guía, Leonardo ejecuta; este sandbox de Cowork sí tuvo salida HTTPS a `apps.awakelab.world`, lo que permitió verificar los health remotamente, pero sigue sin ruta SSH al server):
+  - Base `awkfactory_production` + rol `app_factory_production` (password hex vía `openssl rand -hex 24`; el `GRANT USAGE, CREATE ON SCHEMA public` conectado a la base nueva, como documenta el runbook). **Gotcha nuevo de psql documentado**: `\c <base>` debe ir SOLO en su línea — al pegarlo junto con el `GRANT` siguiente, psql interpreta el resto de la línea como argumentos de conexión (`\c base usuario host puerto`) y falla con `invalid integer value ... for connection option "port"` sin ejecutar nada. El password original se perdió sin anotar; reseteado con `ALTER ROLE ... WITH PASSWORD` (no hizo falta recrear el rol).
+  - `.env` de producción: `FACTORY_PORT_HOST=18105` (confirmado libre) + `FACTORY_DATABASE_URL` sin comillas; `deploy/docker-compose.yml` re-copiado al server (el que había era anterior al servicio `factory`); `~/migrate-factory.sh production 4160852...` OK.
+  - Bloque `/factory-api/` añadido a mano (`nano`) al `.conf` certbot-izado de `apps.awakelab.world`, `nginx -t` + reload — nunca scp (incidente certbot).
+  - Promoción por `workflow_dispatch` con `image_tag=4160852932157f4465ca5891f5ac7814ee31597e` (HEAD de main, incluye los fixes de la validación end-to-end del 2026-07-17).
+  - **Verificado**: `https://apps.awakelab.world/factory-api/health` → `{"status":"ok","service":"awk-factory"}`; `docker compose -p awk-production ps` → api/web/factory los tres `healthy` en el sha promovido. `/factory` no se puede verificar con login en producción por diseño: dev-login responde 403 con `NODE_ENV=production` (D-016) — el formulario muestra "No se pudo iniciar sesión", comportamiento esperado hasta que llegue el IdP.
 
 ## En curso
 
-Nada en curso — pipeline + control plane validados end-to-end con caso real (2026-07-17, ver "Resuelto recientemente"). Siguiente: factory en producción.
+Nada en curso — factory desplegado y verificado en producción (2026-07-17). La secuencia completa de arranque de Fase 1 (D-026) está cerrada y en ambos entornos. Lo que queda en "Siguiente" es todo opcional/no bloqueante; el siguiente hito real es el primer encargo de negocio que pase por el pipeline (o decidir el arranque de Fase 2).
 
 ## Siguiente (en orden)
 
-**Orden de arranque de Fase 1 confirmado por Leonardo (2026-07-15, D-026)**: (0) frontend de `orientador-ia` [✅ D-027/D-028] → (1) mecánica del pipeline con Agent SDK [✅ D-029] → (2) control plane [✅ D-030] → validación end-to-end con caso real [✅ 2026-07-17]. **Secuencia completa y validada.**
+**Orden de arranque de Fase 1 confirmado por Leonardo (2026-07-15, D-026)**: (0) frontend de `orientador-ia` [✅ D-027/D-028] → (1) mecánica del pipeline con Agent SDK [✅ D-029] → (2) control plane [✅ D-030] → validación end-to-end con caso real [✅ 2026-07-17] → factory en producción [✅ 2026-07-17]. **Secuencia completa, validada y desplegada en ambos entornos.**
 
-1. **Servicio factory en PRODUCCIÓN** (staging ya está, 2026-07-16; hacerlo al promover): mismo procedimiento que staging — base `awkfactory_production` + rol `app_factory_production` (con `GRANT USAGE, CREATE ON SCHEMA public` conectado a la base), `FACTORY_DATABASE_URL`/`FACTORY_PORT_HOST=18105` en el `.env`, re-copiar `docker-compose.yml`, `migrate-factory.sh production <sha>`, y bloque `/factory-api/` en el `.conf` de `apps.awakelab.world` A MANO (nunca scp).
+1. ~~Servicio factory en PRODUCCIÓN~~ ✅ 2026-07-17 (ver "Hecho").
 2. (Opcional, no bloqueante) Rotar la contraseña de MongoDB expuesta en `backend/.env` en el historial de git y evaluar purgarla con `git-filter-repo` (ver "Bloqueos"). También considerar rotar el password de `app_staging`/`app_production`, los `JWT_SECRET` **y el de `app_factory_staging`**: quedaron pegados en texto plano en chats de Cowork (este último el 2026-07-16, en un `grep .env` durante el deploy; no están en memoria ni en el repo, pero el historial del chat los tiene).
 3. (Opcional, no bloqueante) Bajar `proxy_read_timeout` en `deploy/nginx/{staging,production}.conf` de vuelta a un valor normal (30-60s) ahora que `POST /sync` de moodle-insights responde casi al toque y ya no necesita sostener una request larga — editar el `.conf` del server a mano (`nano`), nunca `scp` el archivo completo (ver el incidente del certificado en "Resuelto recientemente").
 4. (Opcional, no bloqueante) Mejoras menores del pipeline anotadas en la validación end-to-end del 2026-07-17: (a) mensajes del CLI — `generate` con un projectId en vez de specId escupe el error crudo de Prisma ("No record was found") en vez de algo accionable, y el error de transición inválida podría sugerir el camino válido; (b) el flujo `request_change` de docs/04 (que la propia spec del agente citó como la ruta correcta para cambios sobre módulos existentes) todavía no existe en el CLI — diseñarlo cuando llegue el primer encargo real de cambio sobre un módulo vivo.
@@ -103,37 +110,9 @@ Decisiones tomadas por Leonardo en el gate inicial (2026-07-14): (1) el MVP sí 
 
 La tarea sugerida aquí en la sesión anterior ya corrió: caso `orientador-ia-v2` (re-envío deliberado del prototipo original) validó analyze + gates en `/factory` + guardarraíl de generate, con 3 fixes de por medio. Detalle completo en "Resuelto recientemente". El proyecto de prueba quedó en `rejected` en la BD `awkfactory` local del Mac de Leonardo (no en staging).
 
-### Mensaje inicial sugerido para la próxima tarea (copiar/pegar)
+### Mensaje inicial sugerido para la próxima tarea
 
-> Nota: es operación guiada por SSH en el Lightsail (como D-016/D-030 staging),
-> Claude guía y Leonardo ejecuta — el sandbox de Cowork no tiene ruta de red
-> al server. Antes de promover, confirmar que el CI del último push (fixes de
-> la validación end-to-end del 2026-07-17) corrió verde y que staging lo
-> recogió sin novedades.
-
-> Modelo recomendado: **Sonnet** — es ejecución de runbook conocido, no
-> arquitectura.
-
-```
-[infra] Servicio factory en PRODUCCIÓN (promoción desde staging)
-
-Antes de empezar: leer docs/STATUS.md completo, D-030 en docs/DECISIONES.md
-y docs/runbooks/lightsail-deploy.md + lightsail-postgres.md (los gotchas ya
-documentados aplican todos: comillas en .env, GRANT sobre schema public
-conectado a la base nueva, nunca scp un .conf certbot-izado).
-
-Objetivo: mismo procedimiento que staging (2026-07-16) — crear base
-`awkfactory_production` + rol `app_factory_production` de mínimo privilegio,
-añadir FACTORY_DATABASE_URL/FACTORY_PORT_HOST=18105 al .env de producción,
-re-copiar deploy/docker-compose.yml al server, `migrate-factory.sh
-production <sha>`, bloque `/factory-api/` en el .conf de apps.awakelab.world
-EDITADO A MANO (nano), promover con workflow_dispatch el sha ya validado en
-staging, y verificar health por HTTPS + /factory en el navegador (dev-login
-está deshabilitado en producción — el guard exige JWT: verificar al menos el
-health y que el contenedor esté healthy).
-
-Al cerrar: actualizar docs/STATUS.md y commitear ([infra] ...).
-```
+La tarea sugerida aquí (factory en producción) se ejecutó el 2026-07-17 — ver "Hecho". No hay tarea siguiente predefinida: lo que queda en "Siguiente" es opcional, y el próximo hito real (primer encargo por el pipeline, o Fase 2) lo decide Leonardo.
 
 ### Receta de verificación local con BD (ya completada — queda de referencia para levantar el entorno de nuevo)
 
