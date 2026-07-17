@@ -64,10 +64,14 @@ export class AnalysisRunnerService {
 
   async runAnalysis(projectId: string, agentRunner: typeof runAgent = runAgent) {
     const project = await this.projects.findById(projectId);
+    // La transición va ANTES de crear el Run: si el estado actual no admite
+    // re-análisis (p. ej. pending_approval), fallar aquí no deja un Run
+    // huérfano en "running" (bug encontrado en la validación end-to-end del
+    // 2026-07-17 — el historial del control plane mostraba "en curso" eterno).
+    await this.projects.transition(projectId, 'analyzing');
     const run = await this.prisma.run.create({
       data: { projectId, runType: 'analysis', status: 'running', startedAt: new Date() }
     });
-    await this.projects.transition(projectId, 'analyzing');
 
     const specDir = `docs/pipeline/${project.moduleSlug}`;
     const prompt = [

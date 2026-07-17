@@ -2,7 +2,7 @@
 
 > Actualizar al cerrar CADA sesión de trabajo. Este archivo es lo primero que lee cualquier tarea nueva.
 
-**Última actualización**: 2026-07-16 (**Control plane de la Fábrica (D-030) VALIDADO en local y DESPLEGADO en staging** — `https://staging.apps.awakelab.world/factory-api/health` OK y `/factory` operativo. La validación en vivo destapó y corrigió 4 bugs reales que la suite no cubría (tsx rompe la DI de Nest, `--` literal de pnpm en el CLI, `dist/` aplanado vs el CMD del Dockerfile, grants de schema en la BD nueva) — ver "Resuelto recientemente". Siguiente hito: validar el pipeline (analyze/generate) con un caso real.)
+**Última actualización**: 2026-07-17 (**Pipeline + control plane VALIDADOS end-to-end con un caso real** (D-029/D-030 en la práctica): create-project + analyze por CLI contra el prototipo `orientadorIA` real, spec revisada y gates decididos desde `/factory` en el navegador, y guardarraíl de generate verificado. La antiduplicación funcionó de verdad: el Agent SDK detectó el módulo `orientador-ia` existente y recomendó rechazar como duplicado. La validación destapó y corrigió 3 bugs más que la suite no cubría (carga de `.env`, runs huérfanos en "running", HTTP 400 al decidir el segundo gate tras un rechazo) — ver "Resuelto recientemente". Siguiente hito: factory en producción.)
 **Fase actual**: Fase 1 — EN CURSO (pipeline con spec intermedia y gates, docs/04/docs/06; primer caso `orientador-ia` completo end-to-end, backend+frontend). Fase 0 queda CERRADA (core mínimo + CI en verde; managed PostgreSQL y Docker listos; staging y production sirviendo por HTTPS en `apps.awakelab.world`; primer módulo ejemplar `moodle-insights` sobre el patrón D-011 construido y validado en vivo contra un Moodle real).
 
 ## Hecho
@@ -82,16 +82,16 @@
 
 ## En curso
 
-Nada en curso — control plane completo (D-030). La secuencia de arranque de Fase 1 (D-026: frontend orientador-ia → mecánica del pipeline → control plane) queda cerrada. Siguiente: validar el pipeline end-to-end con un caso real (ver "Siguiente").
+Nada en curso — pipeline + control plane validados end-to-end con caso real (2026-07-17, ver "Resuelto recientemente"). Siguiente: factory en producción.
 
 ## Siguiente (en orden)
 
-**Orden de arranque de Fase 1 confirmado por Leonardo (2026-07-15, D-026)**: (0) frontend de `orientador-ia` [✅ D-027/D-028] → (1) mecánica del pipeline con Agent SDK [✅ D-029] → (2) control plane [✅ D-030]. **Secuencia completa.**
+**Orden de arranque de Fase 1 confirmado por Leonardo (2026-07-15, D-026)**: (0) frontend de `orientador-ia` [✅ D-027/D-028] → (1) mecánica del pipeline con Agent SDK [✅ D-029] → (2) control plane [✅ D-030] → validación end-to-end con caso real [✅ 2026-07-17]. **Secuencia completa y validada.**
 
-1. **Validar el pipeline + control plane con un caso real end-to-end** (valida D-029 y D-030 en la práctica): desde un entorno con `PLATFORM_REPO_PATH`/`ANTHROPIC_API_KEY`/red reales (Mac de Leonardo o el Lightsail, nunca el sandbox de Cowork por D-023) — `create-project` + `analyze` por CLI contra un prototipo real, levantar `apps/factory` (`pnpm --filter=@awk/factory serve`) y `apps/web`, y decidir los gates desde `/factory` en el navegador. Confirma que el Agent SDK produce una spec usable y que el dashboard refleja el flujo completo.
-2. **Servicio factory en PRODUCCIÓN** (staging ya está, 2026-07-16; hacerlo al promover): mismo procedimiento que staging — base `awkfactory_production` + rol `app_factory_production` (con `GRANT USAGE, CREATE ON SCHEMA public` conectado a la base), `FACTORY_DATABASE_URL`/`FACTORY_PORT_HOST=18105` en el `.env`, re-copiar `docker-compose.yml`, `migrate-factory.sh production <sha>`, y bloque `/factory-api/` en el `.conf` de `apps.awakelab.world` A MANO (nunca scp).
-3. (Opcional, no bloqueante) Rotar la contraseña de MongoDB expuesta en `backend/.env` en el historial de git y evaluar purgarla con `git-filter-repo` (ver "Bloqueos"). También considerar rotar el password de `app_staging`/`app_production`, los `JWT_SECRET` **y el de `app_factory_staging`**: quedaron pegados en texto plano en chats de Cowork (este último el 2026-07-16, en un `grep .env` durante el deploy; no están en memoria ni en el repo, pero el historial del chat los tiene).
-4. (Opcional, no bloqueante) Bajar `proxy_read_timeout` en `deploy/nginx/{staging,production}.conf` de vuelta a un valor normal (30-60s) ahora que `POST /sync` de moodle-insights responde casi al toque y ya no necesita sostener una request larga — editar el `.conf` del server a mano (`nano`), nunca `scp` el archivo completo (ver el incidente del certificado en "Resuelto recientemente").
+1. **Servicio factory en PRODUCCIÓN** (staging ya está, 2026-07-16; hacerlo al promover): mismo procedimiento que staging — base `awkfactory_production` + rol `app_factory_production` (con `GRANT USAGE, CREATE ON SCHEMA public` conectado a la base), `FACTORY_DATABASE_URL`/`FACTORY_PORT_HOST=18105` en el `.env`, re-copiar `docker-compose.yml`, `migrate-factory.sh production <sha>`, y bloque `/factory-api/` en el `.conf` de `apps.awakelab.world` A MANO (nunca scp).
+2. (Opcional, no bloqueante) Rotar la contraseña de MongoDB expuesta en `backend/.env` en el historial de git y evaluar purgarla con `git-filter-repo` (ver "Bloqueos"). También considerar rotar el password de `app_staging`/`app_production`, los `JWT_SECRET` **y el de `app_factory_staging`**: quedaron pegados en texto plano en chats de Cowork (este último el 2026-07-16, en un `grep .env` durante el deploy; no están en memoria ni en el repo, pero el historial del chat los tiene).
+3. (Opcional, no bloqueante) Bajar `proxy_read_timeout` en `deploy/nginx/{staging,production}.conf` de vuelta a un valor normal (30-60s) ahora que `POST /sync` de moodle-insights responde casi al toque y ya no necesita sostener una request larga — editar el `.conf` del server a mano (`nano`), nunca `scp` el archivo completo (ver el incidente del certificado en "Resuelto recientemente").
+4. (Opcional, no bloqueante) Mejoras menores del pipeline anotadas en la validación end-to-end del 2026-07-17: (a) mensajes del CLI — `generate` con un projectId en vez de specId escupe el error crudo de Prisma ("No record was found") en vez de algo accionable, y el error de transición inválida podría sugerir el camino válido; (b) el flujo `request_change` de docs/04 (que la propia spec del agente citó como la ruta correcta para cambios sobre módulos existentes) todavía no existe en el CLI — diseñarlo cuando llegue el primer encargo real de cambio sobre un módulo vivo.
 
 ## Primer caso Fase 1: `orientador-ia`
 
@@ -99,34 +99,9 @@ Prototipo aportado por Leonardo (2026-07-14): carpeta `/Users/leonardobarreto/pr
 
 Decisiones tomadas por Leonardo en el gate inicial (2026-07-14): (1) el MVP sí incorpora IA real vía API de Claude (reemplaza el motor de keyword-matching como fuente de la recomendación); (2) se rebrandea a identidad Awakelab 2026; (3) es un encargo de Awakelab para Grupo Aspasia/Refactika (Awakelab construye y aloja; admins de Aspasia acceden con un rol de plataforma acotado a este módulo, `orientador_admin` — sin multi-tenancy nueva, mismo patrón D-011). Detalle completo de alcance, flujos y modelo de datos en `docs/pipeline/orientador-ia/`.
 
-### Mensaje inicial sugerido para la próxima tarea (copiar/pegar)
+### Validación end-to-end del pipeline — EJECUTADA (2026-07-17)
 
-> Nota: la secuencia de arranque de Fase 1 (D-026) está completa — pipeline
-> por CLI (D-029) + control plane HTTP/UI (D-030). La próxima tarea no es de
-> código: es correr el primer caso real de punta a punta y anotar lo que
-> falle o desentone. Corre en el Mac de Leonardo o el Lightsail (nunca el
-> sandbox de Cowork, D-023) porque necesita red, ANTHROPIC_API_KEY y un
-> checkout dedicado en PLATFORM_REPO_PATH.
-
-> Modelo recomendado: **Sonnet** — es operación guiada + diagnóstico, no
-> arquitectura. Si el análisis del Agent SDK produce specs inservibles y hay
-> que rediseñar prompts/runners, pausar y proponerlo.
-
-```
-[factory] Validación end-to-end del pipeline con un caso real
-
-Antes de empezar: leer docs/STATUS.md completo y D-029/D-030 en
-docs/DECISIONES.md. Preparar: FACTORY_DATABASE_URL (base awkfactory local o
-la de staging), ANTHROPIC_API_KEY, PLATFORM_REPO_PATH (checkout dedicado).
-
-Objetivo: create-project + analyze por CLI contra un prototipo real;
-levantar `pnpm --filter=@awk/factory serve` + `pnpm dev` y decidir los
-gates desde /factory en el navegador; si la spec se aprueba, generate y
-revisar la rama/PR. Anotar en STATUS.md qué produjo el Agent SDK y qué
-hay que ajustar.
-
-Al cerrar: actualizar docs/STATUS.md y commitear ([factory] ...).
-```
+La tarea sugerida aquí en la sesión anterior ya corrió: caso `orientador-ia-v2` (re-envío deliberado del prototipo original) validó analyze + gates en `/factory` + guardarraíl de generate, con 3 fixes de por medio. Detalle completo en "Resuelto recientemente". El proyecto de prueba quedó en `rejected` en la BD `awkfactory` local del Mac de Leonardo (no en staging).
 
 ### Receta de verificación local con BD (ya completada — queda de referencia para levantar el entorno de nuevo)
 
@@ -172,6 +147,14 @@ Si `prisma migrate dev` reportara drift contra `core_init`: regenerar la migraci
 - **Seguridad**: rotar la contraseña de MongoDB expuesta en el historial de git (`backend/.env`, IP pública 84.247.191.200) y restringir ese Mongo a red privada si sigue en uso. Sigue en el historial después de la purga de D-014 (esa purga solo sacó `node_modules` y `uploads`, no tocó `.env`); rotar la contraseña primero, y de paso evaluar si conviene purgar también `backend/.env` con `git-filter-repo` (ya instalado y probado esta sesión) ya que el repo remoto sigue sin nada publicado.
 
 ## Resuelto recientemente
+
+- **Pipeline + control plane validados end-to-end con caso real (2026-07-16/17, cierra el punto 1 de "Siguiente" de la sesión anterior)** — corrido en el Mac de Leonardo (BD `awkfactory` local en el Postgres de Docker, checkout dedicado `~/projects/app-factory-runner` como `PLATFORM_REPO_PATH`), caso elegido a propósito: re-enviar el prototipo `orientadorIA` original con slug `orientador-ia-v2` para probar la antiduplicación contra el módulo ya desplegado.
+  - **Resultado del Agent SDK (Sonnet): la antiduplicación funcionó de verdad.** El agente exploró el repo (`apps/*/src/modules/`, `docs/pipeline/`, historial de commits, STATUS/DECISIONES), detectó que el material fuente es idéntico al módulo `orientador-ia` vivo, y en vez de re-derivar una spec desde cero produjo una spec que documenta el match pieza por pieza y recomienda rechazar como duplicado o redirigir a `request_change` — exactamente el comportamiento que docs/04 pedía. Costo del análisis: **$0.55, ~2m53s, 12.9k tokens de salida**, sessionId y outputSummary registrados en el `Run`. `meta.json` bien razonado (complexityScore 2/5 explicado, flag ad-hoc `duplicado-de-modulo-existente` + RGPD/Claude API/alcance-ambiguo). Gates decididos desde `/factory` en el navegador (ambos `rejected` con comentario), proyecto terminó en `rejected`, y `generate` contra la spec sin gates aprobados se negó con el mensaje de docs/05 (guardarraíl verificado por la vía negativa). **Dos imprecisiones menores en la spec** (alucinadas, no salieron de los archivos): dice "exporta a Excel" (es CSV, deliberado, D-025) y menciona un "rate-limit por IP" que no existe (el límite es 50 análisis por email) — en un caso real pasarían al gate; el revisor humano sigue siendo imprescindible.
+  - **3 bugs reales destapados y corregidos** (la suite estaba verde; ahora 39/39 con 2 tests nuevos):
+    1. **Nada cargaba `apps/factory/.env`** pese a lo que promete `.env.example` — ni `cli` ni `serve` (solo Prisma CLI lo lee por su cuenta; `create-project` funcionaba de casualidad por el fallback local de `FACTORY_DATABASE_URL`, y `analyze` moría por `PLATFORM_REPO_PATH`). Fix: `node --env-file-if-exists=.env` en los scripts `cli`/`serve` (Node ≥22.9; el `start` de Docker no se toca, sus vars llegan por compose).
+    2. **Run huérfano en "running" eterno**: ambos runners creaban el `Run` en `running` ANTES de validar la transición de estado — un `analyze` re-lanzado sobre un proyecto en `pending_approval` fallaba en la transición y dejaba el run sin cerrar (el historial de `/factory` mostraba "Análisis (en curso)" para siempre). Fix: transición antes de crear el `Run` en `analysis-runner` y `generation-runner`.
+    3. **HTTP 400 al decidir el segundo gate tras un rechazo**: `GatesService.decide` transicionaba sin contemplar que el otro gate de la misma spec ya movió el proyecto (rechazar el funcional deja el proyecto en `rejected`, terminal; rechazar después el técnico intentaba `rejected → rejected`, inválida) — y además escribía el gate ANTES de transicionar, sin transacción, dejando BD y UI inconsistentes. Fix: transición primero (misma lección que los runners) e idempotencia — si el proyecto ya está en el estado objetivo, se registra la decisión sin re-transicionar. 2 tests de regresión nuevos en `gates.service.spec.ts`.
+  - Los errores intermedios quedaron bien registrados en runs/historial (el fallo de `PLATFORM_REPO_PATH` del primer intento se mostró correcto en `/factory`); el run huérfano del bug 2 se saneó a mano en la BD local (`UPDATE runs SET status='error' ...`). Mejoras menores anotadas en "Siguiente" punto 4 (mensajes del CLI, `request_change` inexistente).
 
 - **D-030 validado en local y desplegado en staging (2026-07-16)** — la primera ejecución real destapó 4 bugs que la suite (verde) no cubría, todos corregidos y commiteados el mismo día:
   1. **`tsx` rompe la DI de Nest en runtime** (`285129c`/`1448c7e`): esbuild no emite `emitDecoratorMetadata` → `Reflector`/`JwtService` llegaban `undefined` al guard; el CLI de D-029 tenía el mismo bug latente (nunca se había corrido contra BD). `serve`/`cli` ahora usan `node -r ts-node/register` (transpile-only + `experimentalResolver` por los imports `.js` del cliente Prisma 7) y `serve`/`cli` corren `prisma generate` primero. Ver la "Nota de runtime para apps Nest" más arriba.

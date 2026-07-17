@@ -86,6 +86,10 @@ export class GenerationRunnerService {
     const project = spec.project;
     const branchName = `factory/${project.moduleSlug}`;
 
+    // Transición ANTES de crear el Run — mismo motivo que en
+    // AnalysisRunnerService: una transición inválida no debe dejar un Run
+    // huérfano en "running".
+    await this.projects.transition(project.id, 'generating');
     const run = await this.prisma.run.create({
       data: {
         projectId: project.id,
@@ -96,7 +100,6 @@ export class GenerationRunnerService {
         branchName
       }
     });
-    await this.projects.transition(project.id, 'generating');
 
     try {
       await this.createOrReuseBranch(branchName, gitRunner);

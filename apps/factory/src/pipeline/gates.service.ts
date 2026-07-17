@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProjectsService } from './projects.service';
-import type { GateDecision, GateType } from './types';
+import type { GateDecision, GateType, ProjectStatus } from './types';
 
 export interface GateDecisionInput {
   gateId: string;
@@ -45,6 +45,32 @@ export class GatesService {
       throw new BadRequestException(`El gate ${gate.id} ya fue decidido (estado actual: ${gate.status}).`);
     }
 
+    const projectId = gate.spec.project.id;
+    const currentStatus = gate.spec.project.status as ProjectStatus;
+    // gateType functional/technical + approved: sin transición automática
+    // (target undefined), ver comentario de clase arriba.
+    const target: ProjectStatus | undefined =
+      input.decision === 'rejected'
+        ? 'rejected'
+        : input.decision === 'changes_requested'
+          ? 'spec_ready'
+          : gate.gateType === 'pr_review'
+            ? 'staging'
+            : gate.gateType === 'manager_acceptance'
+              ? 'deployed'
+              : undefined;
+
+    // La transición va ANTES de escribir el gate (mismo criterio que los
+    // runners): si es inválida, la request falla SIN dejar un gate decidido
+    // con el proyecto a medias. Idempotencia: si otro gate de la misma spec
+    // ya llevó el proyecto al estado objetivo (p. ej. rechazar el gate
+    // técnico con el proyecto ya `rejected` por el funcional), se registra
+    // la decisión sin re-transicionar (bug encontrado en la validación
+    // end-to-end del 2026-07-17: HTTP 400 al rechazar el segundo gate).
+    if (target && currentStatus !== target) {
+      await this.projects.transition(projectId, target);
+    }
+
     const updated = await this.prisma.gate.update({
       where: { id: input.gateId },
       data: {
@@ -54,20 +80,6 @@ export class GatesService {
         decidedAt: new Date()
       }
     });
-
-    const projectId = gate.spec.project.id;
-
-    if (input.decision === 'rejected') {
-      await this.projects.transition(projectId, 'rejected');
-    } else if (input.decision === 'changes_requested') {
-      await this.projects.transition(projectId, 'spec_ready');
-    } else if (gate.gateType === 'pr_review') {
-      await this.projects.transition(projectId, 'staging');
-    } else if (gate.gateType === 'manager_acceptance') {
-      await this.projects.transition(projectId, 'deployed');
-    }
-    // gateType functional/technical + approved: sin transición automática,
-    // ver comentario de clase arriba.
 
     return updated;
   }

@@ -4,12 +4,12 @@ import type { PrismaService } from '../prisma/prisma.service';
 import { GatesService } from './gates.service';
 import type { ProjectsService } from './projects.service';
 
-function buildService(overrides: { gateStatus?: string; gateType?: string } = {}) {
+function buildService(overrides: { gateStatus?: string; gateType?: string; projectStatus?: string } = {}) {
   const gate = {
     id: 'gate-1',
     status: overrides.gateStatus ?? 'pending',
     gateType: overrides.gateType ?? 'functional',
-    spec: { project: { id: 'proj-1' } }
+    spec: { project: { id: 'proj-1', status: overrides.projectStatus ?? 'pending_approval' } }
   };
 
   const prisma = {
@@ -64,6 +64,26 @@ describe('GatesService.decide', () => {
     await service.decide({ gateId: 'gate-1', decision: 'approved', reviewer: 'x@y.com' });
 
     expect(projects.transition).toHaveBeenCalledWith('proj-1', 'deployed');
+  });
+
+  it('rejected con el proyecto YA en "rejected" (el otro gate lo rechazó antes) registra la decisión sin re-transicionar', async () => {
+    const { service, prisma, projects } = buildService({ gateType: 'technical', projectStatus: 'rejected' });
+
+    const gate = await service.decide({ gateId: 'gate-1', decision: 'rejected', reviewer: 'x@y.com', notes: 'duplicado' });
+
+    expect(projects.transition).not.toHaveBeenCalled();
+    expect(prisma.gate.update).toHaveBeenCalled();
+    expect(gate.status).toBe('rejected');
+  });
+
+  it('si la transición del proyecto falla, el gate NO queda decidido (transición antes que escritura)', async () => {
+    const { service, prisma, projects } = buildService({ gateType: 'technical' });
+    (projects.transition as ReturnType<typeof vi.fn>).mockRejectedValue(new BadRequestException('inválida'));
+
+    await expect(
+      service.decide({ gateId: 'gate-1', decision: 'rejected', reviewer: 'x@y.com', notes: 'x' })
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.gate.update).not.toHaveBeenCalled();
   });
 
   it('rechaza decidir un gate que ya no está pending', async () => {
