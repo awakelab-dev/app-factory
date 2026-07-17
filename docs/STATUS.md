@@ -103,6 +103,38 @@ Decisiones tomadas por Leonardo en el gate inicial (2026-07-14): (1) el MVP sí 
 
 La tarea sugerida aquí en la sesión anterior ya corrió: caso `orientador-ia-v2` (re-envío deliberado del prototipo original) validó analyze + gates en `/factory` + guardarraíl de generate, con 3 fixes de por medio. Detalle completo en "Resuelto recientemente". El proyecto de prueba quedó en `rejected` en la BD `awkfactory` local del Mac de Leonardo (no en staging).
 
+### Mensaje inicial sugerido para la próxima tarea (copiar/pegar)
+
+> Nota: es operación guiada por SSH en el Lightsail (como D-016/D-030 staging),
+> Claude guía y Leonardo ejecuta — el sandbox de Cowork no tiene ruta de red
+> al server. Antes de promover, confirmar que el CI del último push (fixes de
+> la validación end-to-end del 2026-07-17) corrió verde y que staging lo
+> recogió sin novedades.
+
+> Modelo recomendado: **Sonnet** — es ejecución de runbook conocido, no
+> arquitectura.
+
+```
+[infra] Servicio factory en PRODUCCIÓN (promoción desde staging)
+
+Antes de empezar: leer docs/STATUS.md completo, D-030 en docs/DECISIONES.md
+y docs/runbooks/lightsail-deploy.md + lightsail-postgres.md (los gotchas ya
+documentados aplican todos: comillas en .env, GRANT sobre schema public
+conectado a la base nueva, nunca scp un .conf certbot-izado).
+
+Objetivo: mismo procedimiento que staging (2026-07-16) — crear base
+`awkfactory_production` + rol `app_factory_production` de mínimo privilegio,
+añadir FACTORY_DATABASE_URL/FACTORY_PORT_HOST=18105 al .env de producción,
+re-copiar deploy/docker-compose.yml al server, `migrate-factory.sh
+production <sha>`, bloque `/factory-api/` en el .conf de apps.awakelab.world
+EDITADO A MANO (nano), promover con workflow_dispatch el sha ya validado en
+staging, y verificar health por HTTPS + /factory en el navegador (dev-login
+está deshabilitado en producción — el guard exige JWT: verificar al menos el
+health y que el contenedor esté healthy).
+
+Al cerrar: actualizar docs/STATUS.md y commitear ([infra] ...).
+```
+
 ### Receta de verificación local con BD (ya completada — queda de referencia para levantar el entorno de nuevo)
 
 ```bash
