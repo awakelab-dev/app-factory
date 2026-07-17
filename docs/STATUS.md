@@ -110,9 +110,40 @@ Decisiones tomadas por Leonardo en el gate inicial (2026-07-14): (1) el MVP sí 
 
 La tarea sugerida aquí en la sesión anterior ya corrió: caso `orientador-ia-v2` (re-envío deliberado del prototipo original) validó analyze + gates en `/factory` + guardarraíl de generate, con 3 fixes de por medio. Detalle completo en "Resuelto recientemente". El proyecto de prueba quedó en `rejected` en la BD `awkfactory` local del Mac de Leonardo (no en staging).
 
-### Mensaje inicial sugerido para la próxima tarea
+### Mensaje inicial sugerido para la próxima tarea (copiar/pegar)
 
-La tarea sugerida aquí (factory en producción) se ejecutó el 2026-07-17 — ver "Hecho". No hay tarea siguiente predefinida: lo que queda en "Siguiente" es opcional, y el próximo hito real (primer encargo por el pipeline, o Fase 2) lo decide Leonardo.
+La tarea anterior sugerida aquí (factory en producción) se ejecutó el 2026-07-17 — ver "Hecho". El próximo hito real (primer encargo de negocio por el pipeline, o arranque de Fase 2) lo decide Leonardo; mientras tanto, la pendiente con más peso es la rotación de secretos expuestos (punto 2 de "Siguiente").
+
+> Nota: es operación guiada por SSH/consola (como D-016/D-030), Claude guía y
+> Leonardo ejecuta — el sandbox de Cowork no tiene ruta SSH al Lightsail ni a
+> la managed PG. Requiere ventana corta de corte: rotar `DATABASE_URL`/
+> `JWT_SECRET` implica editar `.env` y recrear contenedores.
+
+> Modelo recomendado: **Sonnet** — es ejecución operativa, no arquitectura.
+
+```
+[infra] Rotación de secretos expuestos (staging + production)
+
+Antes de empezar: leer docs/STATUS.md completo y los runbooks
+lightsail-deploy.md + lightsail-postgres.md (gotchas: SIN comillas en .env,
+ALTER ROLE ... WITH PASSWORD para rotar sin recrear roles, \c solo en su
+línea en psql, up -d --force-recreate tras cambiar el .env).
+
+Objetivo, en orden de riesgo:
+1. Rotar la contraseña de MongoDB expuesta en el historial de git
+   (backend/.env de legacy, IP pública 84.247.191.200) si ese Mongo sigue
+   vivo, y evaluar purgar backend/.env del historial con git-filter-repo.
+2. Rotar passwords de app_staging, app_production y app_factory_staging
+   (quedaron en texto plano en chats de Cowork; el de app_factory_production
+   NO — no pasó por chat, no rotar). ALTER ROLE en la managed + actualizar
+   DATABASE_URL/FACTORY_DATABASE_URL en los .env del server + force-recreate
+   + verificar health y login en staging.
+3. Rotar JWT_SECRET de ambos entornos (openssl rand -base64 48, distinto por
+   entorno; invalida sesiones activas — sin impacto real, no hay usuarios).
+
+Al cerrar: actualizar docs/STATUS.md (y tachar el punto 2 de "Siguiente") y
+commitear ([infra] ...).
+```
 
 ### Receta de verificación local con BD (ya completada — queda de referencia para levantar el entorno de nuevo)
 
