@@ -22,10 +22,19 @@ const successResult: AgentRunResult = {
 
 const okGit: GitCommandResult = { stdout: '', stderr: '' };
 
-function buildService(overrides: { gatesApproved?: boolean } = {}) {
+function buildService(
+  overrides: {
+    gatesApproved?: boolean;
+    spec?: typeof spec | null;
+    projectByThatId?: { id: string; moduleSlug: string } | null;
+  } = {}
+) {
   const prisma = {
     spec: {
-      findUniqueOrThrow: vi.fn().mockResolvedValue(spec)
+      findUnique: vi.fn().mockResolvedValue(overrides.spec === undefined ? spec : overrides.spec)
+    },
+    project: {
+      findUnique: vi.fn().mockResolvedValue(overrides.projectByThatId ?? null)
     },
     run: {
       create: vi.fn().mockResolvedValue({ id: 'run-1' }),
@@ -52,6 +61,25 @@ describe('GenerationRunnerService.runGeneration', () => {
 
     await expect(service.runGeneration('spec-1')).rejects.toBeInstanceOf(BadRequestException);
     expect(gates.areSpecGatesApproved).toHaveBeenCalledWith('spec-1', ['functional', 'technical']);
+    expect(prisma.run.create).not.toHaveBeenCalled();
+  });
+
+  it('da un error accionable (no el crudo de Prisma) si le pasan un projectId en vez de un specId', async () => {
+    const { service, prisma } = buildService({
+      spec: null,
+      projectByThatId: { id: 'proj-1', moduleSlug: 'demo-modulo' }
+    });
+
+    await expect(service.runGeneration('proj-1')).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.runGeneration('proj-1')).rejects.toThrow(/es un projectId, no un specId/);
+    await expect(service.runGeneration('proj-1')).rejects.toThrow(/status proj-1/);
+    expect(prisma.run.create).not.toHaveBeenCalled();
+  });
+
+  it('da un error accionable si el id no corresponde ni a spec ni a proyecto', async () => {
+    const { service, prisma } = buildService({ spec: null, projectByThatId: null });
+
+    await expect(service.runGeneration('nope')).rejects.toThrow(/No existe ninguna spec con id "nope"/);
     expect(prisma.run.create).not.toHaveBeenCalled();
   });
 

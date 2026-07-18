@@ -42,7 +42,12 @@ export class InvalidTransitionError extends Error {
     public readonly from: ProjectStatus,
     public readonly to: ProjectStatus
   ) {
-    super(`Transición de estado inválida: "${from}" → "${to}".`);
+    const allowed = PROJECT_TRANSITIONS[from];
+    const hint =
+      allowed.length > 0
+        ? `Desde "${from}" solo se puede pasar a: ${allowed.join(', ')}.`
+        : `"${from}" es un estado final, no admite transiciones.`;
+    super(`Transición de estado inválida: "${from}" → "${to}". ${hint}`);
     this.name = 'InvalidTransitionError';
   }
 }

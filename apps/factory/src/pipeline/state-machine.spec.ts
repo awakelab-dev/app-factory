@@ -56,6 +56,24 @@ describe('state-machine', () => {
     }
   });
 
+  it('el mensaje sugiere los destinos válidos desde el estado origen', () => {
+    try {
+      assertValidTransition('received', 'generating');
+      expect.unreachable();
+    } catch (error) {
+      expect((error as InvalidTransitionError).message).toContain('Desde "received" solo se puede pasar a: analyzing.');
+    }
+  });
+
+  it('el mensaje marca los estados terminales como sin transiciones', () => {
+    try {
+      assertValidTransition('deployed', 'analyzing');
+      expect.unreachable();
+    } catch (error) {
+      expect((error as InvalidTransitionError).message).toContain('"deployed" es un estado final, no admite transiciones.');
+    }
+  });
+
   it('todo estado no terminal tiene al menos una transición válida', () => {
     const terminal = new Set(['deployed', 'rejected']);
     for (const [state, targets] of Object.entries(PROJECT_TRANSITIONS)) {

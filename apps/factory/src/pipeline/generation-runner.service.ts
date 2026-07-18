@@ -70,10 +70,26 @@ export class GenerationRunnerService {
     const gitRunner = deps.runGit ?? runGit;
     const ghRunner = deps.runGh ?? runGh;
 
-    const spec = await this.prisma.spec.findUniqueOrThrow({
+    const spec = await this.prisma.spec.findUnique({
       where: { id: specId },
       include: { project: true }
     });
+    if (!spec) {
+      // Error crudo de Prisma ("No record was found") → mensaje accionable.
+      // El tropiezo típico es pasar un projectId donde va un specId: lo
+      // detectamos y apuntamos a "status" para sacar el specId correcto.
+      const projectByThatId = await this.prisma.project.findUnique({ where: { id: specId } });
+      if (projectByThatId) {
+        throw new BadRequestException(
+          `"${specId}" es un projectId, no un specId. "generate" recibe el ID de una spec. ` +
+            `Corre "status ${specId}" para ver la última spec del proyecto "${projectByThatId.moduleSlug}" y usa el campo "id" de esa spec.`
+        );
+      }
+      throw new BadRequestException(
+        `No existe ninguna spec con id "${specId}" (tampoco un proyecto con ese id). ` +
+          `Los specId salen de "analyze <projectId>" o de "status <projectId>".`
+      );
+    }
 
     const requiredGates = options.requiredGates ?? DEFAULT_REQUIRED_GATES;
     const approved = await this.gates.areSpecGatesApproved(specId, requiredGates);
