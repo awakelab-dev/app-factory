@@ -2,7 +2,7 @@
 
 > Actualizar al cerrar CADA sesión de trabajo. Este archivo es lo primero que lee cualquier tarea nueva.
 
-**Última actualización**: 2026-07-17 (**Limpieza post-Fase-1**: `proxy_read_timeout` 300s→60s en los `.conf` de Nginx del repo — pendiente de aplicar a mano en el server por SSH, ver "Siguiente" p.3 — y mensajes del CLI de `apps/factory` más accionables (`generate` con projectId, transición inválida), con tests; `@awk/factory` en verde, 43/43. Detalle en "Hecho". Sesión previa: **Servicio factory desplegado y verificado en PRODUCCIÓN** — promoción del sha `4160852` ya validado en staging; base `awkfactory_production` + rol de mínimo privilegio creados, bloque `/factory-api/` en el Nginx de `apps.awakelab.world`, 3 contenedores healthy y health OK por HTTPS. Con esto la Fábrica corre completa en ambos entornos. Misma sesión previa: **Pipeline + control plane VALIDADOS end-to-end con un caso real** (D-029/D-030 en la práctica): create-project + analyze por CLI contra el prototipo `orientadorIA` real, spec revisada y gates decididos desde `/factory` en el navegador, y guardarraíl de generate verificado. La antiduplicación funcionó de verdad: el Agent SDK detectó el módulo `orientador-ia` existente y recomendó rechazar como duplicado. La validación destapó y corrigió 3 bugs más que la suite no cubría (carga de `.env`, runs huérfanos en "running", HTTP 400 al decidir el segundo gate tras un rechazo) — ver "Resuelto recientemente". Siguiente hito: factory en producción.)
+**Última actualización**: 2026-07-17 (**Limpieza post-Fase-1 CERRADA**: `proxy_read_timeout` 300s→60s en los `.conf` de Nginx del repo **y aplicado en el server** por Leonardo (`nginx -t` + reload OK), más mensajes del CLI de `apps/factory` más accionables (`generate` con projectId, transición inválida), con tests; `@awk/factory` en verde, 43/43. Con esto no queda nada pendiente de Fase 1 salvo el punto 4b (flujo `request_change` del CLI, que espera el primer encargo real). **El próximo hito es una decisión de Leonardo**: pasar el primer encargo de negocio real por el pipeline (necesita un prototipo de un gerente) o arrancar Fase 2. Detalle en "Hecho". Sesión previa: **Servicio factory desplegado y verificado en PRODUCCIÓN** — promoción del sha `4160852` ya validado en staging; base `awkfactory_production` + rol de mínimo privilegio creados, bloque `/factory-api/` en el Nginx de `apps.awakelab.world`, 3 contenedores healthy y health OK por HTTPS. Con esto la Fábrica corre completa en ambos entornos. Misma sesión previa: **Pipeline + control plane VALIDADOS end-to-end con un caso real** (D-029/D-030 en la práctica): create-project + analyze por CLI contra el prototipo `orientadorIA` real, spec revisada y gates decididos desde `/factory` en el navegador, y guardarraíl de generate verificado. La antiduplicación funcionó de verdad: el Agent SDK detectó el módulo `orientador-ia` existente y recomendó rechazar como duplicado. La validación destapó y corrigió 3 bugs más que la suite no cubría (carga de `.env`, runs huérfanos en "running", HTTP 400 al decidir el segundo gate tras un rechazo) — ver "Resuelto recientemente". Siguiente hito: factory en producción.)
 **Fase actual**: Fase 1 — EN CURSO (pipeline con spec intermedia y gates, docs/04/docs/06; primer caso `orientador-ia` completo end-to-end, backend+frontend). Fase 0 queda CERRADA (core mínimo + CI en verde; managed PostgreSQL y Docker listos; staging y production sirviendo por HTTPS en `apps.awakelab.world`; primer módulo ejemplar `moodle-insights` sobre el patrón D-011 construido y validado en vivo contra un Moodle real).
 
 ## Hecho
@@ -88,7 +88,7 @@
   - **Verificado**: `https://apps.awakelab.world/factory-api/health` → `{"status":"ok","service":"awk-factory"}`; `docker compose -p awk-production ps` → api/web/factory los tres `healthy` en el sha promovido. `/factory` no se puede verificar con login en producción por diseño: dev-login responde 403 con `NODE_ENV=production` (D-016) — el formulario muestra "No se pudo iniciar sesión", comportamiento esperado hasta que llegue el IdP.
 
 - **Limpieza post-Fase-1 (2026-07-17)** — dos ajustes menores en el repo (sin decisión estructural, sin entrada en DECISIONES):
-  - **`proxy_read_timeout` 300s → 60s** en el `location /api/` de `deploy/nginx/{staging,production}.conf` + comentario corregido (el `POST /sync` de moodle-insights responde casi al toque, ya no necesita sostener una request larga). **Solo repo**: el cambio en el server lo aplica Leonardo a mano por SSH (`nano` la línea, `nginx -t` + reload — nunca `scp`, incidente certbot) — ver punto 3 de "Siguiente".
+  - **`proxy_read_timeout` 300s → 60s** en el `location /api/` de `deploy/nginx/{staging,production}.conf` + comentario corregido (el `POST /sync` de moodle-insights responde casi al toque, ya no necesita sostener una request larga). **Aplicado también en el server** por Leonardo el 2026-07-17 (`nano` la línea en el `.conf` certbot-izado de cada dominio, `nginx -t` + reload OK — sin `scp`). Repo y server sincronizados.
   - **Mensajes del CLI de `apps/factory` más accionables**: (a) `generate` con un projectId en vez de specId ya no escupe el error crudo de Prisma ("No record was found") — `GenerationRunnerService.runGeneration` usa `findUnique` + fallback: si el id es un proyecto, sugiere `status <projectId>` para sacar el specId; si no es ni spec ni proyecto, lo dice explícito (ambos como `BadRequestException`). (b) `InvalidTransitionError` (state-machine) ahora añade al mensaje los destinos válidos desde el estado origen (o marca "estado final, no admite transiciones").
   - **Tests**: +2 en `generation-runner.service.spec.ts` (projectId → error accionable; id inexistente) y +2 en `state-machine.spec.ts` (mensaje sugiere destinos / marca terminal). El mock de generación pasó de `spec.findUniqueOrThrow` a `spec.findUnique`+`project.findUnique`. **Verificación**: `@awk/factory` en verde fuera del mount (D-023) — 43/43 tests, typecheck y lint OK (el `prisma generate` de las tareas turbo falla en este sandbox por falta de DNS a binaries.prisma.sh, no por el código; se corrió `vitest`/`tsc`/`eslint` directos sobre el cliente Prisma ya commiteado).
 
@@ -102,7 +102,7 @@ Nada en curso — factory desplegado y verificado en producción (2026-07-17). L
 
 1. ~~Servicio factory en PRODUCCIÓN~~ ✅ 2026-07-17 (ver "Hecho").
 2. ~~Rotar secretos expuestos~~ ✅ 2026-07-17 — rotados por Leonardo (confirmado en sesión): los secretos que habían quedado en chats de Cowork y el historial de git dejan de ser válidos. Si la purga de `backend/.env` del historial con `git-filter-repo` no se ejecutó, queda como opcional de baja prioridad (la contraseña que contiene ya está rotada).
-3. ~~Bajar `proxy_read_timeout` a 60s en `deploy/nginx/{staging,production}.conf`~~ ✅ 2026-07-17 (repo actualizado; ver "Hecho"). **Pendiente: aplicarlo en el server a mano** — `nano` el `.conf` certbot-izado de cada dominio, cambiar solo la línea `proxy_read_timeout 300s;` → `60s;` en el `location /api/`, `nginx -t` + reload. Nunca `scp` el archivo completo (incidente del certificado en "Resuelto recientemente"/runbook).
+3. ~~Bajar `proxy_read_timeout` a 60s en `deploy/nginx/{staging,production}.conf` y en el server~~ ✅ 2026-07-17 — repo actualizado (ver "Hecho") **y aplicado en el server por Leonardo** (`nano` la línea en el `.conf` certbot-izado de cada dominio + `nginx -t` + reload; sin `scp`). Cerrado por completo.
 4. (Opcional, no bloqueante) Mejoras menores del pipeline: ~~(a) mensajes del CLI — `generate` con un projectId escupe el error crudo de Prisma; el error de transición inválida no sugería el camino válido~~ ✅ 2026-07-17 (ver "Hecho"). (b) el flujo `request_change` de docs/04 (que la propia spec del agente citó como la ruta correcta para cambios sobre módulos existentes) todavía no existe en el CLI — diseñarlo cuando llegue el primer encargo real de cambio sobre un módulo vivo.
 
 ## Primer caso Fase 1: `orientador-ia`
@@ -117,33 +117,45 @@ La tarea sugerida aquí en la sesión anterior ya corrió: caso `orientador-ia-v
 
 ### Mensaje inicial sugerido para la próxima tarea (copiar/pegar)
 
-Las dos tareas anteriores sugeridas aquí (factory en producción, rotación de secretos) se ejecutaron el 2026-07-17 — ver "Hecho" y "Siguiente". El próximo hito REAL es pasar el primer encargo de negocio por el pipeline en el entorno real (necesita un prototipo de un gerente — lo aporta Leonardo cuando exista). Mientras tanto, la tarea sugerida es la limpieza corta que queda en "Siguiente" (puntos 3 y 4a):
+La limpieza post-Fase-1 (proxy_read_timeout + mensajes del CLI) se cerró el
+2026-07-17, repo y server incluidos — ver "Hecho". **Con eso Fase 1 no tiene
+nada técnico pendiente.** Lo que queda es una BIFURCACIÓN que decide Leonardo,
+no una tarea obvia de continuar:
 
-> Nota: mixta — la parte de Nginx es guiada por SSH (Claude guía, Leonardo
-> ejecuta; el sandbox no tiene ruta al Lightsail), la parte del CLI es código
-> normal en el repo.
+- **Opción A — primer encargo de negocio real por el pipeline** (el hito que
+  cierra el propósito de la Fábrica): necesita que Leonardo aporte un prototipo
+  de Cowork hecho por un gerente. Sin ese material no se puede arrancar. Cuando
+  exista, la tarea es `create-project` + `analyze` + gates en `/factory` +
+  `generate`, contra el entorno real (BD `awkfactory` + `PLATFORM_REPO_PATH`).
+- **Opción B — arrancar Fase 2** (ver `docs/06-roadmap.md`): decisión de
+  alcance, no de código todavía.
+- **Opción C — cerrar el punto 4b** (flujo `request_change` del CLI para
+  cambios sobre módulos vivos): es la única mejora técnica que queda anotada,
+  pero conviene diseñarla contra un caso real de cambio, no en abstracto.
 
-> Modelo recomendado: **Sonnet** — ajustes menores, no arquitectura.
+**Antes de la próxima sesión, Leonardo elige A/B/C.** Si es A, adjuntar el
+prototipo. La plantilla de mensaje depende de esa elección — no hay un
+copiar/pegar único que aplique a las tres. Ejemplo para el arranque de A:
+
+> Modelo recomendado: **Opus** para A/B (encargo nuevo / arquitectura de fase);
+> **Sonnet** para C (mejora acotada del CLI).
 
 ```
-[fix] Limpieza post-Fase-1: proxy_read_timeout + mensajes del CLI de factory
+[factory] Primer encargo real: <slug> por el pipeline
 
-Antes de empezar: leer docs/STATUS.md completo (puntos 3 y 4a de "Siguiente")
-y docs/runbooks/lightsail-deploy.md (gotcha: nunca scp un .conf
-certbot-izado — editar a mano con nano solo la línea que cambia).
+Antes de empezar: leer docs/STATUS.md completo y docs/04-integracion-cowork.md
+(pasos del pipeline) + docs/05-gobernanza-seguridad.md (gates).
 
-Objetivo:
-1. Bajar proxy_read_timeout de 300s a 60s en el location /api/ de ambos
-   server blocks (staging.apps.awakelab.world y apps.awakelab.world) — el
-   POST /sync de moodle-insights ya es asíncrono y responde al toque.
-   Actualizar también deploy/nginx/{staging,production}.conf en el repo para
-   que la plantilla no mienta. nginx -t + reload.
-2. Mensajes del CLI de apps/factory: `generate` con un projectId en vez de
-   specId escupe el error crudo de Prisma ("No record was found") — dar un
-   error accionable; el error de transición inválida debería sugerir el
-   camino válido. Con tests.
+Prototipo fuente: <ruta/carpeta que adjunto>. Gerente solicitante: <email>.
 
-Al cerrar: actualizar docs/STATUS.md (tachar puntos 3 y 4a) y commitear.
+Objetivo: llevar este prototipo por el pipeline REAL:
+1. create-project + analyze (Agent SDK escribe la spec en docs/pipeline/<slug>/).
+2. Revisar spec funcional/técnica y decidir gates en /factory (staging).
+3. Si ambos gates aprobados: generate (rama factory/<slug>, PR).
+Reportar hallazgos del análisis (antiduplicación, flags de sensibilidad) antes
+de aprobar nada. No generar sin gates aprobados (docs/05).
+
+Al cerrar: actualizar docs/STATUS.md y commitear.
 ```
 
 ### Receta de verificación local con BD (ya completada — queda de referencia para levantar el entorno de nuevo)
