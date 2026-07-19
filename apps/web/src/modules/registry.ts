@@ -2,6 +2,7 @@ import { canAccess } from '@awk/auth';
 import type { AuthUser, NavItem } from '@awk/types';
 import { coreAdminModule } from './core-admin';
 import { factoryConsoleModule } from './factory-console';
+import { gestorProyectosModule } from './gestor-proyectos';
 import { helloModule } from './hello';
 import { moodleInsightsModule } from './moodle-insights';
 import { orientadorIaModule } from './orientador-ia';
@@ -16,6 +17,7 @@ export const modules: ModuleRegistration[] = [
   coreAdminModule,
   moodleInsightsModule,
   orientadorIaModule,
+  gestorProyectosModule,
   factoryConsoleModule
 ];
 
