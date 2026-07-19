@@ -3,6 +3,7 @@ import { AuditModule } from './core/audit/audit.module';
 import { AuthModule } from './core/auth/auth.module';
 import { UsersModule } from './core/users/users.module';
 import { HelloModule } from './hello/hello.module';
+import { GestorProyectosModule } from './modules/gestor-proyectos/gestor-proyectos.module';
 import { MoodleInsightsModule } from './modules/moodle-insights/moodle-insights.module';
 import { OrientadorIaModule } from './modules/orientador-ia/orientador-ia.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -22,7 +23,8 @@ import { PrismaModule } from './prisma/prisma.module';
     UsersModule,
     HelloModule,
     MoodleInsightsModule,
-    OrientadorIaModule
+    OrientadorIaModule,
+    GestorProyectosModule
   ]
 })
 export class AppModule {}

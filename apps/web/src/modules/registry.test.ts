@@ -12,19 +12,19 @@ const plain: AuthUser = { ...admin, id: 'u-2', roles: ['user'] };
 const orientadorAdmin: AuthUser = { ...admin, id: 'u-3', roles: ['orientador_admin'] };
 
 describe('registry (manifests → menú/rutas)', () => {
-  it('admin accede a todos los módulos registrados, incl. orientador-ia (admin también entra ahí desde 2026-07-15) y factory-console (D-030)', () => {
+  it('admin accede a todos los módulos registrados, incl. orientador-ia (admin también entra ahí desde 2026-07-15), gestor-proyectos y factory-console (D-030)', () => {
     const ids = accessibleModules(admin).map((mod) => mod.manifest.id);
-    expect(ids).toEqual(['hello', 'core-admin', 'moodle-insights', 'orientador-ia', 'factory-console']);
+    expect(ids).toEqual(['hello', 'core-admin', 'moodle-insights', 'orientador-ia', 'gestor-proyectos', 'factory-console']);
   });
 
-  it('un usuario sin admin no accede a core-admin (moodle-insights sí, sin requiredRoles)', () => {
+  it('un usuario sin admin no accede a core-admin (moodle-insights y gestor-proyectos sí, sin requiredRoles)', () => {
     const ids = accessibleModules(plain).map((mod) => mod.manifest.id);
-    expect(ids).toEqual(['hello', 'moodle-insights']);
+    expect(ids).toEqual(['hello', 'moodle-insights', 'gestor-proyectos']);
   });
 
-  it('un admin de Aspasia (orientador_admin) solo ve el panel de orientador-ia', () => {
+  it('un admin de Aspasia (orientador_admin) ve orientador-ia pero no core-admin ni la fábrica', () => {
     const ids = accessibleModules(orientadorAdmin).map((mod) => mod.manifest.id);
-    expect(ids).toEqual(['hello', 'moodle-insights', 'orientador-ia']);
+    expect(ids).toEqual(['hello', 'moodle-insights', 'orientador-ia', 'gestor-proyectos']);
   });
 
   it('el menú se filtra por roles a nivel ítem', () => {
@@ -33,13 +33,22 @@ describe('registry (manifests → menú/rutas)', () => {
       'Usuarios',
       'Moodle Insights',
       'Orientador IA',
+      'Gestor de Proyectos',
+      'Proyectos',
       'Fábrica'
     ]);
-    expect(visibleNav(plain).map((item) => item.label)).toEqual(['Demo Hello', 'Moodle Insights']);
+    expect(visibleNav(plain).map((item) => item.label)).toEqual([
+      'Demo Hello',
+      'Moodle Insights',
+      'Gestor de Proyectos',
+      'Proyectos'
+    ]);
     expect(visibleNav(orientadorAdmin).map((item) => item.label)).toEqual([
       'Demo Hello',
       'Moodle Insights',
-      'Orientador IA'
+      'Orientador IA',
+      'Gestor de Proyectos',
+      'Proyectos'
     ]);
   });
 

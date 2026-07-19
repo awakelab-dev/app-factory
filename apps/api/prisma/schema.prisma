@@ -16,7 +16,7 @@ generator client {
 // y el runtime recibe el adapter (@prisma/adapter-pg) en el constructor.
 datasource db {
   provider = "postgresql"
-  schemas  = ["core", "moodle", "orientador"]
+  schemas  = ["core", "moodle", "orientador", "proyectos"]
 }
 
 /// Usuario de la plataforma. La identidad vendrá del IdP (SSO pendiente,
@@ -298,4 +298,109 @@ model OrientadorExportLog {
 
   @@map("exports_log")
   @@schema("orientador")
+}
+
+// ---------------------------------------------------------------------------
+// Módulo gestor-proyectos (spec docs/pipeline/gestor-proyectos/): tablero
+// kanban de proyectos/sprints/tareas de uso 100% interno de Awakelab (sin rol
+// de manifest nuevo — reutiliza `admin`/`user` de core tal cual, D-011).
+// `createdById`/`assigneeId`/`authorId` son referencias conceptuales a
+// `core.users` (mismo patrón que `moodle.sync_runs.triggeredById` y
+// `orientador.exports_log.adminUserId`): `String @db.Uuid` SIN `@relation`
+// hacia `core.User` — se resuelven a nivel de aplicación (join manual/lookup
+// dentro del propio servicio, vía el mismo PrismaClient), no hay FK de base
+// de datos cruzando schemas de módulo↔core. `sprintId` en `Task` es NOT NULL
+// a propósito (spec funcional, pregunta 2): igual que el prototipo, no hay
+// backlog sin sprint — toda tarea nace dentro de un sprint concreto.
+// ---------------------------------------------------------------------------
+
+enum ProyectosTaskStatus {
+  iniciada
+  en_progreso
+  en_pausa
+  cancelada
+  finalizada
+
+  @@schema("proyectos")
+}
+
+model Project {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  name        String
+  description String?  @db.Text
+  createdById String   @db.Uuid
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  sprints     Sprint[]
+  tasks       Task[]
+
+  @@map("projects")
+  @@schema("proyectos")
+}
+
+/// Días de calendario (`@db.Date`, no timestamptz): un sprint dura días
+/// hábiles concretos, no eventos con hora — evita que la duración dependa de
+/// la zona horaria de quien lo consulte (mismo motivo en `Task.dueDate`).
+model Sprint {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  projectId String   @db.Uuid
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name      String
+  startDate DateTime @db.Date
+  endDate   DateTime @db.Date
+  createdAt DateTime @default(now())
+  tasks     Task[]
+
+  @@index([projectId])
+  @@map("sprints")
+  @@schema("proyectos")
+}
+
+model Task {
+  id          String              @id @default(uuid(7)) @db.Uuid
+  projectId   String              @db.Uuid
+  project     Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sprintId    String              @db.Uuid
+  sprint      Sprint              @relation(fields: [sprintId], references: [id], onDelete: Cascade)
+  title       String
+  status      ProyectosTaskStatus @default(iniciada)
+  dueDate     DateTime            @db.Date
+  assigneeId  String              @db.Uuid
+  createdById String              @db.Uuid
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  subtasks    Subtask[]
+  comments    Comment[]
+
+  @@index([projectId])
+  @@index([sprintId])
+  @@index([assigneeId])
+  @@map("tasks")
+  @@schema("proyectos")
+}
+
+model Subtask {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  taskId    String   @db.Uuid
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  title     String
+  done      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([taskId])
+  @@map("subtasks")
+  @@schema("proyectos")
+}
+
+model Comment {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  taskId    String   @db.Uuid
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  authorId  String   @db.Uuid
+  text      String   @db.Text
+  createdAt DateTime @default(now())
+
+  @@index([taskId])
+  @@map("comments")
+  @@schema("proyectos")
 }
