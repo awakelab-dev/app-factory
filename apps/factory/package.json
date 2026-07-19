@@ -5,13 +5,13 @@
   "type": "commonjs",
   "files": ["dist"],
   "scripts": {
-    "build": "prisma generate && tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json",
     "cli": "prisma generate && node --env-file-if-exists=.env -r ts-node/register/transpile-only src/cli.ts",
     "serve": "prisma generate && node --env-file-if-exists=.env --watch -r ts-node/register/transpile-only src/main.ts",
     "start": "node dist/main.js",
-    "test": "prisma generate && vitest run",
+    "test": "vitest run",
     "lint": "eslint src",
-    "typecheck": "prisma generate && tsc --noEmit",
+    "typecheck": "tsc --noEmit",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy"
