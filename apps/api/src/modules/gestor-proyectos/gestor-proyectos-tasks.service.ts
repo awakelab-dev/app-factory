@@ -184,6 +184,14 @@ export class GestorTasksService {
     if (!this.permissions.canEditTask(user, task)) {
       throw new ForbiddenException('No puedes editar esta tarea');
     }
+    // Nota de gate (revisión técnica): reasignar una tarea (cambiar
+    // assigneeId) es SIEMPRE solo-admin, aunque el requester cumpla
+    // `canEditTask` (creador==asignado==él mismo) — el prototipo también
+    // reserva esa acción a Admin. `canEditTask` sigue gobernando
+    // título/fecha; el campo assigneeId se revalida aparte.
+    if (dto.assigneeId !== undefined && !this.permissions.isAdmin(user)) {
+      throw new ForbiddenException('Solo un admin puede reasignar esta tarea');
+    }
 
     const row = await this.prisma.task.update({
       where: { id: taskId },

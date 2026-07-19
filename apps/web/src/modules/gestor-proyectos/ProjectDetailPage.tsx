@@ -211,6 +211,7 @@ export function ProjectDetailPage() {
       {activeTask && (
         <TaskModal
           task={activeTask}
+          isAdmin={isAdmin}
           onClose={() => setActiveTaskId(null)}
           onChanged={onTaskChanged}
           onDeleted={onTaskDeleted}

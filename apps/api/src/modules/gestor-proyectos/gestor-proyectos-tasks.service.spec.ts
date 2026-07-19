@@ -150,6 +150,24 @@ describe('GestorTasksService.updateTask / deleteTask (canEditTask/canDeleteTask)
     expect(prisma.task.update).toHaveBeenCalled();
     expect(prisma.task.delete).toHaveBeenCalled();
   });
+
+  it('reasignar (assigneeId) es SOLO admin — un ejecutor no puede aunque pueda editar la tarea (nota de gate)', async () => {
+    const selfTask = { ...baseTask, assigneeId: 'u-1', createdById: 'u-1' };
+    const { service } = buildService({ task: { findUnique: vi.fn().mockResolvedValue(selfTask) } });
+    await expect(service.updateTask(assignee, 't-1', { assigneeId: 'u-2' })).rejects.toBeInstanceOf(
+      ForbiddenException
+    );
+  });
+
+  it('el admin sí puede reasignar una tarea', async () => {
+    const { service, prisma } = buildService({
+      task: { findUnique: vi.fn().mockResolvedValue(adminAssignedTask), update: vi.fn().mockResolvedValue(adminAssignedTask) }
+    });
+    await service.updateTask(admin, 't-1', { assigneeId: 'u-2' });
+    expect(prisma.task.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ assigneeId: 'u-2' }) })
+    );
+  });
 });
 
 describe('GestorTasksService subtareas y comentarios (canAddInfo)', () => {

@@ -25,11 +25,17 @@ const fieldClass =
  */
 export function TaskModal({
   task: initialTask,
+  isAdmin,
   onClose,
   onChanged,
   onDeleted
 }: {
   task: GestorTaskRow;
+  /** Reasignar (assigneeId) es SOLO admin (nota de gate técnico), aunque
+   * `permissions.canEditTask` ya permita editar título/fecha de una tarea
+   * auto-asignada — el formulario de edición usa esto para decidir si
+   * muestra el selector de "asignar a" o solo el nombre actual. */
+  isAdmin: boolean;
   onClose: () => void;
   onChanged: (task: GestorTaskRow) => void;
   onDeleted: (taskId: string) => void;
@@ -154,6 +160,7 @@ export function TaskModal({
         {editing && (
           <EditTaskForm
             task={task}
+            isAdmin={isAdmin}
             onCancel={() => setEditing(false)}
             onSaved={(updated) => {
               apply(updated);
@@ -179,10 +186,12 @@ export function TaskModal({
 
 function EditTaskForm({
   task,
+  isAdmin,
   onCancel,
   onSaved
 }: {
   task: GestorTaskRow;
+  isAdmin: boolean;
   onCancel: () => void;
   onSaved: (task: GestorTaskRow) => void;
 }) {
@@ -193,17 +202,22 @@ function EditTaskForm({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Selector de reasignación: SOLO admin (nota de gate técnico — cambiar
+  // assigneeId es admin-only aunque el requester pueda editar título/fecha
+  // de una tarea auto-asignada). `GET /api/core/users` también es solo-admin
+  // (spec-tecnica.md), así que ni siquiera se pide si no es admin.
   useEffect(() => {
+    if (!isAdmin) return;
     apiFetch('/api/core/users', coreUsersResponseSchema)
       .then((rows) => setUsers(rows.filter((u) => u.isActive)))
       .catch(() => setUsers([]));
-  }, []);
+  }, [isAdmin]);
 
   async function onSave() {
     setSaving(true);
     setError(null);
     try {
-      const patch: UpdateGestorTaskRequest = { title, dueDate, assigneeId };
+      const patch: UpdateGestorTaskRequest = { title, dueDate, assigneeId: isAdmin ? assigneeId : undefined };
       const updated = await apiFetch(`/api/gestor-proyectos/tasks/${task.id}`, gestorTaskRowSchema, {
         method: 'PATCH',
         body: JSON.stringify(patch)
@@ -229,14 +243,25 @@ function EditTaskForm({
         </div>
         <div>
           <label className="mb-1 block text-xs text-awk-blue-400">Asignado a</label>
-          <select value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)} className={fieldClass}>
-            {!users.some((u) => u.id === assigneeId) && <option value={assigneeId}>{assigneeId}</option>}
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.displayName}
-              </option>
-            ))}
-          </select>
+          {isAdmin ? (
+            <select
+              value={assigneeId}
+              onChange={(e) => setAssigneeId(e.target.value)}
+              className={fieldClass}
+              data-testid="edit-assignee-select"
+            >
+              {!users.some((u) => u.id === assigneeId) && <option value={assigneeId}>{assigneeId}</option>}
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.displayName}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <p className={`${fieldClass} cursor-not-allowed text-awk-blue-400`} data-testid="edit-assignee-readonly">
+              {task.assigneeName ?? task.assigneeId} (solo un admin puede reasignar)
+            </p>
+          )}
         </div>
       </div>
       {error && <p className="mt-2 text-sm text-red-400">{error}</p>}

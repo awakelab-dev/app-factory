@@ -136,4 +136,36 @@ describe('ProjectDetailPage — modal de tarea', () => {
     expect(within(modal).getByTestId('delete-task-button')).toBeInTheDocument();
     expect(within(modal).getByTestId('task-status-select')).not.toBeDisabled();
   });
+
+  it('un ejecutor editando una tarea auto-asignada NO ve el selector de reasignar (solo admin puede reasignar)', async () => {
+    mockApi(ejecutor, [
+      buildTask({
+        assigneeId: 'u-1',
+        createdById: 'u-1',
+        permissions: { canChangeStatus: true, canAddInfo: true, canEditTask: true, canDeleteTask: true }
+      })
+    ]);
+    renderPage();
+
+    fireEvent.click(await screen.findByTestId('task-card-t-1'));
+    const modal = await screen.findByTestId('task-modal');
+    fireEvent.click(within(modal).getByText('Editar'));
+
+    expect(await within(modal).findByTestId('edit-assignee-readonly')).toBeInTheDocument();
+    expect(within(modal).queryByTestId('edit-assignee-select')).not.toBeInTheDocument();
+  });
+
+  it('el admin editando una tarea SÍ ve el selector de reasignar', async () => {
+    mockApi(admin, [
+      buildTask({ permissions: { canChangeStatus: true, canAddInfo: true, canEditTask: true, canDeleteTask: true } })
+    ]);
+    renderPage();
+
+    fireEvent.click(await screen.findByTestId('task-card-t-1'));
+    const modal = await screen.findByTestId('task-modal');
+    fireEvent.click(within(modal).getByText('Editar'));
+
+    expect(await within(modal).findByTestId('edit-assignee-select')).toBeInTheDocument();
+    expect(within(modal).queryByTestId('edit-assignee-readonly')).not.toBeInTheDocument();
+  });
 });
