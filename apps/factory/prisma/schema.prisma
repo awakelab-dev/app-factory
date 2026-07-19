@@ -68,10 +68,37 @@ model Project {
   requestedBy String
   status      ProjectStatus     @default(received)
 
-  specs Spec[]
-  runs  Run[]
+  specs          Spec[]
+  runs           Run[]
+  changeRequests ChangeRequest[]
 
   @@map("projects")
+}
+
+/// Una petición de cambio sobre un módulo YA generado/desplegado
+/// (request_change, docs/04-integracion-cowork.md, paso "Mantenimiento").
+/// Modelo LIGERO (decisión 2026-07-19): NO tiene máquina de estados propia —
+/// reutiliza el pipeline existente sobre el MISMO Project (una iteración
+/// activa por módulo en Fase 1). Guarda el texto de la petición y quién la
+/// pidió (docs/05: "firmado por persona") y enlaza la(s) mini-spec(s) que el
+/// análisis de cambio produce. `Project.status` sigue siendo el único tracker
+/// del pipeline: refleja la ITERACIÓN en curso, no la salud de lo que ya está
+/// vivo en producción (que no se toca hasta mergear+promover).
+model ChangeRequest {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  createdAt   DateTime @default(now())
+  projectId   String   @db.Uuid
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Email/nombre de quien pide el cambio. Sin FK a core.users (D-029: la
+  /// Fábrica no comparte BD con la Plataforma).
+  requestedBy String
+  /// Texto libre de la observación/petición del gerente. En Fase 2 llegará
+  /// tipado por el MCP `request_change` (docs/04); en Fase 1 es texto plano.
+  requestText String   @db.Text
+
+  specs Spec[]
+
+  @@map("change_requests")
 }
 
 /// Una versión de la spec intermedia (docs/04, paso 2). Nueva versión cada
@@ -99,6 +126,12 @@ model Spec {
   /// Qué resuelve el core o módulos existentes (antiduplicación, docs/04
   /// list_modules) — texto libre del análisis.
   reuseNotes String? @db.Text
+
+  /// null = spec de intake original (prototipo nuevo). Con valor = mini-spec
+  /// de un cambio incremental (request_change): describe solo el delta sobre
+  /// el módulo vivo, no el módulo entero.
+  changeRequestId String?        @db.Uuid
+  changeRequest   ChangeRequest? @relation(fields: [changeRequestId], references: [id], onDelete: SetNull)
 
   gates Gate[]
   runs  Run[]

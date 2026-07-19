@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { CliModule } from './cli.module';
 import { AnalysisRunnerService } from './pipeline/analysis-runner.service';
+import { ChangeRequestsService } from './pipeline/change-requests.service';
 import { GatesService } from './pipeline/gates.service';
 import { GenerationRunnerService } from './pipeline/generation-runner.service';
 import { ProjectsService } from './pipeline/projects.service';
@@ -20,6 +21,12 @@ import type { GateDecision, ProjectStatus } from './pipeline/types';
  *   pnpm --filter=@awk/factory run cli -- generate <specId>
  *   pnpm --filter=@awk/factory run cli -- advance <projectId> <nuevoEstado>
  *   pnpm --filter=@awk/factory run cli -- status <projectId>
+ *
+ *   # request_change (docs/04) sobre un módulo YA vivo:
+ *   pnpm --filter=@awk/factory run cli -- request-change <projectId> \
+ *     --request "Restringir 'Desempeño por persona' a admin" --requested-by x@y.com
+ *   # enmendar la nota de un gate ya decidido sin re-decidirlo (D-033):
+ *   pnpm --filter=@awk/factory run cli -- amend-gate <gateId> --notes "..." --reviewer x@y.com
  *
  * Requiere FACTORY_DATABASE_URL, ANTHROPIC_API_KEY y PLATFORM_REPO_PATH
  * (analyze/generate) — ver .env.example.
@@ -112,6 +119,31 @@ async function main(): Promise<void> {
         break;
       }
 
+      case 'request-change': {
+        const projectId = requiredArg(rest[0], 'projectId');
+        const flags = parseFlags(rest.slice(1));
+        const changeRequest = await app.get(ChangeRequestsService).create({
+          projectId,
+          requestedBy: flags['requested-by'] ?? 'leonardo.barreto@awakelab.dev',
+          requestText: requiredFlag(flags, 'request')
+        });
+        const spec = await app.get(AnalysisRunnerService).runChangeAnalysis(changeRequest.id);
+        console.log(JSON.stringify({ changeRequest, spec }, null, 2));
+        break;
+      }
+
+      case 'amend-gate': {
+        const gateId = requiredArg(rest[0], 'gateId');
+        const flags = parseFlags(rest.slice(1));
+        const gate = await app.get(GatesService).amendNotes({
+          gateId,
+          reviewer: flags.reviewer ?? 'leonardo.barreto@awakelab.dev',
+          notes: requiredFlag(flags, 'notes')
+        });
+        console.log(JSON.stringify(gate, null, 2));
+        break;
+      }
+
       case 'advance': {
         const projectId = requiredArg(rest[0], 'projectId');
         const newStatus = requiredArg(rest[1], 'nuevoEstado') as ProjectStatus;
@@ -129,7 +161,7 @@ async function main(): Promise<void> {
 
       default:
         console.error(
-          `Comando desconocido: "${command ?? ''}". Comandos: create-project, analyze, decide-gate, generate, advance, status (ver el comentario al inicio de src/cli.ts).`
+          `Comando desconocido: "${command ?? ''}". Comandos: create-project, analyze, decide-gate, generate, request-change, amend-gate, advance, status (ver el comentario al inicio de src/cli.ts).`
         );
         process.exitCode = 1;
     }

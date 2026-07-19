@@ -207,13 +207,22 @@ export class GenerationRunnerService {
     await this.projects.transition(project.id, 'verifying');
     if (prUrl) {
       await this.projects.transition(project.id, 'pr_review');
+      // Gate de revisión de PR de primera clase (2026-07-19): antes la
+      // revisión docs/05 quedaba solo como comentario en GitHub + `advance`
+      // manual, sin fila auditable. Ahora se abre el gate y se decide en
+      // /factory (aprobar → staging; complementar → regenerar). Cada ciclo de
+      // regeneración que vuelve a pr_review abre uno fresco (historial).
+      await this.gates.openGatesForSpec(specId, ['pr_review']);
     }
 
     this.logger.log(
       `Generación completa para "${project.moduleSlug}" en rama ${branchName}` +
         (prUrl ? ` (PR: ${prUrl}).` : ' (sin PR automática — empujar/abrir a mano, luego usar "advance").')
     );
-    return run;
+    // Gap 5 (2026-07-19): `run` es el objeto de CREACIÓN (status `running`, sin
+    // prUrl/costo/tokens). Releerlo para que el CLI imprima el estado FINAL
+    // real en vez de confundir con "en curso" cuando ya terminó.
+    return this.prisma.run.findUniqueOrThrow({ where: { id: run.id } });
   }
 
   private async createOrReuseBranch(branchName: string, gitRunner: typeof runGit): Promise<void> {
@@ -229,11 +238,16 @@ export class GenerationRunnerService {
   }
 
   /**
-   * Intenta abrir la PR con `gh` CLI. Sin red/token de GitHub (el sandbox de
-   * Cowork frecuentemente no la tiene, ver D-016/D-023) falla en silencio:
-   * la rama queda commiteada localmente y se documenta como limitación
-   * operativa de esta fase, no como bug — el run igual se marca `success`
-   * porque el código SÍ se generó y verificó.
+   * Commitea/empuja la rama y devuelve la URL de la PR. En una REGENERACIÓN
+   * incremental (request_change o "complementar") la rama `factory/<slug>` ya
+   * suele tener una PR abierta: `gh pr create` fallaría con "already exists"
+   * (gap histórico 4). Por eso se REUTILIZA la PR existente (`gh pr view`)
+   * antes de intentar crearla — el push ya actualizó su diff.
+   *
+   * Sin red/token de GitHub (el sandbox de Cowork frecuentemente no la tiene,
+   * ver D-016/D-023) falla en silencio: la rama queda commiteada localmente y
+   * se documenta como limitación operativa de esta fase, no como bug — el run
+   * igual se marca `success` porque el código SÍ se generó y verificó.
    */
   private async tryOpenPullRequest(
     branchName: string,
@@ -243,10 +257,30 @@ export class GenerationRunnerService {
     gitRunner: typeof runGit,
     ghRunner: typeof runGh
   ): Promise<string | null> {
+    let pushed = false;
     try {
       await gitRunner(['add', '-A'], this.repoPath);
       await gitRunner(['commit', '-m', `[module:${moduleSlug}] Generado por la fábrica (spec ${specId})`], this.repoPath);
       await gitRunner(['push', '-u', 'origin', branchName], this.repoPath);
+      pushed = true;
+    } catch (error) {
+      // "nothing to commit" (regeneración sin cambios netos) o sin red: no
+      // abortamos todavía — puede existir ya una PR de una corrida anterior.
+      this.logger.warn(
+        `No se pudo commitear/empujar la rama ${branchName} (queda como esté localmente): ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+
+    const existing = await this.findExistingPrUrl(branchName, ghRunner);
+    if (existing) {
+      this.logger.log(`PR ya existente para ${branchName} reutilizada (gap 4): ${existing}`);
+      return existing;
+    }
+    if (!pushed) return null;
+
+    try {
       const { stdout } = await ghRunner(
         [
           'pr',
@@ -263,10 +297,22 @@ export class GenerationRunnerService {
       return stdout.trim().split('\n').pop() ?? null;
     } catch (error) {
       this.logger.warn(
-        `No se pudo abrir la PR automáticamente (rama ${branchName} queda commiteada localmente): ${
+        `No se pudo crear la PR automáticamente (rama ${branchName} queda empujada; abrir a mano y usar "advance"): ${
           error instanceof Error ? error.message : String(error)
         }`
       );
+      return null;
+    }
+  }
+
+  /** URL de la PR abierta para `branchName`, o null si no hay ninguna / `gh` sin red. */
+  private async findExistingPrUrl(branchName: string, ghRunner: typeof runGh): Promise<string | null> {
+    try {
+      const { stdout } = await ghRunner(['pr', 'view', branchName, '--json', 'url', '-q', '.url'], this.repoPath);
+      const url = stdout.trim();
+      return url || null;
+    } catch {
+      // `gh pr view` sale con error si no hay PR para la rama (o si no hay red).
       return null;
     }
   }
@@ -302,8 +348,10 @@ hace falta.
 
 Reglas estrictas:
 - SOLO puedes escribir dentro de apps/api/src/modules/<slug>/,
-  apps/web/src/modules/<slug>/, y añadir modelos NUEVOS al final de
-  apps/api/prisma/schema.prisma (nunca editar modelos de otros módulos).
+  apps/web/src/modules/<slug>/, y tocar apps/api/prisma/schema.prisma SOLO
+  para añadir modelos NUEVOS de ESTE módulo o editar los modelos que YA
+  pertenecen a este módulo (p. ej. añadir un campo en un cambio incremental) —
+  nunca los modelos de OTROS módulos ni el schema "core".
 - No toques core, otros módulos, CI, Dockerfiles ni configuración de la
   plataforma.
 - No corras \`git add\`, \`git commit\` ni \`git push\` — de eso se encarga el

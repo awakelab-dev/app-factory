@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AnalysisRunnerService } from './analysis-runner.service';
+import { ChangeRequestsService } from './change-requests.service';
 import { GatesService } from './gates.service';
 import { GenerationRunnerService } from './generation-runner.service';
 import { ProjectsService } from './projects.service';
@@ -13,7 +14,7 @@ import { ProjectsService } from './projects.service';
  * estos mismos servicios, sin modificarlos.
  */
 @Module({
-  providers: [ProjectsService, GatesService, AnalysisRunnerService, GenerationRunnerService],
-  exports: [ProjectsService, GatesService, AnalysisRunnerService, GenerationRunnerService]
+  providers: [ProjectsService, GatesService, AnalysisRunnerService, GenerationRunnerService, ChangeRequestsService],
+  exports: [ProjectsService, GatesService, AnalysisRunnerService, GenerationRunnerService, ChangeRequestsService]
 })
 export class PipelineModule {}

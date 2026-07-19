@@ -10,6 +10,12 @@ export interface GateDecisionInput {
   notes?: string;
 }
 
+export interface GateAmendInput {
+  gateId: string;
+  reviewer: string;
+  notes: string;
+}
+
 /**
  * Decide un gate (docs/05-gobernanza-seguridad.md: el revisor tiene tres
  * salidas — aprobar, rechazar con motivo, o "complementar") y aplica la
@@ -47,13 +53,22 @@ export class GatesService {
 
     const projectId = gate.spec.project.id;
     const currentStatus = gate.spec.project.status as ProjectStatus;
+    // Los gates de REVISIÓN (pr_review/manager_acceptance) actúan sobre código
+    // ya generado: "complementar" ahí significa REGENERAR (→ changes_requested
+    // → generating), no re-analizar la spec. Los gates de spec
+    // (functional/technical) actúan antes de generar: "complementar" vuelve a
+    // `spec_ready` para re-analizar. (Bug corregido 2026-07-19: `decide`
+    // mandaba TODO changes_requested a spec_ready, inservible para pr_review.)
+    const isReviewGate = gate.gateType === 'pr_review' || gate.gateType === 'manager_acceptance';
     // gateType functional/technical + approved: sin transición automática
     // (target undefined), ver comentario de clase arriba.
     const target: ProjectStatus | undefined =
       input.decision === 'rejected'
         ? 'rejected'
         : input.decision === 'changes_requested'
-          ? 'spec_ready'
+          ? isReviewGate
+            ? 'changes_requested'
+            : 'spec_ready'
           : gate.gateType === 'pr_review'
             ? 'staging'
             : gate.gateType === 'manager_acceptance'
@@ -81,7 +96,40 @@ export class GatesService {
       }
     });
 
+    // Aprobar el PR abre el gate de aceptación del gerente sobre la MISMA spec
+    // (gate de primera clase, 2026-07-19): el gerente valida en staging y lo
+    // decide en /factory, en vez de un `advance` manual sin fila auditable.
+    if (input.decision === 'approved' && gate.gateType === 'pr_review') {
+      await this.openGatesForSpec(gate.specId, ['manager_acceptance']);
+    }
+
     return updated;
+  }
+
+  /**
+   * Enmienda las notas de un gate YA decidido sin re-decidirlo (D-033,
+   * 2026-07-19): reemplaza el UPDATE por SQL a mano que hubo que hacer en
+   * `focus-flow` cuando una nota de gate resultó imprecisa tras la revisión de
+   * PR. No cambia el `status` ni transiciona el proyecto — solo preserva la
+   * nota original y añade la enmienda con su sello de auditoría, para que la
+   * REgeneración (que lee las decisionNotes de los gates aprobados) reciba la
+   * instrucción corregida.
+   */
+  async amendNotes(input: GateAmendInput) {
+    const gate = await this.prisma.gate.findUniqueOrThrow({ where: { id: input.gateId } });
+    if (gate.status === 'pending') {
+      throw new BadRequestException(
+        `El gate ${gate.id} sigue "pending" — decídelo con decide-gate, no lo enmiendes (la enmienda es para gates ya decididos).`
+      );
+    }
+    const previous = gate.decisionNotes?.trim();
+    const amended =
+      (previous ? `${previous}\n\n` : '') +
+      `[enmienda ${new Date().toISOString()} por ${input.reviewer}]\n${input.notes.trim()}`;
+    return this.prisma.gate.update({
+      where: { id: input.gateId },
+      data: { decisionNotes: amended }
+    });
   }
 
   /** `true` solo si TODOS los gateTypes pedidos existen para la spec y están `approved`. */

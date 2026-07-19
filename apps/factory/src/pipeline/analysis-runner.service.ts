@@ -28,6 +28,31 @@ Aplica los criterios de docs/05-gobernanza-seguridad.md para sensitivityFlags
 primer módulo de un tipo/cliente) y complexityScore. No implementes código
 todavía — este paso solo produce la spec para el gate humano.`;
 
+const CHANGE_ANALYSIS_SYSTEM_PROMPT = `Eres el paso de ANÁLISIS DE CAMBIO del pipeline de AwkFactory
+(docs/04-integracion-cowork.md, "request_change": analiza módulo actual +
+petición → mini-spec → gates → PR incremental).
+
+A diferencia del análisis de un prototipo nuevo, aquí el módulo YA EXISTE y está
+generado/desplegado. Tu insumo es (a) el código vivo del módulo en
+apps/api/src/modules/<slug>/ y apps/web/src/modules/<slug>/ — léelo entero antes
+de nada — y (b) el texto de la petición de cambio. Produces una MINI-SPEC que
+describe SOLO el DELTA: qué cambia funcionalmente y qué cambia técnicamente
+(qué archivos/modelos/endpoints/pantallas/roles se tocan), el impacto de
+migración si toca schema, y qué se reutiliza. NO re-derives la spec del módulo
+entero — céntrate en el cambio.
+
+Debes escribir EXACTAMENTE estos tres archivos en el directorio del cambio que
+se te indica en el prompt (docs/pipeline/<slug>/change-<n>/), y ningún otro:
+- change-<n>/spec-funcional.md   (el cambio en lenguaje de negocio)
+- change-<n>/spec-tecnica.md     (el cambio a nivel modelos/endpoints/pantallas/roles)
+- change-<n>/meta.json           {"complexityScore": <1-5>, "sensitivityFlags": ["..."], "reuseNotes": "..."}
+
+Aplica los criterios de docs/05-gobernanza-seguridad.md para sensitivityFlags
+(si el cambio toca datos personales/RGPD, el schema core, otro módulo, o suma
+una dependencia externa → márcalo, fuerza revisión humana) y complexityScore
+del CAMBIO (no del módulo). No implementes código todavía — este paso solo
+produce la mini-spec para el gate humano.`;
+
 /**
  * Runner de ANÁLISIS (docs/04, paso 2): invoca el Agent SDK headless para
  * que lea el material fuente + el propio repo (antiduplicación) y escriba la
@@ -36,6 +61,12 @@ todavía — este paso solo produce la spec para el gate humano.`;
  * (docs/pipeline/<slug>/). El runner solo los relee del disco y los guarda
  * como una versión de `Spec`, abre los gates funcional+técnico, y deja el
  * proyecto en `pending_approval`.
+ *
+ * `runChangeAnalysis` es la variante de request_change (docs/04,
+ * "Mantenimiento"): el módulo ya existe, la fuente es el código vivo + una
+ * petición de cambio, y la salida es una MINI-spec del delta enlazada a un
+ * `ChangeRequest`. Reutiliza el mismo Project (modelo ligero, 2026-07-19): la
+ * mini-spec es una versión más de `Spec`, con `changeRequestId` puesto.
  *
  * También sirve para REVISAR una spec ("complementar", docs/05): si el
  * proyecto viene de `changes_requested` → `spec_ready`, correr `analyze` de
@@ -101,6 +132,102 @@ export class AnalysisRunnerService {
       return this.fail(run.id, projectId, result.errorMessage ?? 'El run de análisis no tuvo éxito.');
     }
 
+    const spec = await this.finalizeSpec({ projectId, runId: run.id, specDir, result });
+    this.logger.log(
+      `Análisis completo para "${project.moduleSlug}": spec v${spec.version}, gates funcional+técnico abiertos.`
+    );
+    return spec;
+  }
+
+  /**
+   * Análisis de cambio (request_change, docs/04). Reutiliza el mismo Project:
+   * transiciona a `analyzing` desde el estado asentado en que estaba el módulo
+   * (deployed/staging/manager_acceptance), corre el Agent SDK contra el código
+   * vivo + la petición, y crea una MINI-spec (nueva versión de Spec, con
+   * `changeRequestId`) con gates funcional+técnico frescos.
+   */
+  async runChangeAnalysis(changeRequestId: string, agentRunner: typeof runAgent = runAgent) {
+    const changeRequest = await this.prisma.changeRequest.findUniqueOrThrow({
+      where: { id: changeRequestId },
+      include: { project: true }
+    });
+    const project = changeRequest.project;
+
+    await this.projects.transition(project.id, 'analyzing');
+    const run = await this.prisma.run.create({
+      data: { projectId: project.id, runType: 'analysis', status: 'running', startedAt: new Date() }
+    });
+
+    // El directorio del cambio se numera con la versión que tendrá la mini-spec
+    // (docs/pipeline/<slug>/change-<n>/). Ningún Spec se crea entre este count
+    // y el de finalizeSpec, así que ambos dan el mismo n.
+    const nextVersion = (await this.prisma.spec.count({ where: { projectId: project.id } })) + 1;
+    const specDir = `docs/pipeline/${project.moduleSlug}/change-${nextVersion}`;
+    const latestSpec = await this.prisma.spec.findFirst({
+      where: { projectId: project.id },
+      orderBy: { version: 'desc' }
+    });
+
+    const prompt = [
+      `Módulo YA GENERADO a modificar: ${project.moduleSlug} (${project.displayName}).`,
+      `El código vive en apps/api/src/modules/${project.moduleSlug}/ y apps/web/src/modules/${project.moduleSlug}/ — léelo antes de nada.`,
+      `Petición de cambio (de ${changeRequest.requestedBy}):`,
+      changeRequest.requestText,
+      `Escribe la mini-spec del cambio en ${specDir}/ tal como indican las instrucciones del sistema.`,
+      ...(latestSpec
+        ? [
+            'Spec vigente del módulo como CONTEXTO (no la repitas; describe solo el DELTA):',
+            '--- SPEC TÉCNICA VIGENTE ---',
+            latestSpec.technicalContent
+          ]
+        : [])
+    ].join('\n');
+
+    let result: AgentRunResult;
+    try {
+      result = await agentRunner({
+        prompt,
+        cwd: this.repoPath,
+        systemPrompt: CHANGE_ANALYSIS_SYSTEM_PROMPT,
+        model: process.env.ANTHROPIC_MODEL || DEFAULT_MODEL,
+        writableRoots: [join(this.repoPath, specDir)]
+      });
+    } catch (error) {
+      return this.fail(run.id, project.id, error instanceof Error ? error.message : String(error));
+    }
+
+    if (!result.success) {
+      return this.fail(run.id, project.id, result.errorMessage ?? 'El run de análisis de cambio no tuvo éxito.');
+    }
+
+    const spec = await this.finalizeSpec({
+      projectId: project.id,
+      runId: run.id,
+      specDir,
+      result,
+      changeRequestId
+    });
+    this.logger.log(
+      `Análisis de cambio completo para "${project.moduleSlug}": mini-spec v${spec.version}, gates funcional+técnico abiertos.`
+    );
+    return spec;
+  }
+
+  /**
+   * Cola común de ambos análisis: relee los tres archivos de spec que dejó el
+   * agente, crea la siguiente versión de `Spec` (con `changeRequestId` si es un
+   * cambio), abre los gates funcional+técnico, cierra el Run y avanza el
+   * proyecto a `spec_ready` → `pending_approval`.
+   */
+  private async finalizeSpec(opts: {
+    projectId: string;
+    runId: string;
+    specDir: string;
+    result: AgentRunResult;
+    changeRequestId?: string;
+  }) {
+    const { projectId, runId, specDir, result, changeRequestId } = opts;
+
     let functionalContent: string;
     let technicalContent: string;
     let meta: { complexityScore?: number; sensitivityFlags?: string[]; reuseNotes?: string } = {};
@@ -113,7 +240,7 @@ export class AnalysisRunnerService {
       meta = JSON.parse(metaRaw) as typeof meta;
     } catch (error) {
       return this.fail(
-        run.id,
+        runId,
         projectId,
         `El agente terminó pero no dejó los archivos de spec esperados en ${specDir}/: ${
           error instanceof Error ? error.message : String(error)
@@ -130,14 +257,15 @@ export class AnalysisRunnerService {
         technicalContent,
         complexityScore: meta.complexityScore,
         sensitivityFlags: meta.sensitivityFlags ?? [],
-        reuseNotes: meta.reuseNotes
+        reuseNotes: meta.reuseNotes,
+        changeRequestId
       }
     });
 
     await this.gates.openGatesForSpec(spec.id, ['functional', 'technical']);
 
     await this.prisma.run.update({
-      where: { id: run.id },
+      where: { id: runId },
       data: {
         status: 'success',
         finishedAt: new Date(),
@@ -153,7 +281,6 @@ export class AnalysisRunnerService {
     await this.projects.transition(projectId, 'spec_ready');
     await this.projects.transition(projectId, 'pending_approval');
 
-    this.logger.log(`Análisis completo para "${project.moduleSlug}": spec v${nextVersion}, gates funcional+técnico abiertos.`);
     return spec;
   }
 

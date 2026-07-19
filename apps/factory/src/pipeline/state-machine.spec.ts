@@ -40,9 +40,21 @@ describe('state-machine', () => {
     expect(() => assertValidTransition('received', 'generating')).toThrow(InvalidTransitionError);
   });
 
-  it('rechaza transiciones desde estados terminales', () => {
-    expect(() => assertValidTransition('deployed', 'analyzing')).toThrow(InvalidTransitionError);
+  it('rechaza transiciones desde el estado terminal rejected', () => {
     expect(() => assertValidTransition('rejected', 'analyzing')).toThrow(InvalidTransitionError);
+  });
+
+  it('permite re-entrar el pipeline por request_change desde estados asentados', () => {
+    // request_change (docs/04): un módulo ya vivo vuelve a `analyzing` para
+    // una iteración de cambio. deployed deja de ser terminal.
+    expect(() => assertValidTransition('deployed', 'analyzing')).not.toThrow();
+    expect(() => assertValidTransition('staging', 'analyzing')).not.toThrow();
+    expect(() => assertValidTransition('manager_acceptance', 'analyzing')).not.toThrow();
+  });
+
+  it('permite descartar un cambio/módulo en la revisión (pr_review/manager_acceptance → rejected)', () => {
+    expect(() => assertValidTransition('pr_review', 'rejected')).not.toThrow();
+    expect(() => assertValidTransition('manager_acceptance', 'rejected')).not.toThrow();
   });
 
   it('el error incluye origen y destino', () => {
@@ -67,15 +79,15 @@ describe('state-machine', () => {
 
   it('el mensaje marca los estados terminales como sin transiciones', () => {
     try {
-      assertValidTransition('deployed', 'analyzing');
+      assertValidTransition('rejected', 'analyzing');
       expect.unreachable();
     } catch (error) {
-      expect((error as InvalidTransitionError).message).toContain('"deployed" es un estado final, no admite transiciones.');
+      expect((error as InvalidTransitionError).message).toContain('"rejected" es un estado final, no admite transiciones.');
     }
   });
 
   it('todo estado no terminal tiene al menos una transición válida', () => {
-    const terminal = new Set(['deployed', 'rejected']);
+    const terminal = new Set(['rejected']);
     for (const [state, targets] of Object.entries(PROJECT_TRANSITIONS)) {
       if (!terminal.has(state)) {
         expect(targets.length, `estado "${state}" no tiene transiciones salientes`).toBeGreaterThan(0);

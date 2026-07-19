@@ -42,14 +42,17 @@ function buildService(
     },
     run: {
       create: vi.fn().mockResolvedValue({ id: 'run-1' }),
-      update: vi.fn().mockResolvedValue(undefined)
+      update: vi.fn().mockResolvedValue(undefined),
+      // Gap 5: runGeneration relee el run antes de devolverlo (estado final).
+      findUniqueOrThrow: vi.fn().mockResolvedValue({ id: 'run-1', status: 'success' })
     }
   } as unknown as PrismaService;
 
   const projects = { transition: vi.fn().mockResolvedValue(undefined) } as unknown as ProjectsService;
 
   const gates = {
-    areSpecGatesApproved: vi.fn().mockResolvedValue(overrides.gatesApproved ?? true)
+    areSpecGatesApproved: vi.fn().mockResolvedValue(overrides.gatesApproved ?? true),
+    openGatesForSpec: vi.fn().mockResolvedValue(undefined)
   } as unknown as GatesService;
 
   return { service: new GenerationRunnerService(prisma, projects, gates), prisma, projects, gates };
@@ -118,8 +121,8 @@ describe('GenerationRunnerService.runGeneration', () => {
     expect(run).toMatchObject({ id: 'run-1' });
   });
 
-  it('si no hay red/gh, el código queda commiteado localmente y el proyecto SOLO avanza a verifying (sin pr_review)', async () => {
-    const { service, projects } = buildService();
+  it('si no hay red/gh, el código queda commiteado localmente y el proyecto SOLO avanza a verifying (sin pr_review ni gate)', async () => {
+    const { service, projects, gates } = buildService();
     const agentRunner = vi.fn().mockResolvedValue(successResult);
     const runGit = vi.fn().mockResolvedValue(okGit);
     const runGh = vi.fn().mockRejectedValue(new Error('gh: command not found'));
@@ -128,6 +131,39 @@ describe('GenerationRunnerService.runGeneration', () => {
 
     expect(projects.transition).toHaveBeenCalledWith('proj-1', 'verifying');
     expect(projects.transition).not.toHaveBeenCalledWith('proj-1', 'pr_review');
+    expect(gates.openGatesForSpec).not.toHaveBeenCalled();
+  });
+
+  it('reutiliza la PR existente en una regeneración (gap 4): usa gh pr view y no rompe aunque create daría "already exists"', async () => {
+    const { service, prisma } = buildService();
+    const agentRunner = vi.fn().mockResolvedValue(successResult);
+    const runGit = vi.fn().mockResolvedValue(okGit);
+    const runGh = vi.fn().mockImplementation((args: string[]) =>
+      args.includes('view')
+        ? Promise.resolve({ stdout: 'https://github.com/awakelab-dev/app-factory/pull/7\n', stderr: '' })
+        : Promise.reject(new Error('a pull request for branch "factory/demo-modulo" already exists'))
+    );
+
+    await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh });
+
+    expect(runGh).toHaveBeenCalledWith(['pr', 'view', 'factory/demo-modulo', '--json', 'url', '-q', '.url'], '/repo');
+    expect(runGh).not.toHaveBeenCalledWith(expect.arrayContaining(['pr', 'create']), '/repo');
+    expect(prisma.run.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ prUrl: 'https://github.com/awakelab-dev/app-factory/pull/7' })
+      })
+    );
+  });
+
+  it('abre el gate pr_review de primera clase cuando la generación deja una PR', async () => {
+    const { service, gates } = buildService();
+    const agentRunner = vi.fn().mockResolvedValue(successResult);
+    const runGit = vi.fn().mockResolvedValue(okGit);
+    const runGh = vi.fn().mockResolvedValue({ stdout: 'https://github.com/awakelab-dev/app-factory/pull/9\n', stderr: '' });
+
+    await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh });
+
+    expect(gates.openGatesForSpec).toHaveBeenCalledWith('spec-1', ['pr_review']);
   });
 
   it('incluye las decisionNotes de los gates aprobados en el prompt como instrucciones vinculantes', async () => {
