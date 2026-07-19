@@ -1,0 +1,11 @@
+{
+  "complexityScore": 3,
+  "sensitivityFlags": [
+    "primer-modulo-tipo-kanban-permisos-por-fila",
+    "alcance-ambiguo-gestion-usuarios-se-solapa-con-core-admin",
+    "posible-migracion-core-si-se-extiende-crud-usuarios",
+    "datos-personal-interno-nombres-y-asignaciones-empleados",
+    "contenido-libre-comentarios-tareas-puede-referenciar-info-cliente"
+  ],
+  "reuseNotes": "Explorado apps/api/src/modules/ (moodle-insights, orientador-ia) y apps/web/src/modules/ (core-admin, factory-console, hello, moodle-insights, orientador-ia) antes de diseñar: ningún módulo existente cubre proyectos/tareas/kanban, no hay duplicación de dominio. Reutilización alta del core: JwtAuthGuard/RolesGuard/@Public()/@Roles() sin cambios (D-011); primer módulo que NO declara ningún rol de manifest nuevo, reutiliza admin/user ya sembrados en core.roles; AuditService reutilizado para altas/bajas de proyecto y cambios de tarea, mismo patrón que orientador-ia. Reutilización parcial y con un límite explícito en usuarios: se reutiliza GET /api/core/users (core-admin, solo lectura) para el selector de 'asignar a' en vez de duplicar una consulta de usuarios en el módulo nuevo; el CRUD de usuarios (crear/editar/eliminar/rol) que trae el prototipo original NO se reimplementa aquí porque tocaría el schema core y es una decisión de alcance transversal (pendiente en el gate, ver spec-funcional.md 'Preguntas abiertas' punto 1), no una decisión de este módulo. Sin dependencias externas nuevas (a diferencia de orientador-ia, sin llamada a Claude ni a ningún sistema externo) y sin librería nueva de drag-and-drop en el frontend (se reutiliza la API nativa HTML5 Drag and Drop que ya usa el prototipo)."
+}
