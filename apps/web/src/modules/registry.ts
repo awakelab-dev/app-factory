@@ -36,9 +36,31 @@ export function visibleNav(
   user: AuthUser,
   registrations: ModuleRegistration[] = modules
 ): NavItem[] {
-  return accessibleModules(user, registrations).flatMap((mod) =>
-    mod.manifest.nav.filter((item) => canAccess(user, item.requiredRoles))
-  );
+  return visibleNavGroups(user, registrations).flatMap((group) => group.items);
+}
+
+/** Grupo de navegación de un módulo (pedido de Leonardo 2026-07-19: con
+ * módulos de varias secciones, el sidebar plano no dejaba ver a qué módulo
+ * pertenece cada ítem). El shell decide cómo pintarlo (Layout agrupa bajo
+ * cabecera solo los módulos con 2+ ítems). */
+export interface NavGroup {
+  moduleId: string;
+  moduleName: string;
+  items: NavItem[];
+}
+
+/** visibleNav agrupado por módulo, mismo filtrado por roles a ambos niveles. */
+export function visibleNavGroups(
+  user: AuthUser,
+  registrations: ModuleRegistration[] = modules
+): NavGroup[] {
+  return accessibleModules(user, registrations)
+    .map((mod) => ({
+      moduleId: mod.manifest.id,
+      moduleName: mod.manifest.name,
+      items: mod.manifest.nav.filter((item) => canAccess(user, item.requiredRoles))
+    }))
+    .filter((group) => group.items.length > 0);
 }
 
 /**

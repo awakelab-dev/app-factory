@@ -1,10 +1,21 @@
-import { Compass, GraduationCap, LayoutGrid, ShieldCheck, Sparkles } from 'lucide-react';
+import {
+  Compass,
+  GraduationCap,
+  LayoutDashboard,
+  LayoutGrid,
+  ListTodo,
+  Settings,
+  ShieldCheck,
+  Sparkles,
+  Timer,
+  TrendingUp
+} from 'lucide-react';
 import type { ComponentType } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { Button } from '@awk/ui';
-import type { AuthUser } from '@awk/types';
+import type { AuthUser, NavItem } from '@awk/types';
 import { useAuth } from '../auth/auth-context';
-import { visibleNav } from '../modules/registry';
+import { visibleNavGroups } from '../modules/registry';
 
 /**
  * Registro de iconos de sidebar (estilo consola AWS: un icono por app/módulo).
@@ -16,12 +27,37 @@ const NAV_ICONS: Record<string, ComponentType<{ className?: string }>> = {
   Sparkles,
   ShieldCheck,
   GraduationCap,
-  Compass
+  Compass,
+  Timer,
+  ListTodo,
+  LayoutDashboard,
+  TrendingUp,
+  Settings
 };
 
 function NavIcon({ name }: { name?: string }) {
   const Icon = (name && NAV_ICONS[name]) || LayoutGrid;
   return <Icon className="h-4 w-4 shrink-0" />;
+}
+
+function NavEntry({ item }: { item: NavItem }) {
+  return (
+    <NavLink
+      to={item.path}
+      // end en las rutas raíz de módulo (/focus-flow): sin esto, NavLink
+      // marca activa la raíz también en las subrutas (/focus-flow/tasks) y
+      // se iluminan dos ítems del grupo a la vez.
+      end={item.path.split('/').filter(Boolean).length === 1}
+      className={({ isActive }) =>
+        `flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
+          isActive ? 'bg-awk-blue-700 text-awk-cyan-300' : 'text-awk-blue-100 hover:bg-awk-blue-800'
+        }`
+      }
+    >
+      <NavIcon name={item.icon} />
+      {item.label}
+    </NavLink>
+  );
 }
 
 /**
@@ -30,7 +66,7 @@ function NavIcon({ name }: { name?: string }) {
  */
 export function Layout({ user }: { user: AuthUser }) {
   const { logout } = useAuth();
-  const nav = visibleNav(user);
+  const navGroups = visibleNavGroups(user);
 
   return (
     // h-screen (no min-h-screen) + overflow-hidden: el layout queda anclado
@@ -48,23 +84,27 @@ export function Layout({ user }: { user: AuthUser }) {
           />
         </div>
 
+        {/* Ítems agrupados por módulo (pedido de Leonardo 2026-07-19): los
+            módulos con 2+ secciones llevan su nombre como cabecera de grupo
+            (estilo "carpeta"); los de ítem único se pintan planos para no
+            duplicar cabecera y etiqueta. */}
         <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4" data-testid="shell-nav">
-          {nav.map((item) => (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              className={({ isActive }) =>
-                `flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
-                  isActive
-                    ? 'bg-awk-blue-700 text-awk-cyan-300'
-                    : 'text-awk-blue-100 hover:bg-awk-blue-800'
-                }`
-              }
-            >
-              <NavIcon name={item.icon} />
-              {item.label}
-            </NavLink>
-          ))}
+          {navGroups.map((group) =>
+            group.items.length > 1 ? (
+              <div key={group.moduleId} className="pt-3 first:pt-0">
+                <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-awk-blue-400">
+                  {group.moduleName}
+                </p>
+                <div className="space-y-1">
+                  {group.items.map((item) => (
+                    <NavEntry key={item.path} item={item} />
+                  ))}
+                </div>
+              </div>
+            ) : (
+              group.items.map((item) => <NavEntry key={item.path} item={item} />)
+            )
+          )}
         </nav>
 
         <div className="shrink-0 border-t border-awk-blue-800 px-6 py-4">

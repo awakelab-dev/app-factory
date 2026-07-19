@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AuthUser } from '@awk/types';
-import { accessibleModules, publicModuleRoutes, visibleNav } from './registry';
+import { accessibleModules, publicModuleRoutes, visibleNav, visibleNavGroups } from './registry';
 
 const admin: AuthUser = {
   id: 'u-1',
@@ -62,6 +62,18 @@ describe('registry (manifests → menú/rutas)', () => {
       'Proyectos',
       ...focusFlowNav
     ]);
+  });
+
+  it('visibleNavGroups agrupa los ítems por módulo con su nombre de manifest (sidebar por "carpetas", 2026-07-19)', () => {
+    const groups = visibleNavGroups(plain);
+    expect(groups.map((g) => [g.moduleName, g.items.length])).toEqual([
+      ['Demo Hello', 1],
+      ['Moodle Insights', 1],
+      ['Gestor de Proyectos', 2],
+      ['FocusFlow', 5]
+    ]);
+    // El aplanado de visibleNav sale de los mismos grupos (una sola fuente).
+    expect(visibleNav(plain).map((i) => i.label)).toEqual(groups.flatMap((g) => g.items.map((i) => i.label)));
   });
 
   it('publicModuleRoutes (D-027) expone la landing del candidato y el mercado de orientador-ia sin depender de ningún usuario', () => {
