@@ -99,6 +99,21 @@ export class GenerationRunnerService {
       );
     }
 
+    // Las decisionNotes de los gates aprobados son parte del contrato de
+    // generación (docs/05: el revisor puede "complementar" — sus precisiones
+    // son vinculantes). Lección del primer encargo real (gestor-proyectos,
+    // 2026-07-19): la instrucción "reasignar tareas es SOLO admin" vivía en
+    // las notas del gate técnico y el agente nunca la vio, porque el prompt
+    // solo llevaba las specs. Ahora viajan siempre.
+    const specGates = await this.prisma.gate.findMany({
+      where: { specId, status: 'approved' },
+      orderBy: { createdAt: 'asc' }
+    });
+    const gateNotesBlock = specGates
+      .filter((gate) => gate.decisionNotes?.trim())
+      .map((gate) => `[gate ${gate.gateType} — ${gate.reviewer}]\n${gate.decisionNotes?.trim()}`)
+      .join('\n\n');
+
     const project = spec.project;
     const branchName = `factory/${project.moduleSlug}`;
 
@@ -138,7 +153,13 @@ export class GenerationRunnerService {
       '--- SPEC TÉCNICA APROBADA ---',
       spec.technicalContent,
       '--- SPEC FUNCIONAL APROBADA (contexto de negocio) ---',
-      spec.functionalContent
+      spec.functionalContent,
+      ...(gateNotesBlock
+        ? [
+            '--- NOTAS DE LOS GATES APROBADOS (instrucciones del revisor: VINCULANTES; si contradicen algún detalle de la spec, prevalecen las notas) ---',
+            gateNotesBlock
+          ]
+        : [])
     ].join('\n\n');
 
     let result: AgentRunResult;
@@ -272,6 +293,12 @@ docs/02-stack.md:
 Antes de escribir, lee al menos un módulo ya generado (apps/api/src/modules/
 moodle-insights u orientador-ia, y sus equivalentes en apps/web) como
 referencia de forma y convenciones — no inventes un patrón nuevo.
+
+Si apps/api/src/modules/<slug>/ ya contiene código de una generación anterior,
+esto es una REGENERACIÓN: la rama vuelve a ti porque la revisión pidió cambios.
+Ajusta el código existente para cumplir la spec y las notas de los gates (en
+especial donde difieran de lo generado); no lo reescribas desde cero si no
+hace falta.
 
 Reglas estrictas:
 - SOLO puedes escribir dentro de apps/api/src/modules/<slug>/,

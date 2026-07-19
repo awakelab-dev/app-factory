@@ -27,6 +27,7 @@ function buildService(
     gatesApproved?: boolean;
     spec?: typeof spec | null;
     projectByThatId?: { id: string; moduleSlug: string } | null;
+    specGates?: Array<{ gateType: string; reviewer: string; decisionNotes: string | null }>;
   } = {}
 ) {
   const prisma = {
@@ -35,6 +36,9 @@ function buildService(
     },
     project: {
       findUnique: vi.fn().mockResolvedValue(overrides.projectByThatId ?? null)
+    },
+    gate: {
+      findMany: vi.fn().mockResolvedValue(overrides.specGates ?? [])
     },
     run: {
       create: vi.fn().mockResolvedValue({ id: 'run-1' }),
@@ -124,6 +128,45 @@ describe('GenerationRunnerService.runGeneration', () => {
 
     expect(projects.transition).toHaveBeenCalledWith('proj-1', 'verifying');
     expect(projects.transition).not.toHaveBeenCalledWith('proj-1', 'pr_review');
+  });
+
+  it('incluye las decisionNotes de los gates aprobados en el prompt como instrucciones vinculantes', async () => {
+    // Lección del primer encargo real (gestor-proyectos, 2026-07-19): la
+    // precisión "reasignar es SOLO admin" vivía en las notas del gate técnico
+    // y el agente nunca la vio — el prompt solo llevaba las specs.
+    const { service, prisma } = buildService({
+      specGates: [
+        { gateType: 'functional', reviewer: 'leo@awakelab.dev', decisionNotes: 'Arrancar vacío, sin datos de ejemplo.' },
+        { gateType: 'technical', reviewer: 'leo@awakelab.dev', decisionNotes: 'Cambiar el asignado es SOLO admin.' }
+      ]
+    });
+    const agentRunner = vi.fn().mockResolvedValue(successResult);
+    const runGit = vi.fn().mockResolvedValue(okGit);
+    const runGh = vi.fn().mockResolvedValue(okGit);
+
+    await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh });
+
+    expect(prisma.gate.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { specId: 'spec-1', status: 'approved' } })
+    );
+    const prompt: string = agentRunner.mock.calls[0]?.[0]?.prompt;
+    expect(prompt).toContain('NOTAS DE LOS GATES APROBADOS');
+    expect(prompt).toContain('[gate technical — leo@awakelab.dev]');
+    expect(prompt).toContain('Cambiar el asignado es SOLO admin.');
+    expect(prompt).toContain('Arrancar vacío, sin datos de ejemplo.');
+  });
+
+  it('omite el bloque de notas si los gates aprobados no traen decisionNotes', async () => {
+    const { service } = buildService({
+      specGates: [{ gateType: 'functional', reviewer: 'leo@awakelab.dev', decisionNotes: null }]
+    });
+    const agentRunner = vi.fn().mockResolvedValue(successResult);
+    const runGit = vi.fn().mockResolvedValue(okGit);
+    const runGh = vi.fn().mockResolvedValue(okGit);
+
+    await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh });
+
+    expect(agentRunner.mock.calls[0]?.[0]?.prompt).not.toContain('NOTAS DE LOS GATES APROBADOS');
   });
 
   it('nunca permite que el bash del agente haga git push/commit o sudo', async () => {
