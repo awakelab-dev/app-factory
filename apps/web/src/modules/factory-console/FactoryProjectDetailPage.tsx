@@ -9,6 +9,7 @@ import {
   type FactorySpec
 } from '@awk/types';
 import { apiFetch } from '../../lib/api';
+import { SpecMarkdown } from './SpecMarkdown';
 import {
   GATE_STATUS_LABEL,
   GATE_TYPE_LABEL,
@@ -219,12 +220,7 @@ function SpecSection({ specs, onGateDecided }: { specs: FactorySpec[]; onGateDec
           </button>
         ))}
       </div>
-      <pre
-        className="mt-3 max-h-[32rem] overflow-auto whitespace-pre-wrap rounded-xl border border-awk-blue-700 bg-awk-navy-800 p-4 font-mono text-sm leading-relaxed text-awk-blue-50"
-        data-testid="factory-spec-content"
-      >
-        {tab === 'functional' ? spec.functionalContent : spec.technicalContent}
-      </pre>
+      <SpecMarkdown content={tab === 'functional' ? spec.functionalContent : spec.technicalContent} />
 
       <div className="mt-4 grid gap-3 md:grid-cols-2">
         {spec.gates.map((gate) => (

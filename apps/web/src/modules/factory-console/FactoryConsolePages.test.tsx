@@ -177,8 +177,14 @@ describe('FactoryProjectDetailPage (rol admin, D-030)', () => {
     expect(await screen.findByTestId('factory-stepper')).toBeInTheDocument();
     // Spec funcional visible por defecto; la técnica tras cambiar de pestaña.
     expect(screen.getByTestId('factory-spec-content').textContent).toContain('El gerente valida esto');
+    // La spec se renderiza como markdown (SpecMarkdown), no como texto plano:
+    // el "# Spec funcional" del fixture debe volverse un heading real, sin
+    // el "#" literal en pantalla.
+    expect(screen.getByRole('heading', { name: 'Spec funcional' })).toBeInTheDocument();
+    expect(screen.getByTestId('factory-spec-content').textContent).not.toContain('#');
     fireEvent.click(screen.getByRole('button', { name: 'Técnica' }));
     expect(screen.getByTestId('factory-spec-content').textContent).toContain('Modelos Prisma');
+    expect(screen.getByRole('heading', { name: 'Spec técnica' })).toBeInTheDocument();
     // Gate técnico ya decidido: sin botones, con reviewer y notas.
     expect(screen.getByTestId('factory-gate-technical')).toHaveTextContent('Aprobado');
     expect(screen.getByTestId('factory-gate-technical')).toHaveTextContent('modelo de datos ok');
