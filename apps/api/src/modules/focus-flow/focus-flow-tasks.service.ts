@@ -6,10 +6,12 @@ import { parseDateOnly, startOfDay } from './focus-flow-dates';
 import { toTaskDto, type TaskRow } from './focus-flow.mappers';
 import type { CreateFocusTaskRequest, FocusTask, ImportFocusTasksResponse, UpdateFocusTaskRequest } from './focus-flow.types';
 
-/** Estado de `proyectos.tasks` que el gate técnico (decisión 2) excluye
- * textualmente ("status != completada") al importar — se toma literal, sin
- * ampliar a `cancelada` sin una nueva aprobación. */
-const PROYECTOS_COMPLETED_STATUS = 'finalizada';
+/** Estados de `proyectos.tasks` excluidos al importar (gate técnico, decisión
+ * 2, corregido por la enmienda de revisión del PR #2: la nota original decía
+ * "status != completada" y solo se había aplicado a `finalizada`; también
+ * debe excluirse `cancelada` — una tarea cancelada no es "asignada y
+ * pendiente" y no debería aparecer en la cola de hoy). */
+const PROYECTOS_EXCLUDED_STATUSES = ['finalizada', 'cancelada'] as const;
 /** Estimado por defecto de una tarea importada: `proyectos.tasks` no tiene
  * noción de pomodoros, así que arranca en 1 y la persona la ajusta luego. */
 const IMPORTED_TASK_ESTIMATE = 1;
@@ -103,13 +105,15 @@ export class FocusTasksService {
   /**
    * "Importar mis tareas asignadas" (gate funcional, decisión 2 — vinculante,
    * amplía la spec técnica original): copia de solo lectura de
-   * `proyectos.tasks` asignadas al usuario y no completadas hacia la cola de
-   * hoy, sin FK ni sincronización posterior (gate técnico, decisiones 2/3).
-   * `sourceProyectosTaskId` evita reimportar la misma tarea dos veces.
+   * `proyectos.tasks` asignadas al usuario y no finalizadas/canceladas hacia
+   * la cola de hoy, sin FK ni sincronización posterior (gate técnico,
+   * decisiones 2/3; exclusión de `cancelada` añadida por la enmienda de
+   * revisión del PR #2). `sourceProyectosTaskId` evita reimportar la misma
+   * tarea dos veces.
    */
   async importFromProyectos(user: AuthUser): Promise<ImportFocusTasksResponse> {
     const assignedTasks = await this.prisma.task.findMany({
-      where: { assigneeId: user.id, status: { not: PROYECTOS_COMPLETED_STATUS } },
+      where: { assigneeId: user.id, status: { notIn: [...PROYECTOS_EXCLUDED_STATUSES] } },
       select: { id: true, title: true }
     });
     if (assignedTasks.length === 0) return { imported: [], skippedAlreadyImported: 0 };

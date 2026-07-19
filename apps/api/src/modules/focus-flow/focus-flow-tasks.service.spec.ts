@@ -123,11 +123,11 @@ describe('FocusTasksService.importFromProyectos', () => {
     expect(prisma.focusTask.create).not.toHaveBeenCalled();
   });
 
-  it('excluye status "finalizada" en la query a proyectos.tasks (solo lectura)', async () => {
+  it('excluye status "finalizada" y "cancelada" en la query a proyectos.tasks (solo lectura)', async () => {
     const { service, prisma } = buildService();
     await service.importFromProyectos(owner);
     expect(prisma.task.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { assigneeId: 'u-1', status: { not: 'finalizada' } } })
+      expect.objectContaining({ where: { assigneeId: 'u-1', status: { notIn: ['finalizada', 'cancelada'] } } })
     );
   });
 
