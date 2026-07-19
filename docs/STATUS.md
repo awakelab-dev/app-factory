@@ -2,8 +2,8 @@
 
 > Actualizar al cerrar CADA sesión de trabajo. Este archivo es lo primero que lee cualquier tarea nueva.
 
-**Última actualización**: 2026-07-17 (**Limpieza post-Fase-1 CERRADA**: `proxy_read_timeout` 300s→60s en los `.conf` de Nginx del repo **y aplicado en el server** por Leonardo (`nginx -t` + reload OK), más mensajes del CLI de `apps/factory` más accionables (`generate` con projectId, transición inválida), con tests; `@awk/factory` en verde, 43/43. Con esto no queda nada pendiente de Fase 1 salvo el punto 4b (flujo `request_change` del CLI, que espera el primer encargo real). **El próximo hito es una decisión de Leonardo**: pasar el primer encargo de negocio real por el pipeline (necesita un prototipo de un gerente) o arrancar Fase 2. Detalle en "Hecho". Sesión previa: **Servicio factory desplegado y verificado en PRODUCCIÓN** — promoción del sha `4160852` ya validado en staging; base `awkfactory_production` + rol de mínimo privilegio creados, bloque `/factory-api/` en el Nginx de `apps.awakelab.world`, 3 contenedores healthy y health OK por HTTPS. Con esto la Fábrica corre completa en ambos entornos. Misma sesión previa: **Pipeline + control plane VALIDADOS end-to-end con un caso real** (D-029/D-030 en la práctica): create-project + analyze por CLI contra el prototipo `orientadorIA` real, spec revisada y gates decididos desde `/factory` en el navegador, y guardarraíl de generate verificado. La antiduplicación funcionó de verdad: el Agent SDK detectó el módulo `orientador-ia` existente y recomendó rechazar como duplicado. La validación destapó y corrigió 3 bugs más que la suite no cubría (carga de `.env`, runs huérfanos en "running", HTTP 400 al decidir el segundo gate tras un rechazo) — ver "Resuelto recientemente". Siguiente hito: factory en producción.)
-**Fase actual**: Fase 1 — EN CURSO (pipeline con spec intermedia y gates, docs/04/docs/06; primer caso `orientador-ia` completo end-to-end, backend+frontend). Fase 0 queda CERRADA (core mínimo + CI en verde; managed PostgreSQL y Docker listos; staging y production sirviendo por HTTPS en `apps.awakelab.world`; primer módulo ejemplar `moodle-insights` sobre el patrón D-011 construido y validado en vivo contra un Moodle real).
+**Última actualización**: 2026-07-19 (**PRIMER ENCARGO REAL COMPLETADO por el pipeline: `gestor-proyectos`** — prototipo de un gerente (HTML único, kanban de proyectos/sprints/tareas) recorrió el pipeline entero contra el entorno REAL de staging: create-project + analyze por CLI (túnel SSH a `awkfactory_staging`), gates funcional+técnico decididos en `/factory` de staging, generación en rama `factory/gestor-proyectos`, **regeneración por la vía docs/05** al detectar la revisión de PR una desviación (reasignar tareas no era solo-admin: se corrigió LA FÁBRICA — el prompt de generación ahora incluye las `decisionNotes` de los gates, D-031 — y se regeneró en vez de parchear a mano), commit de integración humano (migración `20260719100000_gestor_proyectos_init`, cableado `app.module.ts`/`registry.ts`, limpieza), PR #1 mergeada con CI verde, migración aplicada y **módulo validado en staging** por Leonardo (proyecto en `manager_acceptance`, promoción a producción pendiente a su criterio). Costos de API del encargo: análisis $1.13 + generación $11.21 + regeneración incremental (~4 min). El encargo destapó 5 gaps menores del pipeline — ver "Siguiente". Detalle en "Hecho". Sesión previa 2026-07-17 — Limpieza post-Fase-1 CERRADA: `proxy_read_timeout` 300s→60s en repo y server, mensajes del CLI más accionables, `@awk/factory` 43/43. Sesión previa: **Servicio factory desplegado y verificado en PRODUCCIÓN** — promoción del sha `4160852` ya validado en staging; base `awkfactory_production` + rol de mínimo privilegio creados, bloque `/factory-api/` en el Nginx de `apps.awakelab.world`, 3 contenedores healthy y health OK por HTTPS. Con esto la Fábrica corre completa en ambos entornos. Misma sesión previa: **Pipeline + control plane VALIDADOS end-to-end con un caso real** (D-029/D-030 en la práctica): create-project + analyze por CLI contra el prototipo `orientadorIA` real, spec revisada y gates decididos desde `/factory` en el navegador, y guardarraíl de generate verificado. La antiduplicación funcionó de verdad: el Agent SDK detectó el módulo `orientador-ia` existente y recomendó rechazar como duplicado. La validación destapó y corrigió 3 bugs más que la suite no cubría (carga de `.env`, runs huérfanos en "running", HTTP 400 al decidir el segundo gate tras un rechazo) — ver "Resuelto recientemente". Siguiente hito: factory en producción.)
+**Fase actual**: Fase 1 — **OBJETIVO CUMPLIDO** (pipeline con spec intermedia y gates, docs/04/docs/06; primer caso `orientador-ia` completo end-to-end + **primer encargo real `gestor-proyectos` de prototipo a staging por el pipeline, 2026-07-19**). Queda a decisión de Leonardo: promoción de `gestor-proyectos` a producción, cierre de los gaps menores del pipeline (ver "Siguiente"), y/o arranque de Fase 2. Fase 0 queda CERRADA (core mínimo + CI en verde; managed PostgreSQL y Docker listos; staging y production sirviendo por HTTPS en `apps.awakelab.world`; primer módulo ejemplar `moodle-insights` sobre el patrón D-011 construido y validado en vivo contra un Moodle real).
 
 ## Hecho
 
@@ -92,18 +92,29 @@
   - **Mensajes del CLI de `apps/factory` más accionables**: (a) `generate` con un projectId en vez de specId ya no escupe el error crudo de Prisma ("No record was found") — `GenerationRunnerService.runGeneration` usa `findUnique` + fallback: si el id es un proyecto, sugiere `status <projectId>` para sacar el specId; si no es ni spec ni proyecto, lo dice explícito (ambos como `BadRequestException`). (b) `InvalidTransitionError` (state-machine) ahora añade al mensaje los destinos válidos desde el estado origen (o marca "estado final, no admite transiciones").
   - **Tests**: +2 en `generation-runner.service.spec.ts` (projectId → error accionable; id inexistente) y +2 en `state-machine.spec.ts` (mensaje sugiere destinos / marca terminal). El mock de generación pasó de `spec.findUniqueOrThrow` a `spec.findUnique`+`project.findUnique`. **Verificación**: `@awk/factory` en verde fuera del mount (D-023) — 43/43 tests, typecheck y lint OK (el `prisma generate` de las tareas turbo falla en este sandbox por falta de DNS a binaries.prisma.sh, no por el código; se corrió `vitest`/`tsc`/`eslint` directos sobre el cliente Prisma ya commiteado).
 
+- **PRIMER ENCARGO REAL: `gestor-proyectos` (2026-07-19, D-031)** — prototipo `project-manager` (HTML único de un gerente, hecho con la cuenta de Leonardo; solicitante registrado: `leonardo.barreto@awakelab.world`): gestor kanban de proyectos/sprints/tareas con permisos por fila (admin/creador/asignado), reportes de sprint con proyección por días hábiles L-V. Recorrido completo del pipeline contra el entorno real:
+  - **create-project + analyze contra `awkfactory_staging`** vía túnel SSH del Mac de Leonardo (la managed PG es privada; `ssh -L 15432:<endpoint>:5432` a través del Lightsail — primer tropiezo documentado: el `.env` local apuntaba al Postgres de dev y el primer create-project/analyze fue a la BD equivocada; quedó un proyecto huérfano inofensivo en la BD `awkfactory` local). El analyze ($1.13, ~4 min) produjo spec v1 correcta: antiduplicación real (detectó que la vista "Usuarios" del prototipo duplica `core-admin` y la sacó del alcance), flags de sensibilidad, 4 preguntas abiertas al gerente.
+  - **Gates funcional+técnico decididos en `/factory` de staging** (navegador, dev-login) con `decisionNotes` sustantivas: CRUD usuarios fuera de alcance, membresía implícita, sprint fijo 10 días hábiles, **arrancar vacío** (sembrar datos demo en `seed.ts` los habría metido también en producción), reasignar tareas SOLO admin, `sprint_id` NOT NULL, enum en BD.
+  - **Generación** ($11.21, 34 min, 107+7 tests): rama `factory/gestor-proyectos`, PR #1 automática vía `gh`. La revisión de PR (docs/05, hecha por Claude en sesión + veredicto como comentario en la PR) encontró UNA desviación: la reasignación no quedó solo-admin — la instrucción vivía en las `decisionNotes` del gate y el prompt de generación no las incluía.
+  - **Corrección por la vía docs/05 (decisión explícita de Leonardo, D-031)**: se corrigió LA FÁBRICA (el prompt de generación ahora lleva las notas de los gates como bloque vinculante + cláusula de REGENERACIÓN en el system prompt; 45/45 tests) y se **regeneró** (`advance changes_requested` → `generate`, ~4 min, incremental) en vez de parchear el módulo a mano. La regeneración aplicó el fix exacto en backend (403) y frontend (selector solo admin) con tests.
+  - **Commit de integración humano** (docs/04: fuera del alcance del runner): migración a mano `20260719100000_gestor_proyectos_init` (schema `proyectos`: enum + 5 tablas + índices + FKs cascada), registro en `app.module.ts`/`registry.ts`, `registry.test.ts` actualizado, limpieza de `docs/pipeline/orientador-ia-v2/` que la rama arrastró del runner. Verificación completa en el Mac (la migración aplicó sin drift; un fallo transitorio de `@awk/factory#typecheck` fue carrera de `prisma generate` entre tareas paralelas de turbo — ver gap 5).
+  - **Merge + staging**: PR #1 mergeada (CI 6/6), `migrate.sh staging latest` (segundo tropiezo documentado: la primera corrida fue ANTES de que la CI del merge publicara imágenes — pulleó el migrator viejo "3 migrations found" y el módulo dio 500; regla de runbook: **migrate solo tras CI de main verde**), módulo validado en vivo por Leonardo (dashboard, crear proyecto/tarea, kanban, reportes). Proyecto en `manager_acceptance`; **promoción a producción pendiente** (módulo interno, sin urgencia).
+
 ## En curso
 
-Nada en curso — factory desplegado y verificado en producción (2026-07-17). La secuencia completa de arranque de Fase 1 (D-026) está cerrada y en ambos entornos. Lo que queda en "Siguiente" es todo opcional/no bloqueante; el siguiente hito real es el primer encargo de negocio que pase por el pipeline (o decidir el arranque de Fase 2).
+Nada en curso — primer encargo real completado hasta staging (2026-07-19). `gestor-proyectos` está en `manager_acceptance` esperando la decisión de promoción a producción. Los gaps del pipeline detectados durante el encargo están anotados en "Siguiente" (ninguno bloqueante).
 
 ## Siguiente (en orden)
 
-**Orden de arranque de Fase 1 confirmado por Leonardo (2026-07-15, D-026)**: (0) frontend de `orientador-ia` [✅ D-027/D-028] → (1) mecánica del pipeline con Agent SDK [✅ D-029] → (2) control plane [✅ D-030] → validación end-to-end con caso real [✅ 2026-07-17] → factory en producción [✅ 2026-07-17]. **Secuencia completa, validada y desplegada en ambos entornos.**
+Fase 1 cumplió su objetivo (primer encargo real de prototipo a staging, 2026-07-19). Lo que sigue, en orden sugerido — 1 es la única acción de negocio pendiente; 2-7 son gaps menores del pipeline detectados durante el encargo (ninguno bloqueante, priorizables en bloque como una tarea de mejora o al llegar el próximo encargo):
 
-1. ~~Servicio factory en PRODUCCIÓN~~ ✅ 2026-07-17 (ver "Hecho").
-2. ~~Rotar secretos expuestos~~ ✅ 2026-07-17 — rotados por Leonardo (confirmado en sesión): los secretos que habían quedado en chats de Cowork y el historial de git dejan de ser válidos. Si la purga de `backend/.env` del historial con `git-filter-repo` no se ejecutó, queda como opcional de baja prioridad (la contraseña que contiene ya está rotada).
-3. ~~Bajar `proxy_read_timeout` a 60s en `deploy/nginx/{staging,production}.conf` y en el server~~ ✅ 2026-07-17 — repo actualizado (ver "Hecho") **y aplicado en el server por Leonardo** (`nano` la línea en el `.conf` certbot-izado de cada dominio + `nginx -t` + reload; sin `scp`). Cerrado por completo.
-4. (Opcional, no bloqueante) Mejoras menores del pipeline: ~~(a) mensajes del CLI — `generate` con un projectId escupe el error crudo de Prisma; el error de transición inválida no sugería el camino válido~~ ✅ 2026-07-17 (ver "Hecho"). (b) el flujo `request_change` de docs/04 (que la propia spec del agente citó como la ruta correcta para cambios sobre módulos existentes) todavía no existe en el CLI — diseñarlo cuando llegue el primer encargo real de cambio sobre un módulo vivo.
+1. **Promover `gestor-proyectos` a producción** cuando Leonardo decida: `workflow_dispatch` del Deploy con el sha del merge de la PR #1 → `~/migrate.sh production <sha>` (SOLO tras CI de main verde — lección del 2026-07-19) → `advance 019f77a5-90e7-7619-a2ee-2d801c44219d deployed`.
+2. **Gates `pr_review`/`manager_acceptance` sin fila en BD**: nada los crea (el analyze solo abre functional/technical; `decide-gate` exige un gate existente). En este encargo la revisión de PR quedó como comentario en GitHub + `advance` manual. Decidir: crearlos al entrar el proyecto en esos estados, o aceptar GitHub/`advance` como registro oficial.
+3. **Regeneración con PR existente**: `gh pr create` falla si la PR ya existe → `prUrl` null → el proyecto se queda en `verifying` y hay que `advance pr_review` a mano. El runner debería detectar la PR abierta de la rama (`gh pr view`) y reutilizar su URL.
+4. **El CLI imprime el Run desactualizado**: `generate` devuelve el objeto de la creación (status `running`, sin prUrl/costo) aunque el run ya terminó — releer antes de imprimir. Menor, pero confundió dos veces en el encargo.
+5. **Carrera de `prisma generate` en turbo**: `build`/`typecheck`/`test` de `@awk/factory` (y `@awk/api`) corren en paralelo y cada uno regenera `src/generated/prisma` — falló una vez en el Mac ("Cannot find module ../generated/prisma/client"), pasó al reintentar. Fix: un solo `prisma generate` como tarea turbo de la que dependan las demás.
+6. **DTOs Zod locales al módulo** (aceptado en la revisión de PR, no urgente): el guardarraíl impide al runner tocar `@awk/types`, así que `gestor-proyectos` lleva schemas espejo en api y web. Mover a `@awk/types` cuando haya un segundo consumidor, o decidir que "módulo aislado" es el patrón para módulos generados.
+7. El flujo `request_change` de docs/04 sigue sin existir en el CLI (punto 4b histórico) — diseñarlo con el primer encargo real de cambio sobre un módulo vivo. Candidato natural: restringir "Desempeño por persona" de `gestor-proyectos` a admin, decisión que quedó explícitamente anotada como revisable en el gate funcional.
 
 ## Primer caso Fase 1: `orientador-ia`
 
@@ -117,43 +128,43 @@ La tarea sugerida aquí en la sesión anterior ya corrió: caso `orientador-ia-v
 
 ### Mensaje inicial sugerido para la próxima tarea (copiar/pegar)
 
-La limpieza post-Fase-1 (proxy_read_timeout + mensajes del CLI) se cerró el
-2026-07-17, repo y server incluidos — ver "Hecho". **Con eso Fase 1 no tiene
-nada técnico pendiente.** Lo que queda es una BIFURCACIÓN que decide Leonardo,
-no una tarea obvia de continuar:
+El primer encargo real (`gestor-proyectos`) se completó el 2026-07-19 hasta
+staging — Fase 1 cumplió su propósito. Bifurcación para Leonardo:
 
-- **Opción A — primer encargo de negocio real por el pipeline** (el hito que
-  cierra el propósito de la Fábrica): necesita que Leonardo aporte un prototipo
-  de Cowork hecho por un gerente. Sin ese material no se puede arrancar. Cuando
-  exista, la tarea es `create-project` + `analyze` + gates en `/factory` +
-  `generate`, contra el entorno real (BD `awkfactory` + `PLATFORM_REPO_PATH`).
-- **Opción B — arrancar Fase 2** (ver `docs/06-roadmap.md`): decisión de
-  alcance, no de código todavía.
-- **Opción C — cerrar el punto 4b** (flujo `request_change` del CLI para
-  cambios sobre módulos vivos): es la única mejora técnica que queda anotada,
-  pero conviene diseñarla contra un caso real de cambio, no en abstracto.
-
-**Antes de la próxima sesión, Leonardo elige A/B/C.** Si es A, adjuntar el
-prototipo. La plantilla de mensaje depende de esa elección — no hay un
-copiar/pegar único que aplique a las tres. Ejemplo para el arranque de A:
-
-> Modelo recomendado: **Opus** para A/B (encargo nuevo / arquitectura de fase);
-> **Sonnet** para C (mejora acotada del CLI).
+- **Opción A — endurecer el pipeline**: cerrar los gaps 2-5 de "Siguiente"
+  (gates pr_review/manager_acceptance en BD, detección de PR existente,
+  Run desactualizado en el CLI, carrera de prisma generate en turbo). Tarea
+  acotada de la fábrica, Sonnet basta.
+- **Opción B — segundo encargo real por el pipeline**: repetir el recorrido
+  con otro prototipo de gerente (el pipeline ya probado; medir la métrica de
+  éxito de docs/06 con menos fricción). Plantilla de abajo, Opus recomendado.
+- **Opción C — arrancar Fase 2** (`docs/06-roadmap.md`): decisión de alcance.
 
 ```
-[factory] Primer encargo real: <slug> por el pipeline
+[factory] Encargo real: <slug> por el pipeline
 
 Antes de empezar: leer docs/STATUS.md completo y docs/04-integracion-cowork.md
 (pasos del pipeline) + docs/05-gobernanza-seguridad.md (gates).
 
 Prototipo fuente: <ruta/carpeta que adjunto>. Gerente solicitante: <email>.
 
-Objetivo: llevar este prototipo por el pipeline REAL:
-1. create-project + analyze (Agent SDK escribe la spec en docs/pipeline/<slug>/).
-2. Revisar spec funcional/técnica y decidir gates en /factory (staging).
-3. Si ambos gates aprobados: generate (rama factory/<slug>, PR).
+Objetivo: llevar este prototipo por el pipeline REAL contra staging:
+1. Verificar apps/factory/.env ANTES de correr nada: FACTORY_DATABASE_URL
+   apuntando a awkfactory_staging vía túnel SSH (localhost:15432, con
+   uselibpqcompat=true), ANTHROPIC_API_KEY, PLATFORM_REPO_PATH (checkout
+   runner limpio y pulled). Lección 2026-07-19: el default del .env va a la
+   BD local de dev.
+2. create-project + analyze (Agent SDK escribe la spec en docs/pipeline/<slug>/).
+3. Revisar spec funcional/técnica y decidir gates en /factory (staging),
+   con decisionNotes sustantivas — desde D-031 el prompt de generación las
+   recibe como instrucciones vinculantes.
+4. Si ambos gates aprobados: generate (rama factory/<slug>, PR) + revisión
+   de PR (docs/05) + commit de integración (migración a mano, cableado
+   app.module/registry) + merge; migrate.sh SOLO tras CI de main verde.
 Reportar hallazgos del análisis (antiduplicación, flags de sensibilidad) antes
-de aprobar nada. No generar sin gates aprobados (docs/05).
+de aprobar nada. No generar sin gates aprobados (docs/05). Ante desviaciones
+del código generado: corregir la fábrica y regenerar, nunca parchear a mano
+(D-031).
 
 Al cerrar: actualizar docs/STATUS.md y commitear.
 ```
