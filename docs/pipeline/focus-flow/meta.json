@@ -1,0 +1,11 @@
+{
+  "complexityScore": 2,
+  "sensitivityFlags": [
+    "primer-modulo-tipo-datos-personales-privados-sin-vista-de-equipo-ni-admin",
+    "alcance-ambiguo-usuarios-solo-leonardo-vs-cualquier-autenticado",
+    "alcance-ambiguo-integracion-con-gestor-proyectos",
+    "posible-dependencia-nueva-chart-js-si-no-se-reutiliza-recharts",
+    "contenido-libre-titulos-de-tarea-podrian-referenciar-info-confidencial"
+  ],
+  "reuseNotes": "Explorado apps/api/src/modules/ (gestor-proyectos, moodle-insights, orientador-ia) y apps/web/src/modules/ (core-admin, factory-console, gestor-proyectos, hello, moodle-insights, orientador-ia) antes de diseñar: ningún módulo existente cubre temporizador Pomodoro ni productividad personal. Hallazgo más cercano, descartado como base de reutilización: proyectos.Task (gestor-proyectos) modela tareas de equipo dentro de proyecto+sprint con permisos por fila entre usuarios distintos — no encaja con una lista personal del día sin proyecto/sprint ni con la mecánica de pomodoros por tarea; se trata como dominio independiente (integrarlos queda como pregunta abierta para una fase futura, no de este MVP). Reutilización alta del core: JwtAuthGuard/RolesGuard sin cambios (D-011), sin rol de manifest nuevo — cualquier autenticado (user/admin) accede, con el control real a nivel de fila (userId = request.user.id) en vez de rol; primer módulo donde ni siquiera admin ve datos de otro usuario (a diferencia de gestor-proyectos). Gráficos: se recomienda reutilizar recharts (ya dependencia de apps/web desde moodle-insights) en vez de Chart.js del prototipo, evitando una dependencia externa nueva — pendiente de confirmar en el gate. Drag-and-drop de la cola de tareas reutiliza la API nativa HTML5 (mismo criterio que gestor-proyectos), sin librería nueva. AuditService (core) se reutiliza por consistencia pero con menor peso de gobernanza que en otros módulos, al no existir acceso a datos de terceros dentro de este módulo."
+}

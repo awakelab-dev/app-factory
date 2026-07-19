@@ -16,7 +16,7 @@ generator client {
 // y el runtime recibe el adapter (@prisma/adapter-pg) en el constructor.
 datasource db {
   provider = "postgresql"
-  schemas  = ["core", "moodle", "orientador", "proyectos"]
+  schemas  = ["core", "moodle", "orientador", "proyectos", "focus"]
 }
 
 /// Usuario de la plataforma. La identidad vendrá del IdP (SSO pendiente,
@@ -403,4 +403,95 @@ model Comment {
   @@index([taskId])
   @@map("comments")
   @@schema("proyectos")
+}
+
+// ---------------------------------------------------------------------------
+// Módulo focus-flow (spec docs/pipeline/focus-flow/): temporizador Pomodoro
+// personal. Patrón de aislamiento por fila más estricto de la plataforma
+// hasta ahora — dueño = `user_id` del JWT sin excepciones, ni siquiera para
+// `admin` (spec funcional "Para quién", gate funcional decisión 1). Sin rol
+// de manifest nuevo (D-011): cualquier `user`/`admin` autenticado accede a
+// su propia cola/estadísticas.
+//
+// `userId`/`taskId` referencian conceptualmente `core.users`/`focus.tasks`
+// (uuid, sin `@relation` hacia `core.User` para `userId` — mismo patrón que
+// `proyectos.tasks.assigneeId`/`moodle.sync_runs.triggeredById`: se resuelve
+// a nivel de aplicación, no hay FK de base de datos cruzando módulo↔core).
+// `sourceProyectosTaskId` (gate técnico, decisión 3) es una copia de solo
+// lectura del id de `proyectos.tasks` en el momento de "Importar mis tareas
+// asignadas" (gate funcional, decisión 2) — NUNCA una FK ni una referencia
+// viva/sincronizada; evita reimportar la misma tarea dos veces.
+// ---------------------------------------------------------------------------
+
+enum FocusSessionPhase {
+  focus
+  short_break
+  long_break
+
+  @@schema("focus")
+}
+
+/// Configuración personal del temporizador — una fila por usuario, creada
+/// perezosamente en el primer `GET /focus-flow/settings`.
+model FocusSettings {
+  id                    String   @id @default(uuid(7)) @db.Uuid
+  userId                String   @unique @db.Uuid
+  focusMinutes          Int      @default(25)
+  shortBreakMinutes     Int      @default(5)
+  longBreakMinutes      Int      @default(15)
+  roundsBeforeLongBreak Int      @default(4)
+  autoStartBreaks       Boolean  @default(true)
+  autoStartFocus        Boolean  @default(false)
+  notificationsEnabled  Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@map("settings")
+  @@schema("focus")
+}
+
+/// Cola de tareas del día. `taskDate` (`@db.Date`, día de calendario, no
+/// instante) es el filtro de "hoy" por defecto — mismo motivo que
+/// `proyectos.sprints.startDate/endDate` (evita que dependa de la zona
+/// horaria de quien consulta). `position` es el orden dentro de su propio
+/// día (arrastrar-y-soltar).
+model FocusTask {
+  id                    String          @id @default(uuid(7)) @db.Uuid
+  userId                String          @db.Uuid
+  title                 String
+  estimatedPomodoros    Int             @default(1)
+  completedPomodoros    Int             @default(0)
+  done                  Boolean         @default(false)
+  position              Int             @default(0)
+  taskDate              DateTime        @db.Date
+  sourceProyectosTaskId String?         @db.Uuid
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  sessions              FocusSession[]
+
+  @@index([userId, taskDate])
+  @@map("tasks")
+  @@schema("focus")
+}
+
+/// Fuente de verdad de las estadísticas reales (dashboard/desempeño) —
+/// reemplaza los números decorativos del prototipo (spec funcional, hallazgo
+/// 2). `taskId` nullable: un descanso no tiene tarea. `onDelete: SetNull` en
+/// vez de `Cascade`: borrar una tarea no debe perder el historial de
+/// pomodoros ya contabilizado.
+model FocusSession {
+  id              String            @id @default(uuid(7)) @db.Uuid
+  userId          String            @db.Uuid
+  taskId          String?           @db.Uuid
+  task            FocusTask?        @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  phase           FocusSessionPhase
+  startedAt       DateTime
+  completedAt     DateTime
+  durationSeconds Int
+  wasSkipped      Boolean           @default(false)
+  createdAt       DateTime          @default(now())
+
+  @@index([userId, completedAt])
+  @@map("sessions")
+  @@schema("focus")
 }
