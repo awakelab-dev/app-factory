@@ -199,6 +199,16 @@ function Stepper({
   );
 }
 
+/**
+ * Interruptor de Configuración (spec-tecnica.md `focus-flow` · change-1): el
+ * thumb necesita un ancla explícita (`inset-y-1 left-1`) — sin ella,
+ * `translate-x-*` parte de la posición estática implícita de un `absolute`
+ * sin `left`, que no garantiza el offset que asume el cálculo, y el círculo
+ * quedaba mal ubicado en ambos estados (gate funcional, cambio 1). Con el
+ * ancla fija, `translate-x-0`/`translate-x-5` mueven el thumb (`h-5 w-5`,
+ * 20px) exactamente entre el borde izquierdo y el derecho del track (`w-12`,
+ * 48px, menos 4px de inset a cada lado: 48 − 20 − 4 − 4 = 20px = 5 unidades).
+ */
 function Switch({ checked, onChange, testId }: { checked: boolean; onChange: (v: boolean) => void; testId: string }) {
   return (
     <button
@@ -212,8 +222,8 @@ function Switch({ checked, onChange, testId }: { checked: boolean; onChange: (v:
       data-testid={testId}
     >
       <span
-        className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-          checked ? 'translate-x-6' : 'translate-x-0.5'
+        className={`absolute inset-y-1 left-1 h-5 w-5 rounded-full bg-white transition-transform ${
+          checked ? 'translate-x-5' : 'translate-x-0'
         }`}
       />
     </button>

@@ -162,3 +162,42 @@ export const focusPerformanceSchema = z.object({
   averagePomodorosPerDay: z.number()
 });
 export type FocusPerformance = z.infer<typeof focusPerformanceSchema>;
+
+// ---------------------------------------------------------------------------
+// Persistencia del ciclo activo del timer (change-2 — spec-tecnica.md
+// "Persistencia del ciclo activo del temporizador"). Fila única por usuario,
+// creada/actualizada perezosamente (mismo patrón lazy-upsert que
+// `focusSettingsSchema`). El cliente sigue siendo la autoridad del conteo en
+// curso: esto solo son puntos de referencia (`phaseStartedAt`/
+// `accumulatedSeconds`/`running`) para reconstruir `remainingSeconds` al
+// recargar/reabrir — NUNCA se escribe por tick, solo en eventos discretos
+// (play/pausa, cambio de modo, reset, fin de fase — gate técnico change-2).
+// ---------------------------------------------------------------------------
+
+export const focusTimerStateSchema = z.object({
+  id: z.string(),
+  phase: focusSessionPhaseSchema,
+  round: z.number().int(),
+  /** Copia conceptual de `focus.tasks.id` (igual que `FocusSession.taskId`),
+   * sin FK. `null` si el ciclo no tiene tarea asociada (descanso, o cola
+   * vacía). */
+  taskId: z.string().nullable(),
+  /** Instante en que arrancó el tramo "corriendo" actual; `null` si está en
+   * pausa. */
+  phaseStartedAt: z.iso.datetime().nullable(),
+  /** Segundos ya transcurridos de la fase antes del último pause/resume. */
+  accumulatedSeconds: z.number().int(),
+  running: z.boolean(),
+  updatedAt: z.iso.datetime()
+});
+export type FocusTimerState = z.infer<typeof focusTimerStateSchema>;
+
+export const putFocusTimerStateRequestSchema = z.object({
+  phase: focusSessionPhaseSchema,
+  round: z.number().int().min(1),
+  taskId: z.string().nullable().optional(),
+  phaseStartedAt: z.iso.datetime().nullable(),
+  accumulatedSeconds: z.number().int().min(0),
+  running: z.boolean()
+});
+export type PutFocusTimerStateRequest = z.infer<typeof putFocusTimerStateRequestSchema>;

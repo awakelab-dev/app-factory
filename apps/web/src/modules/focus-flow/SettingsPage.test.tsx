@@ -111,4 +111,24 @@ describe('SettingsPage', () => {
     await screen.findByTestId('notifications-enabled');
     expect(screen.queryByText(/sonido al terminar/i)).not.toBeInTheDocument();
   });
+
+  it('el thumb del interruptor refleja aria-checked=false/true al alternar (change-1, corrección visual)', async () => {
+    mockApi();
+    render(
+      <AuthProvider>
+        <MemoryRouter initialEntries={['/focus-flow/settings']}>
+          <SettingsPage />
+        </MemoryRouter>
+      </AuthProvider>
+    );
+
+    const notificationsSwitch = await screen.findByTestId('notifications-enabled');
+    expect(notificationsSwitch).toHaveAttribute('aria-checked', 'true');
+
+    fireEvent.click(notificationsSwitch);
+    expect(notificationsSwitch).toHaveAttribute('aria-checked', 'false');
+
+    fireEvent.click(notificationsSwitch);
+    expect(notificationsSwitch).toHaveAttribute('aria-checked', 'true');
+  });
 });

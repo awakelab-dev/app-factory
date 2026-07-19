@@ -122,3 +122,29 @@ export const focusPerformanceSchema = z.object({
   averagePomodorosPerDay: z.number()
 });
 export type FocusPerformance = z.infer<typeof focusPerformanceSchema>;
+
+// ---------------------------------------------------------------------------
+// Persistencia del ciclo activo del timer (change-2 — espejo de
+// `apps/api/.../focus-flow.types.ts`).
+// ---------------------------------------------------------------------------
+
+export const focusTimerStateSchema = z.object({
+  id: z.string(),
+  phase: focusSessionPhaseSchema,
+  round: z.number().int(),
+  taskId: z.string().nullable(),
+  phaseStartedAt: z.iso.datetime().nullable(),
+  accumulatedSeconds: z.number().int(),
+  running: z.boolean(),
+  updatedAt: z.iso.datetime()
+});
+export type FocusTimerState = z.infer<typeof focusTimerStateSchema>;
+
+export interface PutFocusTimerStateRequest {
+  phase: FocusSessionPhase;
+  round: number;
+  taskId: string | null;
+  phaseStartedAt: string | null;
+  accumulatedSeconds: number;
+  running: boolean;
+}
