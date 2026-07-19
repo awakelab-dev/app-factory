@@ -4,7 +4,6 @@ import { coreAdminModule } from './core-admin';
 import { factoryConsoleModule } from './factory-console';
 import { focusFlowModule } from './focus-flow';
 import { gestorProyectosModule } from './gestor-proyectos';
-import { helloModule } from './hello';
 import { moodleInsightsModule } from './moodle-insights';
 import { orientadorIaModule } from './orientador-ia';
 import type { ModuleRegistration, ModuleRoute } from './types';
@@ -12,15 +11,20 @@ import type { ModuleRegistration, ModuleRoute } from './types';
 /**
  * Registro de módulos del shell. Cada módulo nuevo (generado por la fábrica
  * o hecho a mano) se añade aquí — y NADA más: menú y rutas salen del manifest.
+ *
+ * El orden ES el orden del sidebar (pedido de Leonardo 2026-07-19): primero
+ * los módulos de negocio, y al final los de sistema — Fábrica (penúltimo) y
+ * Administración (último), que el Layout separa además con una línea.
+ * El módulo demo `hello` se retiró del registro el 2026-07-19 (ya no hace
+ * falta); su HelloModule de la API sigue vivo para los smoke tests.
  */
 export const modules: ModuleRegistration[] = [
-  helloModule,
-  coreAdminModule,
   moodleInsightsModule,
   orientadorIaModule,
   gestorProyectosModule,
   focusFlowModule,
-  factoryConsoleModule
+  factoryConsoleModule,
+  coreAdminModule
 ];
 
 /** Módulos a los que el usuario puede entrar (regla canAccess de @awk/auth). */

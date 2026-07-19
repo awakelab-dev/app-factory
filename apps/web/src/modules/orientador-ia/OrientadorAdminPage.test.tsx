@@ -123,7 +123,7 @@ describe('OrientadorAdminPage (rol orientador_admin, D-025)', () => {
     render(<App />);
 
     expect(await screen.findByTestId('shell-nav')).toBeInTheDocument();
-    expect(screen.getByText('Orientador IA')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Orientador IA' })).toBeInTheDocument();
     expect(await screen.findByText('Ada Candidata')).toBeInTheDocument();
   });
 

@@ -1,4 +1,6 @@
 import {
+  ChevronDown,
+  ChevronRight,
   Compass,
   GraduationCap,
   LayoutDashboard,
@@ -10,12 +12,17 @@ import {
   Timer,
   TrendingUp
 } from 'lucide-react';
-import type { ComponentType } from 'react';
+import { useState, type ComponentType } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { Button } from '@awk/ui';
 import type { AuthUser, NavItem } from '@awk/types';
 import { useAuth } from '../auth/auth-context';
-import { visibleNavGroups } from '../modules/registry';
+import { visibleNavGroups, type NavGroup } from '../modules/registry';
+
+/** Módulos "de sistema": van al final del sidebar, tras un separador
+ * (pedido de Leonardo 2026-07-19) — Fábrica penúltima, Administración última
+ * (el orden entre ellos lo da el registry). */
+const SYSTEM_MODULE_IDS = new Set(['factory-console', 'core-admin']);
 
 /**
  * Registro de iconos de sidebar (estilo consola AWS: un icono por app/módulo).
@@ -38,6 +45,38 @@ const NAV_ICONS: Record<string, ComponentType<{ className?: string }>> = {
 function NavIcon({ name }: { name?: string }) {
   const Icon = (name && NAV_ICONS[name]) || LayoutGrid;
   return <Icon className="h-4 w-4 shrink-0" />;
+}
+
+function SidebarGroup({
+  group,
+  collapsed,
+  onToggle
+}: {
+  group: NavGroup;
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
+  const Chevron = collapsed ? ChevronRight : ChevronDown;
+  return (
+    <div className="pt-3 first:pt-0">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={!collapsed}
+        className="flex w-full items-center justify-between rounded px-3 pb-1 text-left text-[11px] font-semibold uppercase tracking-[0.14em] text-awk-blue-400 transition-colors hover:text-awk-cyan-300"
+      >
+        {group.moduleName}
+        <Chevron className="h-3.5 w-3.5 shrink-0" />
+      </button>
+      {!collapsed && (
+        <div className="space-y-1">
+          {group.items.map((item) => (
+            <NavEntry key={item.path} item={item} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function NavEntry({ item }: { item: NavItem }) {
@@ -67,6 +106,13 @@ function NavEntry({ item }: { item: NavItem }) {
 export function Layout({ user }: { user: AuthUser }) {
   const { logout } = useAuth();
   const navGroups = visibleNavGroups(user);
+  const projectGroups = navGroups.filter((group) => !SYSTEM_MODULE_IDS.has(group.moduleId));
+  const systemGroups = navGroups.filter((group) => SYSTEM_MODULE_IDS.has(group.moduleId));
+  // Colapso por módulo, todo desplegado por defecto (solo estado de UI en
+  // memoria: se reinicia al recargar, deliberadamente sin persistencia).
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const toggleGroup = (moduleId: string) =>
+    setCollapsed((prev) => ({ ...prev, [moduleId]: !prev[moduleId] }));
 
   return (
     // h-screen (no min-h-screen) + overflow-hidden: el layout queda anclado
@@ -84,27 +130,29 @@ export function Layout({ user }: { user: AuthUser }) {
           />
         </div>
 
-        {/* Ítems agrupados por módulo (pedido de Leonardo 2026-07-19): los
-            módulos con 2+ secciones llevan su nombre como cabecera de grupo
-            (estilo "carpeta"); los de ítem único se pintan planos para no
-            duplicar cabecera y etiqueta. */}
+        {/* Ítems agrupados por módulo (pedido de Leonardo 2026-07-19): cada
+            módulo lleva SIEMPRE su nombre como cabecera colapsable (aunque
+            redunde con su único ítem — preferible a que parezca de otra
+            jerarquía), todos desplegados por defecto. Los módulos de sistema
+            (Fábrica, Administración) van al final tras un separador. */}
         <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4" data-testid="shell-nav">
-          {navGroups.map((group) =>
-            group.items.length > 1 ? (
-              <div key={group.moduleId} className="pt-3 first:pt-0">
-                <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-awk-blue-400">
-                  {group.moduleName}
-                </p>
-                <div className="space-y-1">
-                  {group.items.map((item) => (
-                    <NavEntry key={item.path} item={item} />
-                  ))}
-                </div>
-              </div>
-            ) : (
-              group.items.map((item) => <NavEntry key={item.path} item={item} />)
-            )
-          )}
+          {projectGroups.map((group) => (
+            <SidebarGroup
+              key={group.moduleId}
+              group={group}
+              collapsed={Boolean(collapsed[group.moduleId])}
+              onToggle={() => toggleGroup(group.moduleId)}
+            />
+          ))}
+          {systemGroups.length > 0 && <div className="my-3 border-t border-awk-blue-800" aria-hidden="true" />}
+          {systemGroups.map((group) => (
+            <SidebarGroup
+              key={group.moduleId}
+              group={group}
+              collapsed={Boolean(collapsed[group.moduleId])}
+              onToggle={() => toggleGroup(group.moduleId)}
+            />
+          ))}
         </nav>
 
         <div className="shrink-0 border-t border-awk-blue-800 px-6 py-4">

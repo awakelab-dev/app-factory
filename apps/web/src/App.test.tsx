@@ -1,13 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AuthUser, HelloResponse } from '@awk/types';
+import type { AuthUser } from '@awk/types';
 import { App } from './App';
-
-const helloFixture: HelloResponse = {
-  service: 'awk-api',
-  message: 'Hola desde el test',
-  timestamp: new Date('2026-07-11T12:00:00Z').toISOString()
-};
 
 const adminFixture: AuthUser = {
   id: 'u-1',
@@ -28,7 +22,6 @@ function mockApi(me: AuthUser) {
     vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith('/api/auth/me')) return ok(me);
-      if (url.endsWith('/api/hello')) return ok(helloFixture);
       if (url.endsWith('/api/core/users')) return ok([]);
       return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) });
     })
@@ -56,12 +49,13 @@ describe('App (shell)', () => {
     render(<App />);
 
     expect(await screen.findByTestId('shell-nav')).toBeInTheDocument();
-    // admin ve el módulo demo, el de administración (core-admin) y moodle-insights (sin requiredRoles)
-    expect(screen.getByText('Demo Hello')).toBeInTheDocument();
-    expect(screen.getByText('Usuarios')).toBeInTheDocument();
-    expect(screen.getByText('Moodle Insights')).toBeInTheDocument();
-    // el índice redirige al primer ítem visible: la página del módulo hello
-    expect(await screen.findByTestId('hello-ok')).toBeInTheDocument();
+    // admin ve el de administración (core-admin) y moodle-insights (sin requiredRoles);
+    // hello ya no existe en el registro (retirado 2026-07-19)
+    expect(screen.getByRole('link', { name: 'Usuarios' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Moodle Insights' })).toBeInTheDocument();
+    expect(screen.queryByText('Demo Hello')).not.toBeInTheDocument();
+    // el índice redirige al primer ítem visible del registry (moodle-insights)
+    expect(window.location.pathname).toBe('/moodle-insights');
   });
 
   it('un usuario sin rol admin no ve el módulo de administración (moodle-insights sí)', async () => {
@@ -70,8 +64,7 @@ describe('App (shell)', () => {
     render(<App />);
 
     expect(await screen.findByTestId('shell-nav')).toBeInTheDocument();
-    expect(screen.getByText('Demo Hello')).toBeInTheDocument();
-    expect(screen.getByText('Moodle Insights')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Moodle Insights' })).toBeInTheDocument();
     expect(screen.queryByText('Usuarios')).not.toBeInTheDocument();
   });
 
