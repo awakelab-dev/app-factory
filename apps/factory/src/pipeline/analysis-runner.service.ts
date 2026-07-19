@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { PrismaService } from '../prisma/prisma.service';
 import { runAgent, type AgentRunResult } from './agent-sdk.client';
@@ -41,11 +41,13 @@ describe SOLO el DELTA: qué cambia funcionalmente y qué cambia técnicamente
 migración si toca schema, y qué se reutiliza. NO re-derives la spec del módulo
 entero — céntrate en el cambio.
 
-Debes escribir EXACTAMENTE estos tres archivos en el directorio del cambio que
-se te indica en el prompt (docs/pipeline/<slug>/change-<n>/), y ningún otro:
-- change-<n>/spec-funcional.md   (el cambio en lenguaje de negocio)
-- change-<n>/spec-tecnica.md     (el cambio a nivel modelos/endpoints/pantallas/roles)
-- change-<n>/meta.json           {"complexityScore": <1-5>, "sensitivityFlags": ["..."], "reuseNotes": "..."}
+Debes escribir EXACTAMENTE estos tres archivos, y ningún otro, usando la RUTA
+COMPLETA desde la raíz del repo que se te indica en el prompt (empieza con
+docs/pipeline/<slug>/change-<n>/, NUNCA una ruta relativa a un subdirectorio
+suelto como change-<n>/... ni a la raíz del repo):
+- docs/pipeline/<slug>/change-<n>/spec-funcional.md   (el cambio en lenguaje de negocio)
+- docs/pipeline/<slug>/change-<n>/spec-tecnica.md     (el cambio a nivel modelos/endpoints/pantallas/roles)
+- docs/pipeline/<slug>/change-<n>/meta.json           {"complexityScore": <1-5>, "sensitivityFlags": ["..."], "reuseNotes": "..."}
 
 Aplica los criterios de docs/05-gobernanza-seguridad.md para sensitivityFlags
 (si el cambio toca datos personales/RGPD, el schema core, otro módulo, o suma
@@ -113,6 +115,11 @@ export class AnalysisRunnerService {
     ].join('\n');
 
     const additionalDirectories = project.sourceRef.startsWith('/') ? [project.sourceRef] : undefined;
+
+    // El directorio destino debe existir antes de correr el agente: es el
+    // `writableRoot` del guardarraíl y evita que una escritura correcta falle
+    // por un padre inexistente (el `change-<n>/` no existe en el primer cambio).
+    await mkdir(join(this.repoPath, specDir), { recursive: true });
 
     let result: AgentRunResult;
     try {
@@ -182,6 +189,10 @@ export class AnalysisRunnerService {
           ]
         : [])
     ].join('\n');
+
+    // El `change-<n>/` no existe en el primer cambio: crearlo antes de correr
+    // el agente (es el `writableRoot` del guardarraíl).
+    await mkdir(join(this.repoPath, specDir), { recursive: true });
 
     let result: AgentRunResult;
     try {

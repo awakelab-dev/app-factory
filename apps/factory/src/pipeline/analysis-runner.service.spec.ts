@@ -7,7 +7,8 @@ import type { GatesService } from './gates.service';
 import type { ProjectsService } from './projects.service';
 
 vi.mock('node:fs/promises', () => ({
-  readFile: vi.fn()
+  readFile: vi.fn(),
+  mkdir: vi.fn().mockResolvedValue(undefined)
 }));
 
 const readFileMock = vi.mocked(readFile);

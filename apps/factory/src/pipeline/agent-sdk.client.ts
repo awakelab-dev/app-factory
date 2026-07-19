@@ -19,7 +19,29 @@ async function loadQuery() {
   return sdk.query;
 }
 
+import { isAbsolute, resolve } from 'node:path';
+
 type LocalPermissionResult = { behavior: 'allow'; message?: string } | { behavior: 'deny'; message: string };
+
+/**
+ * Decide si una escritura a `filePath` cae dentro de alguno de los
+ * `writableRoots`. Resuelve rutas relativas contra `cwd` ANTES de comparar: el
+ * agente puede pasar `file_path` relativo a su cwd (no siempre absoluto), y una
+ * comparación cruda `startsWith` contra una raíz absoluta lo denegaría por
+ * error (bug real 2026-07-19: el análisis de cambio escribía la mini-spec con
+ * ruta parcial y toda escritura quedaba denegada). El match es por frontera de
+ * segmento (raíz exacta o raíz + "/") para no dejar pasar `/foo-bar` con raíz
+ * `/foo`; una raíz que es un archivo (p. ej. schema.prisma) matchea por
+ * igualdad exacta. `writableRoots` ausente = guardarraíl desactivado.
+ */
+export function isWriteAllowed(filePath: string, cwd: string, writableRoots?: string[]): boolean {
+  if (!writableRoots) return true;
+  const abs = isAbsolute(filePath) ? filePath : resolve(cwd, filePath);
+  return writableRoots.some((root) => {
+    const absRoot = isAbsolute(root) ? root : resolve(cwd, root);
+    return abs === absRoot || abs.startsWith(absRoot.endsWith('/') ? absRoot : `${absRoot}/`);
+  });
+}
 
 export interface RunAgentOptions {
   /** Instrucción/tarea concreta para este run (contexto del proyecto/spec). */
@@ -73,7 +95,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
       if (!filePath) {
         return { behavior: 'deny', message: 'file_path ausente en la llamada a la herramienta.' };
       }
-      if (opts.writableRoots && !opts.writableRoots.some((root) => filePath.startsWith(root))) {
+      if (!isWriteAllowed(filePath, opts.cwd, opts.writableRoots)) {
         return { behavior: 'deny', message: `Escritura fuera del alcance permitido de este run: ${filePath}` };
       }
       return { behavior: 'allow' };
