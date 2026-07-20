@@ -140,40 +140,48 @@ La tarea sugerida aquí en la sesión anterior ya corrió: caso `orientador-ia-v
 
 ### Mensaje inicial sugerido para la próxima tarea (copiar/pegar)
 
-`request_change` ya está construido, verificado y commiteado (D-034). **Próxima
-tarea**: ejercitarlo de punta a punta contra staging desde el Mac (objetivo 3,
-runbook en "Siguiente" punto 1) — el sandbox de Cowork no alcanza el túnel de
-staging ni `PLATFORM_REPO_PATH`. Sonnet basta (ya no hay diseño de pipeline;
-es operar el flujo + revisión docs/05). Cuando Leonardo pase su lista de
-observaciones, cada ítem es otro `request-change` con el mismo runbook.
+`request_change` quedó **validado de punta a punta** (D-035, 2026-07-20). No hay
+una tarea obligatoria pendiente; las opciones, a criterio de Leonardo:
+
+- **Backlog de mantenimiento** (cada ítem = un `request-change`, flujo ya probado
+  y pulido tras D-035): `gestor-proyectos` "Desempeño por persona" solo-admin
+  (proyecto `019f77a5-90e7-7619-a2ee-2d801c44219d`); `focus-flow`
+  `hourlyDistribution` agrega por hora UTC → debería ser hora local de Madrid
+  (proyecto `019f7a6a-27ae-72d2-a562-68ddf491d7e6`).
+- **Promociones a producción**: `gestor-proyectos` y `focus-flow`, ambos en
+  `manager_acceptance` (mecánica en "Siguiente" punto 2).
+- **Fase 2** (docs/06), si Leonardo decide arrancarla.
+
+Sonnet basta para operar el flujo (ya no hay diseño de pipeline). Runbook
+operativo afinado en "Siguiente" punto 1 con los aprendizajes de D-035.
 
 ```
-[factory] Ejercitar request_change contra staging (gestor-proyectos admin-only)
+[factory] request_change: <observación> sobre <módulo>
 
-Antes de empezar: leer docs/STATUS.md ("Siguiente" punto 1 tiene el runbook
-paso a paso), D-034, docs/04-integracion-cowork.md y docs/05.
+Antes de empezar: leer docs/STATUS.md ("Siguiente" + el bullet D-035 de "Hecho"
+tienen el runbook afinado y los tropiezos ya documentados), D-034/D-035,
+docs/04-integracion-cowork.md y docs/05.
 
-request_change está construido y verificado (D-034). Ejercitarlo de punta a
-punta con la observación "restringir 'Desempeño por persona' de
-gestor-proyectos a admin" (proyecto 019f77a5-90e7-7619-a2ee-2d801c44219d):
-request-change → mini-spec → gates en /factory → generate (PR incremental) →
-revisión docs/05 → decidir pr_review → merge → validar en staging.
+Ejercitar request_change de punta a punta con la observación "<...>" sobre
+<módulo> (proyecto <id>): request-change → mini-spec → gates en /factory →
+generate (PR incremental) → revisión docs/05 → decidir pr_review → integración
+humana (migración a mano si toca schema del módulo) → merge → migrar staging →
+validar → manager_acceptance.
 
-Verificar apps/factory/.env (FACTORY_DATABASE_URL → awkfactory_staging vía
-túnel localhost:15432 con uselibpqcompat=true; ANTHROPIC_API_KEY;
-PLATFORM_REPO_PATH limpio y pulled). ANTES de correr request-change: aplicar
-la migración 20260719180000_change_requests a awkfactory_staging (migrate-
-factory.sh staging <sha> tras CI de main verde, o por el túnel con psql). Ante
-desviaciones del código generado: corregir la fábrica y regenerar, nunca
-parchear a mano (D-031). migrate.sh SOLO tras CI de main verde; el deploy
-nunca migra; verificar que la PR se mergeó antes de buscar nada en staging.
+Recordatorios operativos (D-035, ya mordieron):
+- La migración a awkfactory_staging (BD FÁBRICA) se aplica por el túnel con
+  `node --env-file=.env node_modules/prisma/build/index.js migrate deploy`
+  (Prisma 7 no auto-carga .env → sin --env-file cae al fallback local).
+- migrate.sh / migrate-factory.sh (BD PLATAFORMA/fábrica) corren EN el Lightsail
+  por SSH, NO en el Mac, y SOLO tras CI de main verde; el deploy nunca migra.
+- El runner (PLATFORM_REPO_PATH) en main limpio + `pnpm install` tras pull con
+  lockfile cambiado + branch factory/<slug> stale borrada para recrearla.
+- Verificar que la PR se mergeó ANTES de buscar el cambio en staging.
+- Desviaciones del código generado: corregir la fábrica y regenerar, nunca
+  parchear a mano (D-031).
 
 Al cerrar: actualizar docs/STATUS.md y commitear.
 ```
-
-(Plantilla del encargo de prototipo nuevo y la de construir request_change:
-ver el historial de git de este archivo — commits de cierre de
-`gestor-proyectos` y de D-034.)
 
 ### Receta de verificación local con BD (ya completada — queda de referencia para levantar el entorno de nuevo)
 
