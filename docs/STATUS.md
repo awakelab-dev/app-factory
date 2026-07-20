@@ -142,70 +142,72 @@ La tarea sugerida aquí en la sesión anterior ya corrió: caso `orientador-ia-v
 
 ### Mensaje inicial sugerido para la próxima tarea (copiar/pegar)
 
-`request_change` quedó **validado de punta a punta DOS veces** (D-035 change-2 +
-change-3 el 2026-07-20) y el 500 de `manager_acceptance` ya está corregido. No hay
-una tarea obligatoria pendiente; las opciones, a criterio de Leonardo:
+**El foco ahora es el desarrollo de la FÁBRICA misma** (la plataforma/pipeline),
+no otro módulo creado con ella. Fase 1 quedó **cerrada y validada**: pipeline con
+spec+gates + `request_change` end-to-end dos veces (D-035 change-2 y change-3), 3
+módulos reales generados, y el 500 de `manager_acceptance` corregido. El siguiente
+hito de roadmap es **Fase 2 — Integración Cowork** (docs/06). Opciones, a criterio
+de Leonardo:
 
-- **Backlog de mantenimiento** (cada ítem = un `request-change`, flujo ya probado
-  y pulido): `gestor-proyectos` "Desempeño por persona" solo-admin
-  (proyecto `019f77a5-90e7-7619-a2ee-2d801c44219d`); `focus-flow`
-  `hourlyDistribution` agrega por hora UTC → debería ser hora local de Madrid
-  (proyecto `019f7a6a-27ae-72d2-a562-68ddf491d7e6`).
-- **Higiene rápida**: cerrar (o dejar anotado) el gate `manager_acceptance` de
-  `focus-flow` change-2 (v2, id `019f7e70-4de2-74ab-8aaa-cfe34944fabb`) que quedó
-  `pending` por el 500 de D-035 — ya con el fix desplegado, un `decide-gate`/UI lo
-  aprueba (o se deja como está: v3 lo superó).
-- **Robustez de fábrica (pequeña, recomendada)**: `ExceptionFilter` global en
-  `apps/factory` que traduzca `InvalidTransitionError` → HTTP 400 legible (habría
-  convertido el 500 críptico de hoy en un error claro al primer intento).
-- **Promociones a producción**: `gestor-proyectos` y `focus-flow`, ambos en
-  `manager_acceptance` (mecánica en "Siguiente" punto 2).
-- **Fase 2** (docs/06), si Leonardo decide arrancarla.
+- **Arrancar Fase 2 — Integración Cowork** (docs/06; D-005 + docs/04): remote MCP
+  server + plugin de organización — skill `awk-prototipo` (produce
+  `prototype.manifest.json`) + conector `awkfactory` (tools `submit_prototype`,
+  `get_project_status`, `request_change`, `approve_spec`, `list_modules`) — y
+  **dashboard v2** (aprobación de specs + preview links sobre el `factory-console`
+  ya existente). El conector reutiliza el HTTP de `apps/factory` (`/factory-api`,
+  D-030). Es lo que cierra el loop gerente↔fábrica sin CLI. **Empezar con DISEÑO**
+  (patrón D-026/D-029/D-030: propuesto y aprobado antes de implementar).
+- **Deuda/robustez de la fábrica (tareas cortas, buen warm-up antes de Fase 2)**:
+  (a) `ExceptionFilter` global en `apps/factory` (`InvalidTransitionError` → HTTP
+  400 legible; el 500 de hoy); (b) test de regresión que valide que el `target` de
+  cada gate ∈ transiciones válidas desde el estado real (no solo con `transition`
+  mockeado — así el bug de hoy se habría cazado en CI); (c) cerrar el gate
+  `manager_acceptance` de `focus-flow` change-2 (v2, `019f7e70-4de2-74ab-8aaa-cfe34944fabb`).
+- **Medición** (métrica de Fase 1, docs/06): instrumentar "% de módulo utilizable
+  sin retoque" y costo por proyecto en el dashboard, con los datos ya en los `Run`.
 
-Sonnet basta para operar el flujo (ya no hay diseño de pipeline). Runbook
-operativo afinado en "Siguiente" punto 1.
+(El mantenimiento de módulos vía `request_change` —backlog: `gestor-proyectos`
+"Desempeño por persona" solo-admin; `focus-flow` `hourlyDistribution` UTC→Madrid—
+y las promociones a producción quedan disponibles cuando se prioricen; el runbook
+operativo de ese flujo está en "Siguiente" punto 1 y en los bullets change-3/D-035.)
 
 ```
-[factory] request_change: <observación> sobre <módulo>
+[factory] Fase 2 (Integración Cowork) — sesión de DISEÑO (no implementar aún)
 
-Antes de empezar: leer docs/STATUS.md ("Siguiente" + los bullets change-3 y D-035
-de "Hecho" tienen el runbook afinado y los tropiezos documentados), D-034/D-035,
-docs/04-integracion-cowork.md y docs/05.
+Antes de empezar: leer docs/STATUS.md (estado + "Siguiente"), docs/06-roadmap.md
+(Fase 2), docs/04-integracion-cowork.md (skill awk-prototipo + conector awkfactory
++ dashboard v2), docs/05, y D-005/D-029/D-030 (el HTTP de apps/factory `/factory-api`
+YA existe y valida el JWT de plataforma; el control plane `factory-console` ya está
+en apps/web).
 
-OJO — este flujo NO corre en el sandbox de Cowork (sin ruta al túnel/Lightsail/
-Agent SDK/gh, reconfirmado 2026-07-20): Claude GUÍA y hace la revisión docs/05 +
-la migración a mano en el repo; Leonardo EJECUTA los comandos (request-change,
-generate, decide-gate, migrate, merge) en su Mac y pega la salida.
+Proponer el DISEÑO de arranque de Fase 2 y decidirlo con Leonardo (patrón
+D-026/D-029/D-030 — diseño aprobado ANTES de escribir código):
+- Orden de las 3 piezas (conector MCP `awkfactory`, skill de prototipado
+  `awk-prototipo`, dashboard v2) y cuál es el primer incremento.
+- Conector MCP: dónde vive (app nueva del monorepo vs dentro de apps/factory),
+  transporte (remote MCP server), autenticación (OAuth contra el SSO futuro vs el
+  JWT admin actual), y el contrato de sus tools reutilizando `/factory-api`
+  (submit_prototype / get_project_status / request_change / approve_spec /
+  list_modules).
+- Cómo entra un prototipo normalizado desde Cowork (reemplaza el `--source-ref`
+  manual del CLI) y cómo se aprueban gates / se dispara request_change desde Cowork.
+- Impacto en el modelo de datos existente (Project/Spec/Gate/Run, D-029) y en el
+  guardarraíl de generación.
 
-Ejercitar de punta a punta con la observación "<...>" sobre <módulo> (proyecto
-<id>): request-change → revisar mini-spec → gates en /factory (o `decide-gate`
-por id, más preciso) con notas vinculantes → generate (PR incremental) →
-revisión docs/05 del diff real (`gh pr diff <n>`) → aprobar pr_review → migración
-a mano si toca schema del módulo (integración humana) → merge → migrar staging →
-validar en vivo → aprobar manager_acceptance → commit [factory]/[docs].
+Entregable: propuesta de diseño + decisión registrada en DECISIONES.md (nueva
+D-0xx) + primer incremento acordado. Nota operativa: el diseño/código se hace en
+Cowork, pero desplegar el MCP server/plugin y probar contra Cowork real puede
+necesitar el Mac/servidor (el sandbox de Cowork no tiene red al Lightsail — ver
+D-016/D-023). Al cerrar: actualizar docs/STATUS.md y commitear.
 
-Recordatorios operativos (ya mordieron en D-035/change-3):
-- TÚNEL a awkfactory_staging: `ssh -L 15432:<endpoint-managed>:5432 AWK-Dev`
-  (déjalo abierto). Verificar con `lsof -nP -iTCP:15432 -sTCP:LISTEN`, NO con
-  `/dev/tcp` (zsh da falso negativo). Reabrir tras cualquier corte de internet.
-  Casi todo (request-change/status/decide-gate/generate) necesita el túnel; el
-  merge y `gh pr diff` no.
-- Migrar `awkplatform_staging` (BD PLATAFORMA): `~/migrate.sh staging latest` EN
-  el Lightsail por SSH (no en el Mac, no necesita túnel), SOLO tras CI de main
-  verde; el deploy nunca migra. La BD FÁBRICA (awkfactory_staging) se migra por
-  el túnel con `node --env-file=.env node_modules/prisma/build/index.js migrate deploy`.
-- El runner (PLATFORM_REPO_PATH) en main limpio + `pnpm install` tras pull con
-  lockfile cambiado + branch factory/<slug> stale borrada; tras el merge en
-  GitHub, `git pull --rebase` en el repo local antes del siguiente push.
-- Verificar que la PR se mergeó ANTES de buscar el cambio en staging.
-- Columnas Prisma en la BD son camelCase entre comillas ("focusMinutes"); la
-  migración a mano debe calzar exacto con lo que Prisma generaría (sin drift).
-- Desviaciones del código generado o bugs de la fábrica: corregir la fábrica y
-  regenerar/recorrer, nunca parchear a mano (D-031). Un fix de fábrica en el
-  código local ya surte efecto por CLI aunque el /factory desplegado siga viejo.
-
-Al cerrar: actualizar docs/STATUS.md y commitear ([factory] para código, [docs]
-para STATUS).
+--- (Alternativa corta si se prefiere saldar deuda antes de Fase 2) ---
+[factory] Robustez: ExceptionFilter global en apps/factory + test de transición
+Leer docs/STATUS.md ("Siguiente") y apps/factory/src/pipeline/{gates.service.ts,
+state-machine.ts}. Añadir un ExceptionFilter que mapee InvalidTransitionError a
+HTTP 400 con mensaje legible, y un test que verifique que el target de cada gate
+es una transición válida desde el estado real (no con transition mockeado). Todo
+verificable en el sandbox (copia fuera del mount si toca deps, D-023). Commit
+[factory]; actualizar STATUS.
 ```
 
 ### Receta de verificación local con BD (ya completada — queda de referencia para levantar el entorno de nuevo)
