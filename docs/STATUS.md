@@ -144,53 +144,52 @@ La tarea sugerida aquí en la sesión anterior ya corrió: caso `orientador-ia-v
 
 ### Mensaje inicial sugerido para la próxima tarea (copiar/pegar)
 
-**Fase 2 arrancada: el diseño ya está aprobado (D-036, 2026-07-20)** — sesión de
-solo diseño, sin código. Lo que sigue es IMPLEMENTAR el incremento A. La deuda de
-robustez (ExceptionFilter + test de transición + gate v2 huérfano) sigue
-disponible como alternativa corta al final.
+**Incremento A DESPLEGADO EN STAGING Y VALIDADO EN VIVO (2026-07-20)** — MCP
+respondiendo por HTTPS con PAT, y el riesgo de D-036 descartado: Claude Code
+v2.1.215 expandió `${AWKFACTORY_TOKEN}` en los headers del `.mcp.json`
+(connected + authenticated + 5 tools). Lo que sigue es el incremento B. La
+deuda de robustez (ExceptionFilter + test de transición + gate v2 huérfano)
+sigue disponible como alternativa corta al final.
 
 ```
-[factory] Fase 2 — implementar el incremento A del conector awkfactory (D-036)
+[factory] Fase 2 — incremento B: plugin de organización awk-prototipo (D-036)
 
-Antes de empezar: leer docs/STATUS.md ("Siguiente" punto 0), D-036 completa en
-docs/DECISIONES.md (el diseño ya está decidido — NO redecidir), y D-029/D-030
-(servicios de PipelineModule y FactoryAuthGuard existentes).
+Antes de empezar: leer docs/STATUS.md ("Siguiente" punto 0: incremento A
+desplegado y validado; la expansión de ${AWKFACTORY_TOKEN} en headers del
+.mcp.json FUNCIONA — usar ese patrón, sin fallback) y D-036/D-037 en
+docs/DECISIONES.md. Referencias de contenido: docs/04 (preguntas de negocio
+del prototipado y contrato de tools), docs/05 (clasificación de sensibilidad
+por entidad: público/interno/confidencial/datos-personales), y el
+prototypeManifestSchema real en packages/types/src/index.ts (la skill debe
+producir manifests que VALIDEN contra ese schema).
 
-Implementar en este orden:
-1. `prototypeManifestSchema` en @awk/types (nombre, propósito, actores/roles,
-   entidades con clasificación de sensibilidad público/interno/confidencial/
-   datos-personales — docs/05, procesos relacionados).
-2. apps/factory: migración a mano `prototype_submissions` (projectId, manifest
-   jsonb, fuente text, submittedBy) + `factory_actors` (email, rol gerente|admin,
-   tokenHash, revokedAt). PATs: emisión/revocación por CLI (`create-actor`,
-   `revoke-actor`), hash en BD, nunca en claro.
-3. `FactoryAuthGuard` extendido: acepta JWT admin actual O PAT Bearer (lookup por
-   hash); expone actor {email, rol} al request. Roles en GatesService.decide:
-   gerente solo functional/manager_acceptance de SUS proyectos (requestedBy);
-   technical/pr_review solo admin.
-4. Endpoints nuevos: GET /modules (deriva de Project), POST /submissions (valida
-   manifest con Zod, crea Project sourceType=cowork_prototype + submission, NO
-   corre análisis), POST /change-requests (ChangeRequestsService D-034). Scope
-   por rol en GET /projects(/:id).
-5. MCP server Streamable HTTP en /factory-api/mcp (@modelcontextprotocol/sdk,
-   dep nueva): tools list_modules, submit_prototype, get_project_status,
-   request_change, approve_spec — wrappers finos sobre los servicios/endpoints.
-6. CLI `analyze`: para proyectos cowork_prototype, leer la fuente desde
-   prototype_submissions y materializarla a disco antes de correr el agente
-   (reemplaza --source-ref; guardarraíl sin cambios).
+Construir el plugin de organización para el marketplace privado:
+1. Estructura del plugin (plugin.json + .mcp.json + skill): conector MCP
+   `awkfactory` apuntando a https://apps.awakelab.world/factory-api/mcp
+   (producción; staging solo para probar) con
+   "Authorization": "Bearer ${AWKFACTORY_TOKEN}".
+2. Skill `awk-prototipo`: guía al gerente a prototipar con la identidad
+   Awakelab 2026 (Poppins, cianes/azules — brand-guideline-AWK-2026), hace
+   las preguntas de negocio de docs/04, obliga a declarar sensibilidad por
+   entidad (docs/05), produce el HTML autocontenido + prototype.manifest.json
+   y termina llamando a list_modules (antiduplicación) y submit_prototype.
+3. Resolver de dónde sale AWKFACTORY_TOKEN en una sesión de Cowork de un
+   gerente (la app de escritorio no hereda el shell del usuario) y documentar
+   la instalación (marketplace privado + token) en docs/04 o un runbook.
 
-Verificación: tests + tsc + eslint en el sandbox (copia fuera del mount para la
-dep nueva, D-023; copiar pnpm-lock.yaml de vuelta). La prueba real desde Cowork
-(incl. verificar que el .mcp.json del plugin expande env vars en headers —
-riesgo señalado en D-036) requiere el Mac/deploy (D-016). Commit [factory];
-actualizar docs/STATUS.md al cerrar.
+Verificación: lint/estructura del plugin verificable en el sandbox; la prueba
+real (instalar el plugin en Cowork, prototipar algo pequeño y verlo llegar como
+submission `received` en /factory de staging) requiere el Mac (D-016). Commit
+[factory]; actualizar docs/STATUS.md al cerrar.
 ```
 
-(Incrementos siguientes ya ordenados en D-036: B plugin org —skill awk-prototipo
-+ conector—, C análisis server-side async, D dashboard v2. El mantenimiento vía
-`request_change` —backlog: `gestor-proyectos` "Desempeño por persona" solo-admin;
-`focus-flow` `hourlyDistribution` UTC→Madrid— y las promociones a producción
-quedan disponibles cuando se prioricen.)
+(Incrementos siguientes ya ordenados en D-036: C análisis server-side async,
+D dashboard v2. El mantenimiento vía `request_change` —backlog:
+`gestor-proyectos` "Desempeño por persona" solo-admin; `focus-flow`
+`hourlyDistribution` UTC→Madrid— y las promociones a producción quedan
+disponibles cuando se prioricen. Nota para B/C: el primer PAT real ya existe
+(emitido 2026-07-20 contra staging, en el gestor de Leonardo); producción
+necesitará su propio create-actor cuando el plugin apunte allí.)
 
 ```
 --- (Alternativa corta si se prefiere saldar deuda antes del incremento A) ---
