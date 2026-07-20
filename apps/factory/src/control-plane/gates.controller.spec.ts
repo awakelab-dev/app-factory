@@ -5,7 +5,7 @@ import { GatesController } from './gates.controller';
 const NOW = new Date('2026-07-15T10:00:00.000Z');
 
 describe('GatesController.decide', () => {
-  it('pasa la decisión a GatesService con el reviewer del JWT (nunca del body) y devuelve el gate mapeado', async () => {
+  it('pasa la decisión a GatesService con el reviewer del actor autenticado (nunca del body) y devuelve el gate mapeado', async () => {
     const gates = {
       decide: vi.fn().mockResolvedValue({
         id: 'gate-1',
@@ -19,17 +19,16 @@ describe('GatesController.decide', () => {
     } as unknown as GatesService;
     const controller = new GatesController(gates);
 
-    const result = await controller.decide(
-      'gate-1',
-      { decision: 'approved', notes: 'listo' },
-      { id: 'u1', email: 'leonardo.barreto@awakelab.dev', displayName: 'Leonardo', roles: ['admin'] }
-    );
+    const actor = { email: 'leonardo.barreto@awakelab.dev', role: 'admin' as const };
+    const result = await controller.decide('gate-1', { decision: 'approved', notes: 'listo' }, actor);
 
+    // El actor viaja al servicio: el modelo de roles (D-036) vive en GatesService.
     expect(gates.decide).toHaveBeenCalledWith({
       gateId: 'gate-1',
       decision: 'approved',
       reviewer: 'leonardo.barreto@awakelab.dev',
-      notes: 'listo'
+      notes: 'listo',
+      actor
     });
     expect(result).toEqual({
       id: 'gate-1',

@@ -1,17 +1,20 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { AgentRunResult } from './agent-sdk.client';
 import { AnalysisRunnerService } from './analysis-runner.service';
 import type { GatesService } from './gates.service';
 import type { ProjectsService } from './projects.service';
+import type { SubmissionsService } from './submissions.service';
 
 vi.mock('node:fs/promises', () => ({
   readFile: vi.fn(),
+  writeFile: vi.fn().mockResolvedValue(undefined),
   mkdir: vi.fn().mockResolvedValue(undefined)
 }));
 
 const readFileMock = vi.mocked(readFile);
+const writeFileMock = vi.mocked(writeFile);
 
 const project = {
   id: 'proj-1',
@@ -31,7 +34,7 @@ const successResult: AgentRunResult = {
   turns: 3
 };
 
-function buildService() {
+function buildService(overrides: { project?: Record<string, unknown>; submission?: Record<string, unknown> } = {}) {
   const prisma = {
     run: {
       create: vi.fn().mockResolvedValue({ id: 'run-1' }),
@@ -46,7 +49,7 @@ function buildService() {
   } as unknown as PrismaService;
 
   const projects = {
-    findById: vi.fn().mockResolvedValue(project),
+    findById: vi.fn().mockResolvedValue(overrides.project ?? project),
     transition: vi.fn().mockResolvedValue(undefined)
   } as unknown as ProjectsService;
 
@@ -54,7 +57,19 @@ function buildService() {
     openGatesForSpec: vi.fn().mockResolvedValue(undefined)
   } as unknown as GatesService;
 
-  return { service: new AnalysisRunnerService(prisma, projects, gates), prisma, projects, gates };
+  const submissions = {
+    getLatestForProject: overrides.submission
+      ? vi.fn().mockResolvedValue(overrides.submission)
+      : vi.fn().mockRejectedValue(new Error('no tiene ninguna fila en prototype_submissions'))
+  } as unknown as SubmissionsService;
+
+  return {
+    service: new AnalysisRunnerService(prisma, projects, gates, submissions),
+    prisma,
+    projects,
+    gates,
+    submissions
+  };
 }
 
 describe('AnalysisRunnerService.runAnalysis', () => {
@@ -122,6 +137,70 @@ describe('AnalysisRunnerService.runAnalysis', () => {
 
     await expect(service.runAnalysis('proj-1', vi.fn())).rejects.toThrow(/PLATFORM_REPO_PATH/);
   });
+
+  it('cowork_prototype: materializa la fuente desde prototype_submissions a disco antes de correr el agente (D-036)', async () => {
+    const { service, submissions } = buildService({
+      project: { ...project, sourceType: 'cowork_prototype', sourceRef: 'db://prototype_submissions/sub-1' },
+      submission: {
+        id: 'sub-1',
+        source: '<html>proto desde cowork</html>',
+        manifest: { name: 'Demo', purpose: 'x', actors: [], entities: [], relatedProcesses: [] },
+        submittedBy: 'gerente@awakelab.dev'
+      }
+    });
+    writeFileMock.mockClear();
+    readFileMock
+      .mockResolvedValueOnce('# spec funcional')
+      .mockResolvedValueOnce('# spec técnica')
+      .mockResolvedValueOnce('{}');
+    const agentRunner = vi.fn().mockResolvedValue(successResult);
+
+    await service.runAnalysis('proj-1', agentRunner);
+
+    expect(submissions.getLatestForProject).toHaveBeenCalledWith('proj-1');
+    expect(writeFileMock).toHaveBeenCalledWith(
+      '/repo/docs/pipeline/demo-modulo/source/prototype.html',
+      '<html>proto desde cowork</html>',
+      'utf-8'
+    );
+    expect(writeFileMock).toHaveBeenCalledWith(
+      '/repo/docs/pipeline/demo-modulo/source/prototype.manifest.json',
+      expect.stringContaining('"name": "Demo"'),
+      'utf-8'
+    );
+    const agentCall = agentRunner.mock.calls[0]?.[0];
+    // El prompt apunta a la fuente materializada, no al sourceRef db://.
+    expect(agentCall.prompt).toContain('docs/pipeline/demo-modulo/source');
+    expect(agentCall.prompt).not.toContain('db://');
+    // El guardarraíl (writableRoots) no cambia.
+    expect(agentCall.writableRoots).toEqual(['/repo/docs/pipeline/demo-modulo']);
+    expect(agentCall.additionalDirectories).toBeUndefined();
+  });
+
+  it('cowork_prototype SIN submission: falla ANTES de transicionar el proyecto (sin Run huérfano)', async () => {
+    const { service, projects, prisma } = buildService({
+      project: { ...project, sourceType: 'cowork_prototype' }
+    });
+
+    await expect(service.runAnalysis('proj-1', vi.fn())).rejects.toThrow(/prototype_submissions/);
+    expect(projects.transition).not.toHaveBeenCalled();
+    expect(prisma.run.create).not.toHaveBeenCalled();
+  });
+
+  it('manual: NO consulta prototype_submissions (el flujo --source-ref sigue intacto)', async () => {
+    const { service, submissions } = buildService();
+    readFileMock
+      .mockResolvedValueOnce('# spec funcional')
+      .mockResolvedValueOnce('# spec técnica')
+      .mockResolvedValueOnce('{}');
+    const agentRunner = vi.fn().mockResolvedValue(successResult);
+
+    await service.runAnalysis('proj-1', agentRunner);
+
+    expect(submissions.getLatestForProject).not.toHaveBeenCalled();
+    // La fuente sigue siendo el sourceRef y viaja como additionalDirectory al ser ruta absoluta.
+    expect(agentRunner).toHaveBeenCalledWith(expect.objectContaining({ additionalDirectories: ['/tmp/proto'] }));
+  });
 });
 
 const changeRequest = {
@@ -157,7 +236,9 @@ function buildChangeService() {
 
   const gates = { openGatesForSpec: vi.fn().mockResolvedValue(undefined) } as unknown as GatesService;
 
-  return { service: new AnalysisRunnerService(prisma, projects, gates), prisma, projects, gates };
+  const submissions = { getLatestForProject: vi.fn() } as unknown as SubmissionsService;
+
+  return { service: new AnalysisRunnerService(prisma, projects, gates, submissions), prisma, projects, gates };
 }
 
 describe('AnalysisRunnerService.runChangeAnalysis (request_change)', () => {

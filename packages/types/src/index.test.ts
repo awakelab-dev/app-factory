@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   devLoginRequestSchema,
+  factorySubmissionRequestSchema,
   helloResponseSchema,
   moduleManifestSchema,
   moodleCourseRowSchema,
   moodleSummarySchema,
-  moodleSyncRunSchema
+  moodleSyncRunSchema,
+  prototypeManifestSchema
 } from './index';
 
 describe('helloResponseSchema', () => {
@@ -122,5 +124,77 @@ describe('moodle-insights schemas', () => {
         lastSync: null
       }).success
     ).toBe(true);
+  });
+});
+
+describe('prototypeManifestSchema (D-036, incremento A)', () => {
+  const validManifest = {
+    name: 'Gestor de vacaciones',
+    purpose: 'Solicitar y aprobar vacaciones del equipo sin planillas.',
+    actors: [{ role: 'empleado' }, { role: 'gerente', description: 'Aprueba solicitudes' }],
+    entities: [
+      { name: 'solicitud', sensitivity: 'interno' },
+      { name: 'empleado', description: 'Datos del solicitante', sensitivity: 'datos_personales' }
+    ],
+    relatedProcesses: ['Nómina mensual']
+  };
+
+  it('acepta un manifest completo', () => {
+    expect(prototypeManifestSchema.safeParse(validManifest).success).toBe(true);
+  });
+
+  it('relatedProcesses es opcional con default []', () => {
+    const rest = { ...validManifest, relatedProcesses: undefined };
+    const result = prototypeManifestSchema.safeParse(rest);
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.relatedProcesses).toEqual([]);
+  });
+
+  it('rechaza una entidad sin clasificación de sensibilidad (docs/05: obligatoria en origen)', () => {
+    const result = prototypeManifestSchema.safeParse({
+      ...validManifest,
+      entities: [{ name: 'solicitud' }]
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rechaza una sensibilidad fuera del catálogo', () => {
+    const result = prototypeManifestSchema.safeParse({
+      ...validManifest,
+      entities: [{ name: 'solicitud', sensitivity: 'secreto' }]
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('exige al menos un actor y una entidad', () => {
+    expect(prototypeManifestSchema.safeParse({ ...validManifest, actors: [] }).success).toBe(false);
+    expect(prototypeManifestSchema.safeParse({ ...validManifest, entities: [] }).success).toBe(false);
+  });
+});
+
+describe('factorySubmissionRequestSchema', () => {
+  const validSubmission = {
+    moduleSlug: 'gestor-vacaciones',
+    displayName: 'Gestor de vacaciones',
+    sourceHtml: '<!doctype html><html><body>proto</body></html>',
+    manifest: {
+      name: 'Gestor de vacaciones',
+      purpose: 'Solicitar y aprobar vacaciones.',
+      actors: [{ role: 'empleado' }],
+      entities: [{ name: 'solicitud', sensitivity: 'interno' }]
+    }
+  };
+
+  it('acepta una submission válida', () => {
+    expect(factorySubmissionRequestSchema.safeParse(validSubmission).success).toBe(true);
+  });
+
+  it('rechaza un slug fuera de kebab-case', () => {
+    expect(factorySubmissionRequestSchema.safeParse({ ...validSubmission, moduleSlug: 'GestorVacaciones' }).success).toBe(false);
+    expect(factorySubmissionRequestSchema.safeParse({ ...validSubmission, moduleSlug: '-mal-' }).success).toBe(false);
+  });
+
+  it('rechaza sourceHtml vacío', () => {
+    expect(factorySubmissionRequestSchema.safeParse({ ...validSubmission, sourceHtml: '' }).success).toBe(false);
   });
 });

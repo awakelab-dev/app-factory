@@ -1,5 +1,7 @@
 import type {
+  FactoryChangeRequestResponse,
   FactoryGate,
+  FactoryModuleSummary,
   FactoryProjectDetail,
   FactoryProjectSummary,
   FactoryRun,
@@ -126,6 +128,56 @@ export function toProjectSummaryDto(project: ProjectRecord & { specs: SpecRecord
     status: project.status as ProjectStatus,
     latestSpecVersion: latestSpec?.version ?? null,
     pendingGates
+  };
+}
+
+/** Longitud máxima del resumen de spec en GET /modules — suficiente para antiduplicación, sin volcar la spec entera. */
+const SPEC_SUMMARY_MAX_CHARS = 600;
+
+/**
+ * Primeras líneas de la spec funcional como resumen del catálogo (GET
+ * /modules, D-036): se salta las líneas de heading markdown iniciales y
+ * corta en SPEC_SUMMARY_MAX_CHARS.
+ */
+export function summarizeSpecContent(functionalContent: string): string | null {
+  const body = functionalContent
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('#'))
+    .join('\n')
+    .trim();
+  if (!body) return null;
+  return body.length > SPEC_SUMMARY_MAX_CHARS ? `${body.slice(0, SPEC_SUMMARY_MAX_CHARS)}…` : body;
+}
+
+/** Fila del catálogo de módulos (GET /modules — antiduplicación desde Cowork, D-036). */
+export function toModuleSummaryDto(
+  project: ProjectRecord & { specs: Pick<SpecRecord, 'version' | 'functionalContent'>[] }
+): FactoryModuleSummary {
+  const latestSpec = project.specs[0] ?? null;
+  return {
+    moduleSlug: project.moduleSlug,
+    displayName: project.displayName,
+    status: project.status as ProjectStatus,
+    latestSpecVersion: latestSpec?.version ?? null,
+    specSummary: latestSpec ? summarizeSpecContent(latestSpec.functionalContent) : null
+  };
+}
+
+interface ChangeRequestRecord {
+  id: string;
+  createdAt: Date;
+  projectId: string;
+  requestedBy: string;
+  requestText: string;
+}
+
+export function toChangeRequestDto(changeRequest: ChangeRequestRecord): FactoryChangeRequestResponse {
+  return {
+    id: changeRequest.id,
+    createdAt: changeRequest.createdAt.toISOString(),
+    projectId: changeRequest.projectId,
+    requestedBy: changeRequest.requestedBy,
+    requestText: changeRequest.requestText
   };
 }
 

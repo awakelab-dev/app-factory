@@ -1,12 +1,13 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { CliModule } from './cli.module';
+import { ActorsService } from './pipeline/actors.service';
 import { AnalysisRunnerService } from './pipeline/analysis-runner.service';
 import { ChangeRequestsService } from './pipeline/change-requests.service';
 import { GatesService } from './pipeline/gates.service';
 import { GenerationRunnerService } from './pipeline/generation-runner.service';
 import { ProjectsService } from './pipeline/projects.service';
-import type { GateDecision, ProjectStatus } from './pipeline/types';
+import type { FactoryActorRole, GateDecision, ProjectStatus } from './pipeline/types';
 
 /**
  * CLI de la Fábrica. Fase 1 (docs/06-roadmap.md: "lanzado por un dev", sin
@@ -27,6 +28,11 @@ import type { GateDecision, ProjectStatus } from './pipeline/types';
  *     --request "Restringir 'Desempeño por persona' a admin" --requested-by x@y.com
  *   # enmendar la nota de un gate ya decidido sin re-decidirlo (D-033):
  *   pnpm --filter=@awk/factory run cli -- amend-gate <gateId> --notes "..." --reviewer x@y.com
+ *
+ *   # PATs de actores de la Fábrica (D-036, auth interina para el conector MCP):
+ *   pnpm --filter=@awk/factory run cli -- create-actor --email gerente@awakelab.dev --role gerente
+ *   #   (imprime el token UNA vez; reemitir revoca los anteriores del mismo email)
+ *   pnpm --filter=@awk/factory run cli -- revoke-actor --email gerente@awakelab.dev
  *
  * Requiere FACTORY_DATABASE_URL, ANTHROPIC_API_KEY y PLATFORM_REPO_PATH
  * (analyze/generate) — ver .env.example.
@@ -132,6 +138,34 @@ async function main(): Promise<void> {
         break;
       }
 
+      case 'create-actor': {
+        const flags = parseFlags(rest);
+        const role = requiredFlag(flags, 'role');
+        if (role !== 'gerente' && role !== 'admin') {
+          throw new Error(`--role inválido: "${role}" (valores: gerente, admin)`);
+        }
+        const created = await app.get(ActorsService).createActor({
+          email: requiredFlag(flags, 'email'),
+          role: role as FactoryActorRole
+        });
+        // El token se imprime UNA sola vez — en BD solo queda su hash.
+        console.log(JSON.stringify({ id: created.id, email: created.email, role: created.role }, null, 2));
+        console.log(`\nPAT (guárdalo ahora, no se puede recuperar):\n${created.token}`);
+        break;
+      }
+
+      case 'revoke-actor': {
+        const flags = parseFlags(rest);
+        const email = requiredFlag(flags, 'email');
+        const revoked = await app.get(ActorsService).revokeActor(email);
+        console.log(
+          revoked > 0
+            ? `Revocados ${revoked} token(s) activo(s) de ${email}.`
+            : `${email} no tenía tokens activos — nada que revocar.`
+        );
+        break;
+      }
+
       case 'amend-gate': {
         const gateId = requiredArg(rest[0], 'gateId');
         const flags = parseFlags(rest.slice(1));
@@ -161,7 +195,7 @@ async function main(): Promise<void> {
 
       default:
         console.error(
-          `Comando desconocido: "${command ?? ''}". Comandos: create-project, analyze, decide-gate, generate, request-change, amend-gate, advance, status (ver el comentario al inicio de src/cli.ts).`
+          `Comando desconocido: "${command ?? ''}". Comandos: create-project, analyze, decide-gate, generate, request-change, amend-gate, create-actor, revoke-actor, advance, status (ver el comentario al inicio de src/cli.ts).`
         );
         process.exitCode = 1;
     }

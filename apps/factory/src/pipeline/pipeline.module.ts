@@ -1,9 +1,11 @@
 import { Module } from '@nestjs/common';
+import { ActorsService } from './actors.service';
 import { AnalysisRunnerService } from './analysis-runner.service';
 import { ChangeRequestsService } from './change-requests.service';
 import { GatesService } from './gates.service';
 import { GenerationRunnerService } from './generation-runner.service';
 import { ProjectsService } from './projects.service';
+import { SubmissionsService } from './submissions.service';
 
 /**
  * Mecánica del pipeline (paso 1 de D-026, docs/04-integracion-cowork.md
@@ -14,7 +16,23 @@ import { ProjectsService } from './projects.service';
  * estos mismos servicios, sin modificarlos.
  */
 @Module({
-  providers: [ProjectsService, GatesService, AnalysisRunnerService, GenerationRunnerService, ChangeRequestsService],
-  exports: [ProjectsService, GatesService, AnalysisRunnerService, GenerationRunnerService, ChangeRequestsService]
+  providers: [
+    ProjectsService,
+    GatesService,
+    AnalysisRunnerService,
+    GenerationRunnerService,
+    ChangeRequestsService,
+    SubmissionsService,
+    ActorsService
+  ],
+  exports: [
+    ProjectsService,
+    GatesService,
+    AnalysisRunnerService,
+    GenerationRunnerService,
+    ChangeRequestsService,
+    SubmissionsService,
+    ActorsService
+  ]
 })
 export class PipelineModule {}

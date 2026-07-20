@@ -71,8 +71,57 @@ model Project {
   specs          Spec[]
   runs           Run[]
   changeRequests ChangeRequest[]
+  submissions    PrototypeSubmission[]
 
   @@map("projects")
+}
+
+/// Rol de un actor de la Fábrica (auth interina PAT, D-036). `gerente` opera
+/// desde Cowork (submit/status/request_change + gates functional y
+/// manager_acceptance de SUS proyectos); `admin` es Leonardo (todo).
+enum FactoryActorRole {
+  gerente
+  admin
+
+  @@map("factory_actor_role")
+}
+
+/// Actor autenticable por PAT (D-036, auth interina hasta que exista el SSO).
+/// Sin FK a core.users (D-029/D-030: se comparte contrato, no BD). El token
+/// se emite por CLI (`create-actor`), se muestra UNA vez y aquí solo vive su
+/// hash SHA-256. Revocar = poner `revokedAt` (no se borra la fila: auditoría).
+/// `email` NO es único: reemitir un token para el mismo gerente crea una fila
+/// nueva y revoca las anteriores.
+model FactoryActor {
+  id        String           @id @default(uuid(7)) @db.Uuid
+  createdAt DateTime         @default(now())
+  email     String
+  role      FactoryActorRole
+  tokenHash String           @unique
+  revokedAt DateTime?
+
+  @@index([email])
+  @@map("factory_actors")
+}
+
+/// Un prototipo enviado desde Cowork vía `submit_prototype` (D-036): la
+/// fuente HTML completa + el prototype.manifest.json validado (docs/04,
+/// paso 1) viven en BD — el CLI `analyze` los materializa a disco al correr
+/// el análisis (reemplaza el `--source-ref` manual para proyectos
+/// `cowork_prototype`). `submittedBy` = email del actor del PAT.
+model PrototypeSubmission {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  createdAt   DateTime @default(now())
+  projectId   String   @db.Uuid
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// prototype.manifest.json ya validado con prototypeManifestSchema (@awk/types).
+  manifest    Json
+  /// HTML autocontenido del prototipo, tal como llegó de Cowork.
+  source      String   @db.Text
+  submittedBy String
+
+  @@index([projectId])
+  @@map("prototype_submissions")
 }
 
 /// Una petición de cambio sobre un módulo YA generado/desplegado

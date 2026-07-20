@@ -19,6 +19,7 @@
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.210",
     "@awk/auth": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@awk/types": "workspace:*",
     "@nestjs/common": "^11.1.28",
     "@nestjs/core": "^11.1.28",

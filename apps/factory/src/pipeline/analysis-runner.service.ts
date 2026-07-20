@@ -1,10 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { PrismaService } from '../prisma/prisma.service';
 import { runAgent, type AgentRunResult } from './agent-sdk.client';
 import { GatesService } from './gates.service';
 import { ProjectsService } from './projects.service';
+import { SubmissionsService } from './submissions.service';
 
 const DEFAULT_MODEL = 'claude-sonnet-5';
 
@@ -82,7 +83,8 @@ export class AnalysisRunnerService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly projects: ProjectsService,
-    private readonly gates: GatesService
+    private readonly gates: GatesService,
+    private readonly submissions: SubmissionsService
   ) {}
 
   private get repoPath(): string {
@@ -97,6 +99,12 @@ export class AnalysisRunnerService {
 
   async runAnalysis(projectId: string, agentRunner: typeof runAgent = runAgent) {
     const project = await this.projects.findById(projectId);
+    // D-036: la fuente de un proyecto cowork_prototype vive en BD
+    // (prototype_submissions, la dejó submit_prototype) — se busca ANTES de
+    // transicionar: si no hay submission, fallar aquí no deja el proyecto en
+    // `analyzing` ni un Run huérfano.
+    const submission =
+      project.sourceType === 'cowork_prototype' ? await this.submissions.getLatestForProject(projectId) : null;
     // La transición va ANTES de crear el Run: si el estado actual no admite
     // re-análisis (p. ej. pending_approval), fallar aquí no deja un Run
     // huérfano en "running" (bug encontrado en la validación end-to-end del
@@ -107,19 +115,42 @@ export class AnalysisRunnerService {
     });
 
     const specDir = `docs/pipeline/${project.moduleSlug}`;
-    const prompt = [
-      `Proyecto: ${project.displayName} (slug: ${project.moduleSlug}).`,
-      `Material fuente: ${project.sourceRef}`,
-      `Solicitado por: ${project.requestedBy}.`,
-      `Escribe la spec en ${specDir}/ tal como se te indicó en las instrucciones del sistema.`
-    ].join('\n');
-
-    const additionalDirectories = project.sourceRef.startsWith('/') ? [project.sourceRef] : undefined;
 
     // El directorio destino debe existir antes de correr el agente: es el
     // `writableRoot` del guardarraíl y evita que una escritura correcta falle
     // por un padre inexistente (el `change-<n>/` no existe en el primer cambio).
     await mkdir(join(this.repoPath, specDir), { recursive: true });
+
+    // Materialización de la fuente (D-036, reemplaza --source-ref para
+    // cowork_prototype): la fuente pasa de BD a disco DENTRO de specDir —
+    // ruta ya legible por el agente (cwd = repo) y cubierta por el
+    // writableRoot existente. El guardarraíl de generación no cambia: es un
+    // guard de ESCRITURA y esto solo añade archivos que el agente lee.
+    let sourceDescription = project.sourceRef;
+    let additionalDirectories: string[] | undefined;
+    if (submission) {
+      const sourceDir = join(specDir, 'source');
+      await mkdir(join(this.repoPath, sourceDir), { recursive: true });
+      await writeFile(join(this.repoPath, sourceDir, 'prototype.html'), submission.source, 'utf-8');
+      await writeFile(
+        join(this.repoPath, sourceDir, 'prototype.manifest.json'),
+        JSON.stringify(submission.manifest, null, 2),
+        'utf-8'
+      );
+      sourceDescription =
+        `${sourceDir}/ — prototype.html (el prototipo completo) y prototype.manifest.json ` +
+        `(nombre, propósito, actores, entidades con sensibilidad declarada), enviados desde Cowork por ${submission.submittedBy}. ` +
+        `Verifica la sensibilidad declarada del manifest y elévala si detectas más (docs/05: nunca rebajarla).`;
+    } else {
+      additionalDirectories = project.sourceRef.startsWith('/') ? [project.sourceRef] : undefined;
+    }
+
+    const prompt = [
+      `Proyecto: ${project.displayName} (slug: ${project.moduleSlug}).`,
+      `Material fuente: ${sourceDescription}`,
+      `Solicitado por: ${project.requestedBy}.`,
+      `Escribe la spec en ${specDir}/ tal como se te indicó en las instrucciones del sistema.`
+    ].join('\n');
 
     let result: AgentRunResult;
     try {

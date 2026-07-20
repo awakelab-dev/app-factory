@@ -1,16 +1,24 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import type { PrismaService } from '../prisma/prisma.service';
 import { GatesService } from './gates.service';
 import type { ProjectsService } from './projects.service';
 
-function buildService(overrides: { gateStatus?: string; gateType?: string; projectStatus?: string } = {}) {
+function buildService(
+  overrides: { gateStatus?: string; gateType?: string; projectStatus?: string; requestedBy?: string } = {}
+) {
   const gate = {
     id: 'gate-1',
     specId: 'spec-1',
     status: overrides.gateStatus ?? 'pending',
     gateType: overrides.gateType ?? 'functional',
-    spec: { project: { id: 'proj-1', status: overrides.projectStatus ?? 'pending_approval' } }
+    spec: {
+      project: {
+        id: 'proj-1',
+        status: overrides.projectStatus ?? 'pending_approval',
+        requestedBy: overrides.requestedBy ?? 'leonardo.barreto@awakelab.dev'
+      }
+    }
   };
 
   const prisma = {
@@ -121,6 +129,72 @@ describe('GatesService.decide', () => {
       BadRequestException
     );
     expect(prisma.gate.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('GatesService.decide — modelo de roles (D-036)', () => {
+  const gerente = { email: 'gerente@awakelab.dev', role: 'gerente' as const };
+
+  it('un gerente decide el gate functional de SU proyecto', async () => {
+    const { service, prisma } = buildService({ gateType: 'functional', requestedBy: gerente.email });
+
+    await service.decide({ gateId: 'gate-1', decision: 'approved', reviewer: gerente.email, actor: gerente });
+
+    expect(prisma.gate.update).toHaveBeenCalled();
+  });
+
+  it('un gerente decide manager_acceptance de SU proyecto', async () => {
+    const { service, prisma } = buildService({
+      gateType: 'manager_acceptance',
+      projectStatus: 'staging',
+      requestedBy: gerente.email
+    });
+
+    await service.decide({ gateId: 'gate-1', decision: 'approved', reviewer: gerente.email, actor: gerente });
+
+    expect(prisma.gate.update).toHaveBeenCalled();
+  });
+
+  it('403 si un gerente intenta decidir un gate technical (solo-admin), aun de SU proyecto', async () => {
+    const { service, prisma } = buildService({ gateType: 'technical', requestedBy: gerente.email });
+
+    await expect(
+      service.decide({ gateId: 'gate-1', decision: 'approved', reviewer: gerente.email, actor: gerente })
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.gate.update).not.toHaveBeenCalled();
+  });
+
+  it('403 si un gerente intenta decidir pr_review (solo-admin)', async () => {
+    const { service, prisma } = buildService({ gateType: 'pr_review', requestedBy: gerente.email });
+
+    await expect(
+      service.decide({ gateId: 'gate-1', decision: 'approved', reviewer: gerente.email, actor: gerente })
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.gate.update).not.toHaveBeenCalled();
+  });
+
+  it('403 si un gerente intenta decidir un gate functional de un proyecto AJENO', async () => {
+    const { service, prisma, projects } = buildService({ gateType: 'functional', requestedBy: 'otro@awakelab.dev' });
+
+    await expect(
+      service.decide({ gateId: 'gate-1', decision: 'rejected', reviewer: gerente.email, actor: gerente })
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    // El scope va ANTES de cualquier escritura/transición.
+    expect(projects.transition).not.toHaveBeenCalled();
+    expect(prisma.gate.update).not.toHaveBeenCalled();
+  });
+
+  it('un actor admin decide cualquier gate de cualquier proyecto', async () => {
+    const { service, prisma } = buildService({ gateType: 'pr_review', projectStatus: 'pr_review', requestedBy: 'otro@x.dev' });
+
+    await service.decide({
+      gateId: 'gate-1',
+      decision: 'approved',
+      reviewer: 'leonardo.barreto@awakelab.dev',
+      actor: { email: 'leonardo.barreto@awakelab.dev', role: 'admin' }
+    });
+
+    expect(prisma.gate.update).toHaveBeenCalled();
   });
 });
 

@@ -3,10 +3,16 @@ import type { ExecutionContext } from '@nestjs/common';
 import type { Reflector } from '@nestjs/core';
 import type { JwtService } from '@nestjs/jwt';
 import { describe, expect, it, vi } from 'vitest';
+import type { ActorsService } from '../pipeline/actors.service';
+import type { FactoryActorContext } from '../pipeline/types';
 import { FactoryAuthGuard } from './factory-auth.guard';
 
 function buildContext(headers: Record<string, string | undefined> = {}) {
-  const request: { headers: Record<string, string | undefined>; user?: unknown } = { headers };
+  const request: {
+    headers: Record<string, string | undefined>;
+    user?: unknown;
+    actor?: FactoryActorContext;
+  } = { headers };
   const context = {
     getHandler: () => ({}),
     getClass: () => ({}),
@@ -15,7 +21,14 @@ function buildContext(headers: Record<string, string | undefined> = {}) {
   return { context, request };
 }
 
-function buildGuard(options: { isPublic?: boolean; payload?: unknown; verifyFails?: boolean } = {}) {
+function buildGuard(
+  options: {
+    isPublic?: boolean;
+    payload?: unknown;
+    verifyFails?: boolean;
+    patActor?: FactoryActorContext | null;
+  } = {}
+) {
   const reflector = {
     getAllAndOverride: vi.fn().mockReturnValue(options.isPublic ?? false)
   } as unknown as Reflector;
@@ -31,7 +44,10 @@ function buildGuard(options: { isPublic?: boolean; payload?: unknown; verifyFail
           }
         )
   } as unknown as JwtService;
-  return new FactoryAuthGuard(reflector, jwtService);
+  const actors = {
+    findActiveByToken: vi.fn().mockResolvedValue(options.patActor ?? null)
+  } as unknown as ActorsService;
+  return new FactoryAuthGuard(reflector, jwtService, actors);
 }
 
 describe('FactoryAuthGuard', () => {
@@ -65,7 +81,7 @@ describe('FactoryAuthGuard', () => {
     await expect(guard.canActivate(context)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it('deja pasar un admin y adjunta el AuthUser a request.user (para @CurrentUser)', async () => {
+  it('deja pasar un admin por JWT y adjunta user + actor normalizado {email, rol admin}', async () => {
     const guard = buildGuard();
     const { context, request } = buildContext({ authorization: 'Bearer token-valido' });
 
@@ -76,5 +92,32 @@ describe('FactoryAuthGuard', () => {
       displayName: 'Leonardo',
       roles: ['admin']
     });
+    expect(request.actor).toEqual({ email: 'leonardo.barreto@awakelab.dev', role: 'admin' });
+  });
+
+  it('deja pasar un PAT activo (prefijo awkf_) y adjunta el actor del token (D-036)', async () => {
+    const gerente: FactoryActorContext = { email: 'gerente@awakelab.dev', role: 'gerente' };
+    const guard = buildGuard({ patActor: gerente });
+    const { context, request } = buildContext({ authorization: 'Bearer awkf_abc123' });
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(request.actor).toEqual(gerente);
+    // Un PAT nunca pasa por el verificador de JWT ni deja request.user.
+    expect(request.user).toBeUndefined();
+  });
+
+  it('401 con PAT desconocido o revocado (mismo mensaje: no filtra cuál)', async () => {
+    const guard = buildGuard({ patActor: null });
+    const { context } = buildContext({ authorization: 'Bearer awkf_revocado' });
+
+    await expect(guard.canActivate(context)).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('un token sin prefijo awkf_ va por la rama JWT, no por la de PATs', async () => {
+    const guard = buildGuard({ verifyFails: true, patActor: { email: 'x@y.dev', role: 'gerente' } });
+    const { context } = buildContext({ authorization: 'Bearer jwt-cualquiera' });
+
+    // verifyFails: si tocara la rama PAT pasaría; debe fallar como JWT inválido.
+    await expect(guard.canActivate(context)).rejects.toBeInstanceOf(UnauthorizedException);
   });
 });

@@ -1,13 +1,23 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { assertProjectVisibleToActor } from './actor-scope';
 import { ProjectsService } from './projects.service';
-import type { GateDecision, GateType, ProjectStatus } from './types';
+import type { FactoryActorContext, GateDecision, GateType, ProjectStatus } from './types';
+
+/** Gates que un `gerente` puede decidir (D-036): los de negocio. `technical`/`pr_review` son solo-admin. */
+const MANAGER_GATE_TYPES: readonly GateType[] = ['functional', 'manager_acceptance'];
 
 export interface GateDecisionInput {
   gateId: string;
   decision: GateDecision;
   reviewer: string;
   notes?: string;
+  /**
+   * Actor autenticado (D-036). Sin actor (CLI) no se aplica el modelo de
+   * roles — con actor `gerente`, solo gates functional/manager_acceptance
+   * de SUS proyectos (requestedBy).
+   */
+  actor?: FactoryActorContext;
 }
 
 export interface GateAmendInput {
@@ -49,6 +59,16 @@ export class GatesService {
 
     if (gate.status !== 'pending') {
       throw new BadRequestException(`El gate ${gate.id} ya fue decidido (estado actual: ${gate.status}).`);
+    }
+
+    // Modelo de roles (D-036): el scope va ANTES que cualquier escritura.
+    if (input.actor?.role === 'gerente') {
+      assertProjectVisibleToActor(gate.spec.project, input.actor);
+      if (!MANAGER_GATE_TYPES.includes(gate.gateType as GateType)) {
+        throw new ForbiddenException(
+          `El gate ${gate.gateType} es de revisión técnica — solo lo decide un admin. Un gerente decide ${MANAGER_GATE_TYPES.join(' y ')}.`
+        );
+      }
     }
 
     const projectId = gate.spec.project.id;

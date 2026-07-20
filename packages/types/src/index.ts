@@ -381,3 +381,101 @@ export const factoryGateDecisionRequestSchema = z.object({
   notes: z.string().max(4000).optional()
 });
 export type FactoryGateDecisionRequest = z.infer<typeof factoryGateDecisionRequestSchema>;
+
+// ---------------------------------------------------------------------------
+// Integración Cowork — incremento A de Fase 2 (D-036): contrato entre el
+// conector MCP `awkfactory` (y cualquier otro cliente de /factory-api) y la
+// Fábrica. `prototype.manifest.json` es lo que la skill de prototipado
+// produce junto al HTML (docs/04, paso 1); la clasificación de sensibilidad
+// por entidad es obligatoria (docs/05: "público / interno / confidencial /
+// datos personales" — el análisis puede elevarla, nunca rebajarla).
+// ---------------------------------------------------------------------------
+
+/** Roles de actor de la Fábrica (PAT interino D-036; migrará a OAuth/SSO sin cambiar este contrato). */
+export const factoryActorRoleSchema = z.enum(['gerente', 'admin']);
+export type FactoryActorRole = z.infer<typeof factoryActorRoleSchema>;
+
+/** Clasificación de sensibilidad por entidad (docs/05, "Clasificación en origen"). */
+export const prototypeSensitivitySchema = z.enum(['publico', 'interno', 'confidencial', 'datos_personales']);
+export type PrototypeSensitivity = z.infer<typeof prototypeSensitivitySchema>;
+
+export const prototypeManifestSchema = z.object({
+  /** Nombre de negocio del prototipo (no el slug — ese va aparte en la submission). */
+  name: z.string().min(1).max(120),
+  /** Qué problema resuelve y para quién, en lenguaje de negocio. */
+  purpose: z.string().min(1).max(2000),
+  /** Actores/roles que usan el módulo (docs/04: "actores/roles"). */
+  actors: z
+    .array(
+      z.object({
+        role: z.string().min(1).max(80),
+        description: z.string().max(500).optional()
+      })
+    )
+    .min(1),
+  /** Entidades de datos detectadas, con sensibilidad declarada OBLIGATORIA por entidad. */
+  entities: z
+    .array(
+      z.object({
+        name: z.string().min(1).max(80),
+        description: z.string().max(500).optional(),
+        sensitivity: prototypeSensitivitySchema
+      })
+    )
+    .min(1),
+  /** Procesos de negocio relacionados (docs/04: "procesos relacionados"). */
+  relatedProcesses: z.array(z.string().min(1).max(200)).default([])
+});
+export type PrototypeManifest = z.infer<typeof prototypeManifestSchema>;
+
+/** Fila de GET /factory-api/modules — catálogo para antiduplicación desde Cowork (docs/04, list_modules). */
+export const factoryModuleSummarySchema = z.object({
+  moduleSlug: z.string(),
+  displayName: z.string(),
+  status: factoryProjectStatusSchema,
+  latestSpecVersion: z.number().int().nullable(),
+  /** Primeras líneas de la spec funcional vigente (o null si aún no hay spec). */
+  specSummary: z.string().nullable()
+});
+export type FactoryModuleSummary = z.infer<typeof factoryModuleSummarySchema>;
+export const factoryModulesResponseSchema = z.array(factoryModuleSummarySchema);
+
+/** POST /factory-api/submissions — submittedBy sale SIEMPRE del actor autenticado, nunca del body. */
+export const factorySubmissionRequestSchema = z.object({
+  moduleSlug: z
+    .string()
+    .min(3)
+    .max(60)
+    .regex(/^[a-z][a-z0-9-]*[a-z0-9]$/, 'slug en kebab-case (minúsculas, dígitos y guiones)'),
+  displayName: z.string().min(1).max(120),
+  /** HTML autocontenido del prototipo (la fuente completa, no una ruta). */
+  sourceHtml: z.string().min(1).max(5_000_000),
+  manifest: prototypeManifestSchema
+});
+export type FactorySubmissionRequest = z.infer<typeof factorySubmissionRequestSchema>;
+
+export const factorySubmissionResponseSchema = z.object({
+  projectId: z.string(),
+  submissionId: z.string(),
+  moduleSlug: z.string(),
+  status: factoryProjectStatusSchema,
+  /** Mensaje para mostrar al gerente (qué sigue: análisis pendiente, D-036 incremento A). */
+  message: z.string()
+});
+export type FactorySubmissionResponse = z.infer<typeof factorySubmissionResponseSchema>;
+
+/** POST /factory-api/change-requests — requestedBy sale del actor autenticado. */
+export const factoryChangeRequestRequestSchema = z.object({
+  projectId: z.uuid(),
+  requestText: z.string().min(10).max(4000)
+});
+export type FactoryChangeRequestRequest = z.infer<typeof factoryChangeRequestRequestSchema>;
+
+export const factoryChangeRequestResponseSchema = z.object({
+  id: z.string(),
+  createdAt: z.iso.datetime(),
+  projectId: z.string(),
+  requestedBy: z.string(),
+  requestText: z.string()
+});
+export type FactoryChangeRequestResponse = z.infer<typeof factoryChangeRequestResponseSchema>;

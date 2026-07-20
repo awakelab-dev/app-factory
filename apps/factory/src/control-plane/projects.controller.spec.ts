@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ProjectsService } from '../pipeline/projects.service';
+import type { FactoryActorContext } from '../pipeline/types';
 import { ProjectsController } from './projects.controller';
 
 const NOW = new Date('2026-07-15T10:00:00.000Z');
+const ADMIN: FactoryActorContext = { email: 'leonardo.barreto@awakelab.dev', role: 'admin' };
 
 function buildProject(overrides: Record<string, unknown> = {}) {
   return {
@@ -60,7 +62,7 @@ describe('ProjectsController.list', () => {
     } as unknown as ProjectsService;
     const controller = new ProjectsController(projects);
 
-    const result = await controller.list();
+    const result = await controller.list(ADMIN);
 
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({
@@ -79,7 +81,7 @@ describe('ProjectsController.list', () => {
     } as unknown as ProjectsService;
     const controller = new ProjectsController(projects);
 
-    const rows = await controller.list();
+    const rows = await controller.list(ADMIN);
 
     expect(rows[0]?.latestSpecVersion).toBeNull();
     expect(rows[0]?.pendingGates).toBe(0);
@@ -111,9 +113,9 @@ describe('ProjectsController.detail', () => {
     } as unknown as ProjectsService;
     const controller = new ProjectsController(projects);
 
-    const detail = await controller.detail('proj-1');
+    const detail = await controller.detail('proj-1', ADMIN);
 
-    expect(projects.getFullStatus).toHaveBeenCalledWith('proj-1');
+    expect(projects.getFullStatus).toHaveBeenCalledWith('proj-1', ADMIN);
     expect(detail.sourceRef).toBe('/ruta/al/prototipo');
     expect(detail.specs[0]?.sensitivityFlags).toEqual(['rgpd']);
     expect(detail.specs[0]?.gates[1]).toMatchObject({
