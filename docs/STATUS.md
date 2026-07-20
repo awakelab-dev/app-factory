@@ -142,47 +142,70 @@ La tarea sugerida aquí en la sesión anterior ya corrió: caso `orientador-ia-v
 
 ### Mensaje inicial sugerido para la próxima tarea (copiar/pegar)
 
-`request_change` quedó **validado de punta a punta** (D-035, 2026-07-20). No hay
+`request_change` quedó **validado de punta a punta DOS veces** (D-035 change-2 +
+change-3 el 2026-07-20) y el 500 de `manager_acceptance` ya está corregido. No hay
 una tarea obligatoria pendiente; las opciones, a criterio de Leonardo:
 
 - **Backlog de mantenimiento** (cada ítem = un `request-change`, flujo ya probado
-  y pulido tras D-035): `gestor-proyectos` "Desempeño por persona" solo-admin
+  y pulido): `gestor-proyectos` "Desempeño por persona" solo-admin
   (proyecto `019f77a5-90e7-7619-a2ee-2d801c44219d`); `focus-flow`
   `hourlyDistribution` agrega por hora UTC → debería ser hora local de Madrid
   (proyecto `019f7a6a-27ae-72d2-a562-68ddf491d7e6`).
+- **Higiene rápida**: cerrar (o dejar anotado) el gate `manager_acceptance` de
+  `focus-flow` change-2 (v2, id `019f7e70-4de2-74ab-8aaa-cfe34944fabb`) que quedó
+  `pending` por el 500 de D-035 — ya con el fix desplegado, un `decide-gate`/UI lo
+  aprueba (o se deja como está: v3 lo superó).
+- **Robustez de fábrica (pequeña, recomendada)**: `ExceptionFilter` global en
+  `apps/factory` que traduzca `InvalidTransitionError` → HTTP 400 legible (habría
+  convertido el 500 críptico de hoy en un error claro al primer intento).
 - **Promociones a producción**: `gestor-proyectos` y `focus-flow`, ambos en
   `manager_acceptance` (mecánica en "Siguiente" punto 2).
 - **Fase 2** (docs/06), si Leonardo decide arrancarla.
 
 Sonnet basta para operar el flujo (ya no hay diseño de pipeline). Runbook
-operativo afinado en "Siguiente" punto 1 con los aprendizajes de D-035.
+operativo afinado en "Siguiente" punto 1.
 
 ```
 [factory] request_change: <observación> sobre <módulo>
 
-Antes de empezar: leer docs/STATUS.md ("Siguiente" + el bullet D-035 de "Hecho"
-tienen el runbook afinado y los tropiezos ya documentados), D-034/D-035,
+Antes de empezar: leer docs/STATUS.md ("Siguiente" + los bullets change-3 y D-035
+de "Hecho" tienen el runbook afinado y los tropiezos documentados), D-034/D-035,
 docs/04-integracion-cowork.md y docs/05.
 
-Ejercitar request_change de punta a punta con la observación "<...>" sobre
-<módulo> (proyecto <id>): request-change → mini-spec → gates en /factory →
-generate (PR incremental) → revisión docs/05 → decidir pr_review → integración
-humana (migración a mano si toca schema del módulo) → merge → migrar staging →
-validar → manager_acceptance.
+OJO — este flujo NO corre en el sandbox de Cowork (sin ruta al túnel/Lightsail/
+Agent SDK/gh, reconfirmado 2026-07-20): Claude GUÍA y hace la revisión docs/05 +
+la migración a mano en el repo; Leonardo EJECUTA los comandos (request-change,
+generate, decide-gate, migrate, merge) en su Mac y pega la salida.
 
-Recordatorios operativos (D-035, ya mordieron):
-- La migración a awkfactory_staging (BD FÁBRICA) se aplica por el túnel con
-  `node --env-file=.env node_modules/prisma/build/index.js migrate deploy`
-  (Prisma 7 no auto-carga .env → sin --env-file cae al fallback local).
-- migrate.sh / migrate-factory.sh (BD PLATAFORMA/fábrica) corren EN el Lightsail
-  por SSH, NO en el Mac, y SOLO tras CI de main verde; el deploy nunca migra.
+Ejercitar de punta a punta con la observación "<...>" sobre <módulo> (proyecto
+<id>): request-change → revisar mini-spec → gates en /factory (o `decide-gate`
+por id, más preciso) con notas vinculantes → generate (PR incremental) →
+revisión docs/05 del diff real (`gh pr diff <n>`) → aprobar pr_review → migración
+a mano si toca schema del módulo (integración humana) → merge → migrar staging →
+validar en vivo → aprobar manager_acceptance → commit [factory]/[docs].
+
+Recordatorios operativos (ya mordieron en D-035/change-3):
+- TÚNEL a awkfactory_staging: `ssh -L 15432:<endpoint-managed>:5432 AWK-Dev`
+  (déjalo abierto). Verificar con `lsof -nP -iTCP:15432 -sTCP:LISTEN`, NO con
+  `/dev/tcp` (zsh da falso negativo). Reabrir tras cualquier corte de internet.
+  Casi todo (request-change/status/decide-gate/generate) necesita el túnel; el
+  merge y `gh pr diff` no.
+- Migrar `awkplatform_staging` (BD PLATAFORMA): `~/migrate.sh staging latest` EN
+  el Lightsail por SSH (no en el Mac, no necesita túnel), SOLO tras CI de main
+  verde; el deploy nunca migra. La BD FÁBRICA (awkfactory_staging) se migra por
+  el túnel con `node --env-file=.env node_modules/prisma/build/index.js migrate deploy`.
 - El runner (PLATFORM_REPO_PATH) en main limpio + `pnpm install` tras pull con
-  lockfile cambiado + branch factory/<slug> stale borrada para recrearla.
+  lockfile cambiado + branch factory/<slug> stale borrada; tras el merge en
+  GitHub, `git pull --rebase` en el repo local antes del siguiente push.
 - Verificar que la PR se mergeó ANTES de buscar el cambio en staging.
-- Desviaciones del código generado: corregir la fábrica y regenerar, nunca
-  parchear a mano (D-031).
+- Columnas Prisma en la BD son camelCase entre comillas ("focusMinutes"); la
+  migración a mano debe calzar exacto con lo que Prisma generaría (sin drift).
+- Desviaciones del código generado o bugs de la fábrica: corregir la fábrica y
+  regenerar/recorrer, nunca parchear a mano (D-031). Un fix de fábrica en el
+  código local ya surte efecto por CLI aunque el /factory desplegado siga viejo.
 
-Al cerrar: actualizar docs/STATUS.md y commitear.
+Al cerrar: actualizar docs/STATUS.md y commitear ([factory] para código, [docs]
+para STATUS).
 ```
 
 ### Receta de verificación local con BD (ya completada — queda de referencia para levantar el entorno de nuevo)
