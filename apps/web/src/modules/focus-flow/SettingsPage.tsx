@@ -22,6 +22,12 @@ const STEPPERS: Array<{
   { key: 'roundsBeforeLongBreak', label: 'Ciclos hasta descanso largo', hint: 'Pomodoros por serie', min: 1, max: 12 }
 ];
 
+/** Rango del campo "Horas proyectadas por día" (change-3, spec-tecnica.md):
+ * 1h–24h, en minutos (mismo criterio de cota amplia que el resto de
+ * Configuración). */
+const PROJECTED_FOCUS_MINUTES_MIN = 60;
+const PROJECTED_FOCUS_MINUTES_MAX = 1440;
+
 /**
  * Configuración (spec-tecnica.md `SettingsPage`): duración de fases, ciclos,
  * autoarranque y notificaciones — persistidos y con efecto real (gate
@@ -57,7 +63,8 @@ export function SettingsPage() {
         roundsBeforeLongBreak: state.settings.roundsBeforeLongBreak,
         autoStartBreaks: state.settings.autoStartBreaks,
         autoStartFocus: state.settings.autoStartFocus,
-        notificationsEnabled: state.settings.notificationsEnabled
+        notificationsEnabled: state.settings.notificationsEnabled,
+        projectedFocusMinutesPerDay: state.settings.projectedFocusMinutesPerDay
       };
       const updated = await apiFetch('/api/focus-flow/settings', focusSettingsSchema, {
         method: 'PUT',
@@ -143,6 +150,23 @@ export function SettingsPage() {
               {saved && <span className="text-xs text-awk-cyan-300">Guardado.</span>}
             </div>
           </div>
+
+          <div className="rounded-2xl border border-awk-blue-800 bg-awk-navy-800 p-6 md:col-span-2">
+            <h2 className="text-sm font-medium text-awk-blue-100">Meta diaria</h2>
+            <p className="mb-2 text-xs text-awk-blue-400">
+              Cuántas horas esperas dedicar a trabajo enfocado por día — tu propia meta personal, para comparar
+              contra tus horas trabajadas en Desempeño.
+            </p>
+            <SettingRow label="Horas proyectadas por día" hint="En pasos de media hora">
+              <HourStepper
+                value={state.settings.projectedFocusMinutesPerDay}
+                min={PROJECTED_FOCUS_MINUTES_MIN}
+                max={PROJECTED_FOCUS_MINUTES_MAX}
+                onChange={(value) => updateLocal({ projectedFocusMinutesPerDay: value })}
+                testId="projectedFocusMinutesPerDay"
+              />
+            </SettingRow>
+          </div>
         </div>
       )}
     </div>
@@ -190,6 +214,61 @@ function Stepper({
       <button
         type="button"
         onClick={() => onChange(Math.min(max, value + 1))}
+        className="px-2 py-1 text-lg font-semibold text-awk-cyan-300"
+        data-testid={`${testId}-increment`}
+      >
+        +
+      </button>
+    </div>
+  );
+}
+
+/** `600` → "10 h", `450` → "7,5 h" (coma decimal, cambio-3 spec técnica). */
+function formatProjectedHours(minutes: number): string {
+  const hours = Math.round((minutes / 60) * 10) / 10;
+  const formatted = Number.isInteger(hours) ? String(hours) : hours.toFixed(1).replace('.', ',');
+  return `${formatted} h`;
+}
+
+/**
+ * Igual que `Stepper`, pero pensado en horas: el valor se guarda en minutos
+ * (`projectedFocusMinutesPerDay`) pero la persona piensa en horas, incluidas
+ * medias horas (spec-tecnica.md change-3, gate técnico: paso de 30 minutos,
+ * granularidad confirmada en el gate funcional). Reutiliza los mismos
+ * `data-testid` que `Stepper` (mismo criterio de testabilidad).
+ */
+function HourStepper({
+  value,
+  min,
+  max,
+  onChange,
+  testId
+}: {
+  value: number;
+  min: number;
+  max: number;
+  onChange: (value: number) => void;
+  testId: string;
+}) {
+  return (
+    <div className="flex items-center gap-1 rounded-lg border border-awk-blue-700 bg-awk-navy-900 px-1">
+      <button
+        type="button"
+        onClick={() => onChange(Math.max(min, value - 30))}
+        className="px-2 py-1 text-lg font-semibold text-awk-cyan-300"
+        data-testid={`${testId}-decrement`}
+      >
+        −
+      </button>
+      <span
+        className="w-14 text-center text-sm font-semibold tabular-nums text-white"
+        data-testid={`${testId}-value`}
+      >
+        {formatProjectedHours(value)}
+      </span>
+      <button
+        type="button"
+        onClick={() => onChange(Math.min(max, value + 30))}
         className="px-2 py-1 text-lg font-semibold text-awk-cyan-300"
         data-testid={`${testId}-increment`}
       >

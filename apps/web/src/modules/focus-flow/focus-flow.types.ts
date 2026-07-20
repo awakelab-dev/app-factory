@@ -21,6 +21,9 @@ export const focusSettingsSchema = z.object({
   autoStartBreaks: z.boolean(),
   autoStartFocus: z.boolean(),
   notificationsEnabled: z.boolean(),
+  /** Meta personal de horas de enfoque por día, en minutos (change-3).
+   * `600` = 10 h. Espejo de `apps/api/.../focus-flow.types.ts`. */
+  projectedFocusMinutesPerDay: z.number().int(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime()
 });
@@ -34,6 +37,7 @@ export interface UpdateFocusSettingsRequest {
   autoStartBreaks?: boolean;
   autoStartFocus?: boolean;
   notificationsEnabled?: boolean;
+  projectedFocusMinutesPerDay?: number;
 }
 
 export const focusTaskSchema = z.object({
@@ -111,7 +115,11 @@ export const focusPerformancePointSchema = z.object({
   label: z.string(),
   pomodorosCompleted: z.number().int(),
   tasksCompletionRatePct: z.number(),
-  effectiveFocusPct: z.number()
+  effectiveFocusPct: z.number(),
+  /** Minutos reales de enfoque completado en el bloque (change-3). */
+  workedMinutes: z.number(),
+  /** Meta personal × días del bloque (change-3). */
+  projectedMinutes: z.number()
 });
 export type FocusPerformancePoint = z.infer<typeof focusPerformancePointSchema>;
 

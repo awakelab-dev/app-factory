@@ -15,6 +15,7 @@ const settingsRow = {
   autoStartBreaks: true,
   autoStartFocus: false,
   notificationsEnabled: true,
+  projectedFocusMinutesPerDay: 600,
   createdAt: new Date('2026-07-01'),
   updatedAt: new Date('2026-07-01')
 };
@@ -34,11 +35,12 @@ describe('FocusSettingsService.getOrCreate', () => {
     expect(prisma.focusSettings.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { userId: 'u-1' },
-        create: expect.objectContaining({ userId: 'u-1', focusMinutes: 25 }),
+        create: expect.objectContaining({ userId: 'u-1', focusMinutes: 25, projectedFocusMinutesPerDay: 600 }),
         update: {}
       })
     );
     expect(dto.focusMinutes).toBe(25);
+    expect(dto.projectedFocusMinutesPerDay).toBe(600);
   });
 });
 
@@ -52,6 +54,19 @@ describe('FocusSettingsService.update', () => {
         where: { userId: 'u-1' },
         create: expect.objectContaining({ userId: 'u-1', focusMinutes: 30, autoStartFocus: true }),
         update: { focusMinutes: 30, autoStartFocus: true }
+      })
+    );
+  });
+
+  it('aplica el patch de projectedFocusMinutesPerDay (change-3, meta personal en minutos)', async () => {
+    const { service, prisma } = buildService();
+    await service.update(user, { projectedFocusMinutesPerDay: 450 });
+
+    expect(prisma.focusSettings.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId: 'u-1' },
+        create: expect.objectContaining({ userId: 'u-1', projectedFocusMinutesPerDay: 450 }),
+        update: { projectedFocusMinutesPerDay: 450 }
       })
     );
   });

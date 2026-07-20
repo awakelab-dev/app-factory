@@ -22,6 +22,7 @@ const settingsFixture: FocusSettings = {
   autoStartBreaks: true,
   autoStartFocus: false,
   notificationsEnabled: true,
+  projectedFocusMinutesPerDay: 600,
   createdAt: '2026-07-19T00:00:00.000Z',
   updatedAt: '2026-07-19T00:00:00.000Z'
 };
@@ -96,6 +97,33 @@ describe('SettingsPage', () => {
     await screen.findByTestId('shortBreakMinutes-value');
     for (let i = 0; i < 10; i++) fireEvent.click(screen.getByTestId('shortBreakMinutes-decrement'));
     expect(screen.getByTestId('shortBreakMinutes-value')).toHaveTextContent('1');
+  });
+
+  it('muestra la meta diaria por defecto en horas (10 h) y permite ajustarla de media hora en media hora', async () => {
+    mockApi();
+    render(
+      <AuthProvider>
+        <MemoryRouter initialEntries={['/focus-flow/settings']}>
+          <SettingsPage />
+        </MemoryRouter>
+      </AuthProvider>
+    );
+
+    expect(await screen.findByTestId('projectedFocusMinutesPerDay-value')).toHaveTextContent('10 h');
+
+    fireEvent.click(screen.getByTestId('projectedFocusMinutesPerDay-decrement'));
+    expect(screen.getByTestId('projectedFocusMinutesPerDay-value')).toHaveTextContent('9,5 h');
+
+    fireEvent.click(screen.getByTestId('save-settings-button'));
+    expect(await screen.findByText('Guardado.')).toBeInTheDocument();
+
+    const fetchMock = vi.mocked(fetch);
+    const putCall = fetchMock.mock.calls.find(
+      ([input, init]) => String(input).endsWith('/api/focus-flow/settings') && init?.method === 'PUT'
+    );
+    expect(JSON.parse(String(putCall?.[1]?.body))).toEqual(
+      expect.objectContaining({ projectedFocusMinutesPerDay: 570 })
+    );
   });
 
   it('el interruptor "Sonido al terminar" del prototipo no existe en el MVP', async () => {

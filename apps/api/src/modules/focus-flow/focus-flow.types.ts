@@ -29,6 +29,11 @@ export const focusSettingsSchema = z.object({
   autoStartBreaks: z.boolean(),
   autoStartFocus: z.boolean(),
   notificationsEnabled: z.boolean(),
+  /** Meta personal de horas de enfoque por día, en minutos (change-3).
+   * `600` = 10 h. Insumo de la comparación "proyectadas vs. trabajadas" de
+   * `FocusPerformancePoint` — dato estrictamente personal (gate funcional
+   * change-3: sin vista de equipo/admin). */
+  projectedFocusMinutesPerDay: z.number().int(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime()
 });
@@ -41,7 +46,9 @@ export const updateFocusSettingsRequestSchema = z.object({
   roundsBeforeLongBreak: z.number().int().min(1).max(12).optional(),
   autoStartBreaks: z.boolean().optional(),
   autoStartFocus: z.boolean().optional(),
-  notificationsEnabled: z.boolean().optional()
+  notificationsEnabled: z.boolean().optional(),
+  /** 1h–24h, en pasos de media hora (gate técnico change-3: `multipleOf(30)`). */
+  projectedFocusMinutesPerDay: z.number().int().min(60).max(1440).multipleOf(30).optional()
 });
 export type UpdateFocusSettingsRequest = z.infer<typeof updateFocusSettingsRequestSchema>;
 
@@ -149,7 +156,13 @@ export const focusPerformancePointSchema = z.object({
   label: z.string(),
   pomodorosCompleted: z.number().int(),
   tasksCompletionRatePct: z.number(),
-  effectiveFocusPct: z.number()
+  effectiveFocusPct: z.number(),
+  /** Minutos reales de enfoque completado (no saltado) en el bloque
+   * (change-3: comparación "proyectadas vs. trabajadas"). */
+  workedMinutes: z.number(),
+  /** `projectedFocusMinutesPerDay` de la configuración del usuario × días
+   * del bloque (1 en `week`, 7 en `month`, gate técnico change-3). */
+  projectedMinutes: z.number()
 });
 export type FocusPerformancePoint = z.infer<typeof focusPerformancePointSchema>;
 

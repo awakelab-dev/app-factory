@@ -68,7 +68,21 @@ export function PerformancePage() {
   );
 }
 
+/** `focusPerformancePointSchema.workedMinutes`/`projectedMinutes` viajan en
+ * minutos (mismo tipado en Int que el resto de duraciones del módulo,
+ * change-3) — la persona piensa en horas, así que se convierten solo para
+ * mostrarlas (el contrato no cambia). */
+function toHoursPoints(points: FocusPerformance['points']) {
+  return points.map((point) => ({
+    label: point.label,
+    workedHours: Math.round((point.workedMinutes / 60) * 10) / 10,
+    projectedHours: Math.round((point.projectedMinutes / 60) * 10) / 10
+  }));
+}
+
 function PerformanceBody({ performance }: { performance: FocusPerformance }) {
+  const hoursPoints = toHoursPoints(performance.points);
+
   return (
     <>
       <section className="grid gap-6 lg:grid-cols-2">
@@ -96,6 +110,22 @@ function PerformanceBody({ performance }: { performance: FocusPerformance }) {
           </ResponsiveContainer>
         </ChartCard>
       </section>
+
+      <ChartCard
+        title="Horas proyectadas vs. trabajadas"
+        hint="Tu meta diaria (Configuración) contra las horas de enfoque realmente completadas, por bloque"
+      >
+        <ResponsiveContainer width="100%" height={280}>
+          <BarChart data={hoursPoints} margin={{ left: 8, right: 8 }}>
+            <CartesianGrid stroke={CHART_GRID} vertical={false} />
+            <XAxis dataKey="label" stroke={CHART_AXIS} fontSize={11} />
+            <YAxis stroke={CHART_AXIS} fontSize={12} unit="h" />
+            <Tooltip contentStyle={CHART_TOOLTIP_STYLE} />
+            <Bar dataKey="projectedHours" name="Proyectadas" fill="#4E7EA5" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="workedHours" name="Trabajadas" fill="#19F7F1" radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </ChartCard>
 
       <ChartCard title="Tendencia de foco efectivo" hint="Completadas / (completadas + saltadas), por bloque">
         <ResponsiveContainer width="100%" height={260}>

@@ -12,7 +12,9 @@ const SETTINGS_DEFAULTS = {
   roundsBeforeLongBreak: 4,
   autoStartBreaks: true,
   autoStartFocus: false,
-  notificationsEnabled: true
+  notificationsEnabled: true,
+  // 600 min = 10 h (spec-tecnica.md change-3, valor por defecto pedido).
+  projectedFocusMinutesPerDay: 600
 };
 
 /**

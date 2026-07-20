@@ -443,6 +443,16 @@ model FocusSettings {
   autoStartBreaks       Boolean  @default(true)
   autoStartFocus        Boolean  @default(false)
   notificationsEnabled  Boolean  @default(true)
+  /// Meta personal de horas de enfoque por día, en minutos (mismo patrón de
+  /// tipado que `focusMinutes`/`shortBreakMinutes`/`longBreakMinutes` — Int,
+  /// no Float/Decimal). `600` = 10 h (default pedido). Columna aditiva sobre
+  /// una tabla ya existente y propia de este módulo (change-3, gate
+  /// técnico); migración a mano en la integración humana, esta generación no
+  /// migra. Insumo de la comparación "proyectadas vs. trabajadas" de
+  /// `FocusStatsService.performance` — dato estrictamente personal, mismo
+  /// aislamiento por `userId` que el resto de `focus.settings` (sin
+  /// excepción para `admin`, sin vista de equipo/manager).
+  projectedFocusMinutesPerDay Int @default(600)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 

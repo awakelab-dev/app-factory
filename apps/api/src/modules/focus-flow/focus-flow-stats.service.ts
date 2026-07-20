@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { AuthUser } from '@awk/auth';
 import { PrismaService } from '../../prisma/prisma.service';
 import { addDays, formatDateOnly, startOfDay } from './focus-flow-dates';
+import { FocusSettingsService } from './focus-flow-settings.service';
 import type { FocusDashboard, FocusPerformance, FocusPerformanceRange } from './focus-flow.types';
 
 /** Cuántos días hacia atrás se buscan para calcular la racha — no es un
@@ -22,7 +23,10 @@ const BUCKET_SIZE_DAYS: Record<FocusPerformanceRange, number> = { week: 1, month
  */
 @Injectable()
 export class FocusStatsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly settingsService: FocusSettingsService
+  ) {}
 
   async dashboard(user: AuthUser): Promise<FocusDashboard> {
     const today = startOfDay(new Date());
@@ -71,19 +75,24 @@ export class FocusStatsService {
     const lookbackDays = Math.max(rangeDays, STREAK_LOOKBACK_DAYS);
     const lookbackStart = addDays(today, -(lookbackDays - 1));
 
-    const [sessions, tasks] = await Promise.all([
+    const [sessions, tasks, settings] = await Promise.all([
       this.prisma.focusSession.findMany({
         where: { userId: user.id, phase: 'focus', completedAt: { gte: lookbackStart, lt: addDays(today, 1) } },
-        select: { completedAt: true, wasSkipped: true }
+        select: { completedAt: true, wasSkipped: true, durationSeconds: true }
       }),
       this.prisma.focusTask.findMany({
         where: { userId: user.id, taskDate: { gte: lookbackStart, lte: today } },
         select: { taskDate: true, done: true }
-      })
+      }),
+      // Meta personal (change-3, gate técnico: "performance() lee las
+      // settings del usuario (getOrCreate) para la meta") — mismo dato
+      // estrictamente personal que el resto de `focus.settings`, filtrado
+      // por `user.id`, sin excepción para `admin`.
+      this.settingsService.getOrCreate(user)
     ]);
 
     const streakDays = this.computeStreak(today, sessions);
-    const points = this.computePoints(today, rangeDays, bucketSizeDays, sessions, tasks);
+    const points = this.computePoints(today, rangeDays, bucketSizeDays, sessions, tasks, settings.projectedFocusMinutesPerDay);
 
     const totalPomodoros = points.reduce((acc, p) => acc + p.pomodorosCompleted, 0);
     const averagePomodorosPerDay = Math.round((totalPomodoros / rangeDays) * 10) / 10;
@@ -109,8 +118,9 @@ export class FocusStatsService {
     today: Date,
     rangeDays: number,
     bucketSizeDays: number,
-    sessions: Array<{ completedAt: Date; wasSkipped: boolean }>,
-    tasks: Array<{ taskDate: Date; done: boolean }>
+    sessions: Array<{ completedAt: Date; wasSkipped: boolean; durationSeconds: number }>,
+    tasks: Array<{ taskDate: Date; done: boolean }>,
+    projectedFocusMinutesPerDay: number
   ): FocusPerformance['points'] {
     const bucketCount = rangeDays / bucketSizeDays;
     const points: FocusPerformance['points'] = [];
@@ -123,11 +133,17 @@ export class FocusStatsService {
       const bucketSessions = sessions.filter((s) => inBucket(startOfDay(s.completedAt)));
       const bucketTasks = tasks.filter((t) => inBucket(startOfDay(t.taskDate)));
 
-      const completed = bucketSessions.filter((s) => !s.wasSkipped).length;
+      const completedSessions = bucketSessions.filter((s) => !s.wasSkipped);
+      const completed = completedSessions.length;
       const skipped = bucketSessions.length - completed;
       const effectiveFocusPct = completed + skipped === 0 ? 0 : (completed / (completed + skipped)) * 100;
       const tasksCompletionRatePct =
         bucketTasks.length === 0 ? 0 : (bucketTasks.filter((t) => t.done).length / bucketTasks.length) * 100;
+      // "Horas proyectadas vs. trabajadas" (change-3, gate técnico): mismo
+      // patrón de agregación en memoria que el resto de este método, sin
+      // queries nuevas — reusa las mismas `bucketSessions` ya filtradas.
+      const workedMinutes = completedSessions.reduce((acc, s) => acc + s.durationSeconds, 0) / 60;
+      const projectedMinutes = projectedFocusMinutesPerDay * bucketSizeDays;
 
       points.push({
         label:
@@ -136,7 +152,9 @@ export class FocusStatsService {
             : `${formatDateOnly(bucketStart)} → ${formatDateOnly(bucketEnd)}`,
         pomodorosCompleted: completed,
         tasksCompletionRatePct: Math.round(tasksCompletionRatePct * 10) / 10,
-        effectiveFocusPct: Math.round(effectiveFocusPct * 10) / 10
+        effectiveFocusPct: Math.round(effectiveFocusPct * 10) / 10,
+        workedMinutes: Math.round(workedMinutes * 10) / 10,
+        projectedMinutes
       });
     }
 
