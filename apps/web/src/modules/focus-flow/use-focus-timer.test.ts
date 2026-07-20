@@ -17,6 +17,7 @@ const baseSettings: FocusSettings = {
   autoStartBreaks: false,
   autoStartFocus: false,
   notificationsEnabled: true,
+  projectedFocusMinutesPerDay: 600,
   createdAt: '2026-07-19T00:00:00.000Z',
   updatedAt: '2026-07-19T00:00:00.000Z'
 };

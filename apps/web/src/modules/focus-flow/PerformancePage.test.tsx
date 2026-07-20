@@ -15,7 +15,16 @@ const userFixture: AuthUser = {
 
 const weekFixture: FocusPerformance = {
   range: 'week',
-  points: [{ label: '2026-07-19', pomodorosCompleted: 4, tasksCompletionRatePct: 50, effectiveFocusPct: 80 }],
+  points: [
+    {
+      label: '2026-07-19',
+      pomodorosCompleted: 4,
+      tasksCompletionRatePct: 50,
+      effectiveFocusPct: 80,
+      workedMinutes: 300,
+      projectedMinutes: 600
+    }
+  ],
   streakDays: 3,
   averagePomodorosPerDay: 4
 };
@@ -59,6 +68,19 @@ describe('PerformancePage', () => {
     );
 
     expect(await screen.findByTestId('stat-streak')).toHaveTextContent('3');
+  });
+
+  it('muestra la tarjeta de horas proyectadas vs. trabajadas (change-3)', async () => {
+    mockApi();
+    render(
+      <AuthProvider>
+        <MemoryRouter initialEntries={['/focus-flow/performance']}>
+          <PerformancePage />
+        </MemoryRouter>
+      </AuthProvider>
+    );
+
+    expect(await screen.findByText('Horas proyectadas vs. trabajadas')).toBeInTheDocument();
   });
 
   it('cambiar a "4 semanas" vuelve a pedir el rango month', async () => {

@@ -14,6 +14,7 @@ export interface SettingsRow {
   autoStartBreaks: boolean;
   autoStartFocus: boolean;
   notificationsEnabled: boolean;
+  projectedFocusMinutesPerDay: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -28,6 +29,7 @@ export function toSettingsDto(row: SettingsRow): FocusSettings {
     autoStartBreaks: row.autoStartBreaks,
     autoStartFocus: row.autoStartFocus,
     notificationsEnabled: row.notificationsEnabled,
+    projectedFocusMinutesPerDay: row.projectedFocusMinutesPerDay,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString()
   };
