@@ -44,13 +44,21 @@ export class ActorsService {
     }
     const token = `${PAT_PREFIX}${randomBytes(32).toString('hex')}`;
     const tokenHash = ActorsService.hashToken(token);
-    const [, actor] = await this.prisma.$transaction([
-      this.prisma.factoryActor.updateMany({
-        where: { email: input.email, revokedAt: null },
-        data: { revokedAt: new Date() }
-      }),
-      this.prisma.factoryActor.create({ data: { email: input.email, role: input.role, tokenHash } })
-    ]);
+    const [, actor] = await this.prisma.$transaction(
+      [
+        this.prisma.factoryActor.updateMany({
+          where: { email: input.email, revokedAt: null },
+          data: { revokedAt: new Date() }
+        }),
+        this.prisma.factoryActor.create({ data: { email: input.email, role: input.role, tokenHash } })
+      ],
+      // create-actor corre desde el CLI, típicamente contra la managed PG por
+      // túnel SSH (D-031): la PRIMERA conexión (conexión perezosa + TLS +
+      // túnel) tarda más que el maxWait por defecto de 2s y Prisma aborta con
+      // "Unable to start a transaction in the given time" (visto en el Mac de
+      // Leonardo, 2026-07-20). Márgenes holgados: no hay concurrencia aquí.
+      { maxWait: 15_000, timeout: 30_000 }
+    );
     return { id: actor.id, email: actor.email, role: actor.role as FactoryActorRole, token };
   }
 
