@@ -60,12 +60,13 @@ describe('GatesService.decide', () => {
     expect(projects.transition).toHaveBeenCalledWith('proj-1', 'staging');
   });
 
-  it('approved en el gate de manager_acceptance transiciona a "deployed"', async () => {
-    const { service, projects } = buildService({ gateType: 'manager_acceptance' });
+  it('approved en manager_acceptance transiciona a "manager_acceptance" desde staging (NO a "deployed": esa transición no existe desde staging — deployed es solo la promoción a producción vía advance)', async () => {
+    const { service, projects } = buildService({ gateType: 'manager_acceptance', projectStatus: 'staging' });
 
     await service.decide({ gateId: 'gate-1', decision: 'approved', reviewer: 'x@y.com' });
 
-    expect(projects.transition).toHaveBeenCalledWith('proj-1', 'deployed');
+    expect(projects.transition).toHaveBeenCalledWith('proj-1', 'manager_acceptance');
+    expect(projects.transition).not.toHaveBeenCalledWith('proj-1', 'deployed');
   });
 
   it('approved en pr_review abre el gate manager_acceptance sobre la misma spec (primera clase)', async () => {

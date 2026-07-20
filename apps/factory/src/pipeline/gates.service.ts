@@ -72,7 +72,15 @@ export class GatesService {
           : gate.gateType === 'pr_review'
             ? 'staging'
             : gate.gateType === 'manager_acceptance'
-              ? 'deployed'
+              ? // Aceptar al gerente deja el proyecto EN `manager_acceptance`
+                // (estado de reposo: aceptado en staging, esperando promoción a
+                // producción). `deployed` NO se alcanza aquí — llega solo con la
+                // promoción manual (`advance <id> deployed` desde
+                // manager_acceptance, ver STATUS "Siguiente"). Bug corregido
+                // 2026-07-20: fijaba `deployed`, pero desde `staging` esa
+                // transición no existe → InvalidTransitionError → HTTP 500 (era
+                // lo que dejaba el gate manager_acceptance sin poder aprobarse).
+                'manager_acceptance'
               : undefined;
 
     // La transición va ANTES de escribir el gate (mismo criterio que los
