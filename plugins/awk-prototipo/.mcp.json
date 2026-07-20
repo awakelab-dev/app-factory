@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "awkfactory": {
+      "type": "http",
+      "url": "https://apps.awakelab.world/factory-api/mcp",
+      "headers": {
+        "Authorization": "Bearer ${AWKFACTORY_TOKEN}"
+      }
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "Gestor de Becas",
+  "purpose": "Centraliza la gestión de solicitudes de beca de los alumnos de FP: recepción, evaluación por el comité y notificación del resultado. Reemplaza el Excel compartido que hoy usa administración y elimina el correo manual de resultados.",
+  "actors": [
+    { "role": "Administración", "description": "Recibe solicitudes, adjunta documentación y publica resultados." },
+    { "role": "Comité de becas", "description": "Evalúa cada solicitud y registra la decisión con su motivo." },
+    { "role": "Alumno", "description": "Presenta su solicitud y consulta el estado." }
+  ],
+  "entities": [
+    { "name": "Solicitud de beca", "description": "Datos académicos y económicos aportados por el alumno.", "sensitivity": "datos_personales" },
+    { "name": "Decisión del comité", "description": "Resolución, cuantía concedida y motivo.", "sensitivity": "confidencial" },
+    { "name": "Convocatoria", "description": "Plazos, requisitos y cuantías publicadas de cada convocatoria.", "sensitivity": "publico" }
+  ],
+  "relatedProcesses": [
+    "Excel de seguimiento de becas de administración",
+    "Correo manual de notificación de resultados",
+    "Proceso de matrícula (la beca condiciona el importe)"
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "name": "awk-prototipo",
+  "version": "0.1.0",
+  "description": "Prototipado Awakelab: guía para crear prototipos con la identidad AWK 2026 y enviarlos a la Fábrica (conector MCP awkfactory).",
+  "author": {
+    "name": "Awakelab"
+  },
+  "keywords": ["awakelab", "prototipo", "fabrica", "awkfactory"],
+  "license": "UNLICENSED"
+}

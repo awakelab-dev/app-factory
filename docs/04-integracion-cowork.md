@@ -4,6 +4,8 @@
 
 Tu preferencia (integración directa en vez de ZIP manual) es la correcta, y la forma concreta es un **plugin de Claude distribuido por el marketplace privado de la organización** que combina las dos piezas:
 
+> **Estado (2026-07-20, incremento B de D-036)**: plugin CONSTRUIDO en `plugins/awk-prototipo/` (skill + conector `.mcp.json` con `Bearer ${AWKFACTORY_TOKEN}`); el marketplace privado es este mismo repo (`.claude-plugin/marketplace.json`). Instalación, emisión de PATs y dónde vive el token en una sesión de Cowork: `docs/runbooks/plugin-awk-prototipo.md`.
+
 ### 1. Skill `awk-prototipo` — estandariza la entrada
 
 La mitad del éxito de la fábrica está en **normalizar el prototipo antes de que llegue al pipeline**. La skill guía a Claude cuando un gerente prototipa:
