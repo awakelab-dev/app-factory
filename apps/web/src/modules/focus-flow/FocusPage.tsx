@@ -9,15 +9,18 @@ import {
   focusSettingsSchema,
   focusTaskSchema,
   focusTasksResponseSchema,
+  focusTimerStateSchema,
   type CreateFocusSessionRequest,
   type CreateFocusTaskRequest,
   type FocusSessionPhase,
   type FocusSettings,
   type FocusTask,
+  type FocusTimerState,
+  type PutFocusTimerStateRequest,
   type UpdateFocusTaskRequest
 } from './focus-flow.types';
-import type { FocusSessionInput } from './use-focus-timer';
-import { useFocusTimer } from './use-focus-timer';
+import type { FocusSessionInput, FocusTimerInitialState, FocusTimerStateChange } from './use-focus-timer';
+import { nominalSeconds, useFocusTimer } from './use-focus-timer';
 
 const RING_RADIUS = 128;
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
@@ -46,7 +49,39 @@ function notifyBrowser(title: string, body: string): void {
 type LoadState =
   | { status: 'loading' }
   | { status: 'error'; detail: string }
-  | { status: 'ok'; settings: FocusSettings; tasks: FocusTask[] };
+  | { status: 'ok'; settings: FocusSettings; tasks: FocusTask[]; timerState: FocusTimerState | null };
+
+/**
+ * Reconstruye el estado inicial del hook a partir de `GET /timer-state`
+ * (change-2): `remainingSeconds = max(0, nominal(phase) - accumulated -
+ * (running ? now - phaseStartedAt : 0))`. `null` si el usuario nunca corrió
+ * un timer (comportamiento previo, arranca en foco/25:00).
+ *
+ * Fase "vencida" (navegador cerrado más tiempo del que quedaba a la fase —
+ * gate técnico change-2): el cálculo ya da `remainingSeconds` en 0; en ese
+ * caso se fuerza `running=false` y se espera a que la persona pulse
+ * "Iniciar" — NUNCA se autocompleta ni se descarta la fase en silencio.
+ */
+function computeInitialTimerState(
+  timerState: FocusTimerState | null,
+  settings: FocusSettings
+): FocusTimerInitialState | null {
+  if (!timerState) return null;
+
+  const total = nominalSeconds(timerState.phase, settings);
+  const runningElapsedSeconds =
+    timerState.running && timerState.phaseStartedAt
+      ? Math.floor((Date.now() - new Date(timerState.phaseStartedAt).getTime()) / 1000)
+      : 0;
+  const remainingSeconds = Math.max(0, total - timerState.accumulatedSeconds - runningElapsedSeconds);
+
+  return {
+    phase: timerState.phase,
+    round: timerState.round,
+    remainingSeconds,
+    running: remainingSeconds > 0 ? timerState.running : false
+  };
+}
 
 /**
  * Enfoque: temporizador Pomodoro + cola de hoy (spec-tecnica.md `FocusPage`).
@@ -60,9 +95,10 @@ export function FocusPage() {
   const load = useCallback(() => {
     Promise.all([
       apiFetch('/api/focus-flow/settings', focusSettingsSchema),
-      apiFetch('/api/focus-flow/tasks', focusTasksResponseSchema)
+      apiFetch('/api/focus-flow/tasks', focusTasksResponseSchema),
+      apiFetch('/api/focus-flow/timer-state', focusTimerStateSchema.nullable())
     ])
-      .then(([settings, tasks]) => setState({ status: 'ok', settings, tasks }))
+      .then(([settings, tasks, timerState]) => setState({ status: 'ok', settings, tasks, timerState }))
       .catch((err: unknown) =>
         setState({ status: 'error', detail: err instanceof Error ? err.message : String(err) })
       );
@@ -92,7 +128,10 @@ export function FocusPage() {
         <FocusBody
           settings={state.settings}
           tasks={state.tasks}
-          onTasksChanged={(tasks) => setState({ status: 'ok', settings: state.settings, tasks })}
+          timerState={state.timerState}
+          onTasksChanged={(tasks) =>
+            setState({ status: 'ok', settings: state.settings, tasks, timerState: state.timerState })
+          }
         />
       )}
     </div>
@@ -102,10 +141,12 @@ export function FocusPage() {
 function FocusBody({
   settings,
   tasks,
+  timerState,
   onTasksChanged
 }: {
   settings: FocusSettings;
   tasks: FocusTask[];
+  timerState: FocusTimerState | null;
   onTasksChanged: (tasks: FocusTask[]) => void;
 }) {
   const [toast, setToast] = useState<{ title: string; message: string } | null>(null);
@@ -163,7 +204,37 @@ function FocusBody({
     [reloadTasks, showToast]
   );
 
-  const timer = useFocusTimer({ settings, currentTaskId: currentTask?.id ?? null, onSessionComplete });
+  // Se computa una sola vez al montar (mismo motivo que `useFocusTimer`
+  // documenta para `settings`): hidrata el punto de partida del hook, no se
+  // vuelve a recalcular en renders posteriores.
+  const [initialTimerState] = useState(() => computeInitialTimerState(timerState, settings));
+
+  const onStateChange = useCallback((change: FocusTimerStateChange) => {
+    const body: PutFocusTimerStateRequest = {
+      phase: change.phase,
+      round: change.round,
+      taskId: change.taskId,
+      phaseStartedAt: change.phaseStartedAt,
+      accumulatedSeconds: change.accumulatedSeconds,
+      running: change.running
+    };
+
+    // Fire-and-forget, mismo manejo best-effort que `onSessionComplete`: si
+    // falla, el timer sigue funcionando en el cliente (el servidor solo
+    // reconstruye el punto de partida en el próximo GET).
+    void apiFetch('/api/focus-flow/timer-state', focusTimerStateSchema, {
+      method: 'PUT',
+      body: JSON.stringify(body)
+    }).catch(() => undefined);
+  }, []);
+
+  const timer = useFocusTimer({
+    settings,
+    currentTaskId: currentTask?.id ?? null,
+    onSessionComplete,
+    initialState: initialTimerState,
+    onStateChange
+  });
 
   async function onQuickAdd() {
     const title = quickAdd.trim();

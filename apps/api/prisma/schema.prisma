@@ -495,3 +495,28 @@ model FocusSession {
   @@map("sessions")
   @@schema("focus")
 }
+
+/// Estado de ejecución del ciclo activo del timer — fila única por usuario
+/// (mismo patrón lazy-upsert que `FocusSettings`), separada a propósito de
+/// `settings`: aquí vive el estado efímero que se sobrescribe en cada acción
+/// discreta del timer (play/pausa/cambio de modo/reset/fin de fase), nunca
+/// por tick — el cliente sigue siendo la autoridad del conteo, esta tabla
+/// solo guarda puntos de referencia para reconstruir `remainingSeconds` al
+/// recargar/reabrir (spec-tecnica.md `focus-flow` change-2). `taskId` es
+/// copia conceptual de `focus.tasks.id`, igual que `FocusSession.taskId`
+/// pero sin FK (se resuelve a nivel de aplicación, mismo motivo que
+/// `sourceProyectosTaskId`).
+model FocusTimerState {
+  id                 String            @id @default(uuid(7)) @db.Uuid
+  userId             String            @unique @db.Uuid
+  phase              FocusSessionPhase @default(focus)
+  round              Int               @default(1)
+  taskId             String?           @db.Uuid
+  phaseStartedAt     DateTime?
+  accumulatedSeconds Int               @default(0)
+  running            Boolean           @default(false)
+  updatedAt          DateTime          @updatedAt
+
+  @@map("timer_state")
+  @@schema("focus")
+}

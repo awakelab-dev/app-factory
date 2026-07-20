@@ -6,10 +6,12 @@ import { FocusSessionsService } from './focus-flow-sessions.service';
 import { FocusSettingsService } from './focus-flow-settings.service';
 import { FocusStatsService } from './focus-flow-stats.service';
 import { FocusTasksService } from './focus-flow-tasks.service';
+import { FocusTimerStateService } from './focus-flow-timer-state.service';
 import {
   createFocusSessionRequestSchema,
   createFocusTaskRequestSchema,
   focusPerformanceRangeSchema,
+  putFocusTimerStateRequestSchema,
   updateFocusSettingsRequestSchema,
   updateFocusTaskRequestSchema,
   type CreateFocusSessionRequest,
@@ -20,7 +22,9 @@ import {
   type FocusSession,
   type FocusSettings,
   type FocusTask,
+  type FocusTimerState,
   type ImportFocusTasksResponse,
+  type PutFocusTimerStateRequest,
   type UpdateFocusSettingsRequest,
   type UpdateFocusTaskRequest
 } from './focus-flow.types';
@@ -42,7 +46,8 @@ export class FocusFlowController {
     private readonly settingsService: FocusSettingsService,
     private readonly tasksService: FocusTasksService,
     private readonly sessionsService: FocusSessionsService,
-    private readonly statsService: FocusStatsService
+    private readonly statsService: FocusStatsService,
+    private readonly timerStateService: FocusTimerStateService
   ) {}
 
   @Get('settings')
@@ -109,5 +114,28 @@ export class FocusFlowController {
   performance(@CurrentUser() user: AuthUser, @Query('range') range?: string): Promise<FocusPerformance> {
     const parsed = focusPerformanceRangeSchema.safeParse(range);
     return this.statsService.performance(user, parsed.success ? parsed.data : DEFAULT_PERFORMANCE_RANGE);
+  }
+
+  /**
+   * Persistencia del ciclo activo del timer (change-2). `null` si el usuario
+   * nunca corrió un timer — el cliente arranca en cero (spec-tecnica.md,
+   * gate técnico).
+   */
+  @Get('timer-state')
+  getTimerState(@CurrentUser() user: AuthUser): Promise<FocusTimerState | null> {
+    return this.timerStateService.get(user);
+  }
+
+  /**
+   * El cliente llama esto en cada evento discreto del timer (play/pausa,
+   * cambio de modo, reset, fin de fase) — NUNCA por tick de 1s (gate
+   * técnico change-2: el servidor no es la autoridad del conteo).
+   */
+  @Put('timer-state')
+  updateTimerState(
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(putFocusTimerStateRequestSchema)) body: PutFocusTimerStateRequest
+  ): Promise<FocusTimerState> {
+    return this.timerStateService.upsert(user, body);
   }
 }

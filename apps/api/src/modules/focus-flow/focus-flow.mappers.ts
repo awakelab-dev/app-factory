@@ -1,4 +1,4 @@
-import type { FocusSession, FocusSessionPhase, FocusSettings, FocusTask } from './focus-flow.types';
+import type { FocusSession, FocusSessionPhase, FocusSettings, FocusTask, FocusTimerState } from './focus-flow.types';
 import { formatDateOnly } from './focus-flow-dates';
 
 // Formas mínimas de fila de Prisma que necesita cada mapper (evita acoplar
@@ -85,5 +85,30 @@ export function toSessionDto(row: SessionRow): FocusSession {
     durationSeconds: row.durationSeconds,
     wasSkipped: row.wasSkipped,
     createdAt: row.createdAt.toISOString()
+  };
+}
+
+/** Fila mínima de `focus.timer_state` (change-2). */
+export interface TimerStateRow {
+  id: string;
+  phase: FocusSessionPhase;
+  round: number;
+  taskId: string | null;
+  phaseStartedAt: Date | null;
+  accumulatedSeconds: number;
+  running: boolean;
+  updatedAt: Date;
+}
+
+export function toTimerStateDto(row: TimerStateRow): FocusTimerState {
+  return {
+    id: row.id,
+    phase: row.phase,
+    round: row.round,
+    taskId: row.taskId,
+    phaseStartedAt: row.phaseStartedAt ? row.phaseStartedAt.toISOString() : null,
+    accumulatedSeconds: row.accumulatedSeconds,
+    running: row.running,
+    updatedAt: row.updatedAt.toISOString()
   };
 }
