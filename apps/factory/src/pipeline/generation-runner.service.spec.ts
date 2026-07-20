@@ -94,7 +94,14 @@ describe('GenerationRunnerService.runGeneration', () => {
     const { service, prisma, projects } = buildService();
     const agentRunner = vi.fn().mockResolvedValue(successResult);
     const runGit = vi.fn().mockResolvedValue(okGit);
-    const runGh = vi.fn().mockResolvedValue({ stdout: 'https://github.com/awakelab-dev/app-factory/pull/42\n', stderr: '' });
+    const runGh = vi.fn().mockImplementation((args: string[]) =>
+      Promise.resolve({
+        stdout: args.includes('view')
+          ? '{"url":"https://github.com/awakelab-dev/app-factory/pull/42","state":"OPEN"}\n'
+          : 'https://github.com/awakelab-dev/app-factory/pull/42\n',
+        stderr: ''
+      })
+    );
 
     const run = await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh });
 
@@ -140,13 +147,16 @@ describe('GenerationRunnerService.runGeneration', () => {
     const runGit = vi.fn().mockResolvedValue(okGit);
     const runGh = vi.fn().mockImplementation((args: string[]) =>
       args.includes('view')
-        ? Promise.resolve({ stdout: 'https://github.com/awakelab-dev/app-factory/pull/7\n', stderr: '' })
+        ? Promise.resolve({
+            stdout: '{"url":"https://github.com/awakelab-dev/app-factory/pull/7","state":"OPEN"}\n',
+            stderr: ''
+          })
         : Promise.reject(new Error('a pull request for branch "factory/demo-modulo" already exists'))
     );
 
     await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh });
 
-    expect(runGh).toHaveBeenCalledWith(['pr', 'view', 'factory/demo-modulo', '--json', 'url', '-q', '.url'], '/repo');
+    expect(runGh).toHaveBeenCalledWith(['pr', 'view', 'factory/demo-modulo', '--json', 'url,state'], '/repo');
     expect(runGh).not.toHaveBeenCalledWith(expect.arrayContaining(['pr', 'create']), '/repo');
     expect(prisma.run.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -155,11 +165,41 @@ describe('GenerationRunnerService.runGeneration', () => {
     );
   });
 
+  it('NO reutiliza una PR MERGED/CLOSED: crea una nueva (regresión request_change sobre módulo ya mergeado, 2026-07-19)', async () => {
+    const { service, prisma } = buildService();
+    const agentRunner = vi.fn().mockResolvedValue(successResult);
+    const runGit = vi.fn().mockResolvedValue(okGit);
+    const runGh = vi.fn().mockImplementation((args: string[]) =>
+      args.includes('view')
+        ? Promise.resolve({
+            stdout: '{"url":"https://github.com/awakelab-dev/app-factory/pull/2","state":"MERGED"}\n',
+            stderr: ''
+          })
+        : Promise.resolve({ stdout: 'https://github.com/awakelab-dev/app-factory/pull/3\n', stderr: '' })
+    );
+
+    await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh });
+
+    expect(runGh).toHaveBeenCalledWith(expect.arrayContaining(['pr', 'create']), '/repo');
+    expect(prisma.run.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ prUrl: 'https://github.com/awakelab-dev/app-factory/pull/3' })
+      })
+    );
+  });
+
   it('abre el gate pr_review de primera clase cuando la generación deja una PR', async () => {
     const { service, gates } = buildService();
     const agentRunner = vi.fn().mockResolvedValue(successResult);
     const runGit = vi.fn().mockResolvedValue(okGit);
-    const runGh = vi.fn().mockResolvedValue({ stdout: 'https://github.com/awakelab-dev/app-factory/pull/9\n', stderr: '' });
+    const runGh = vi.fn().mockImplementation((args: string[]) =>
+      Promise.resolve({
+        stdout: args.includes('view')
+          ? '{"url":"https://github.com/awakelab-dev/app-factory/pull/9","state":"OPEN"}\n'
+          : 'https://github.com/awakelab-dev/app-factory/pull/9\n',
+        stderr: ''
+      })
+    );
 
     await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh });
 

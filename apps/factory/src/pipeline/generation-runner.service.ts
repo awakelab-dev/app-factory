@@ -305,12 +305,17 @@ export class GenerationRunnerService {
     }
   }
 
-  /** URL de la PR abierta para `branchName`, o null si no hay ninguna / `gh` sin red. */
+  /** URL de la PR ABIERTA para `branchName`, o null si no hay ninguna / `gh` sin red. */
   private async findExistingPrUrl(branchName: string, ghRunner: typeof runGh): Promise<string | null> {
     try {
-      const { stdout } = await ghRunner(['pr', 'view', branchName, '--json', 'url', '-q', '.url'], this.repoPath);
-      const url = stdout.trim();
-      return url || null;
+      const { stdout } = await ghRunner(['pr', 'view', branchName, '--json', 'url,state'], this.repoPath);
+      const pr = JSON.parse(stdout) as { url?: string; state?: string };
+      // Solo se reutiliza una PR ABIERTA. `gh pr view <rama>` devuelve también la
+      // última PR MERGED/CLOSED de esa rama: reutilizarla dejaría los commits de
+      // un request_change nuevo sin PR revisable (bug 2026-07-19 — la rama
+      // factory/<slug> de un módulo YA mergeado se reabre para el cambio, pero su
+      // PR de intake está MERGED). En ese caso devolvemos null → se crea una nueva.
+      return pr.state === 'OPEN' && pr.url ? pr.url : null;
     } catch {
       // `gh pr view` sale con error si no hay PR para la rama (o si no hay red).
       return null;
