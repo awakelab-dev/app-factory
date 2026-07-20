@@ -34,15 +34,14 @@ export async function apiFetch<T>(path: string, schema: ZodType<T>, init?: Reque
 
   const res = await fetch(path, { ...init, headers });
   if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status}`);
-  // Un endpoint puede responder 200 SIN body: un GET nullable que devuelve
-  // `null` hace que NestJS envíe una respuesta vacía (no el literal JSON
-  // `null`). El primer caso fue focus-flow `GET /timer-state` (usuario sin
-  // timer). `res.json()` sobre un body vacío lanza (en WebKit con el mensaje
-  // críptico "The string did not match the expected pattern"). Leemos texto y
-  // tratamos el vacío como `null`: un schema `.nullable()` lo acepta y uno no
-  // nullable da un ZodError claro en vez del error del navegador.
-  const text = await res.text();
-  return schema.parse(text.length > 0 ? JSON.parse(text) : null);
+  // Un GET nullable puede responder 200 SIN body: NestJS serializa un `null`
+  // devuelto como respuesta VACÍA (no como el literal JSON `null`). `res.json()`
+  // sobre un body vacío lanza (en WebKit con el mensaje críptico "The string did
+  // not match the expected pattern"); lo tratamos como `null`, que un schema
+  // `.nullable()` acepta y uno no-nullable convierte en un ZodError claro.
+  // Primer caso: focus-flow `GET /timer-state` (usuario sin timer).
+  const data = await res.json().catch(() => null);
+  return schema.parse(data);
 }
 
 /**
