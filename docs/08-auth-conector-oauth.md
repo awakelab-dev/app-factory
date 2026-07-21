@@ -75,11 +75,8 @@ Nota sobre el plugin: con OAuth, **el conector deja de vivir en el `.mcp.json` d
 
 ## 6. Plan del incremento (por fases)
 
-**Fase 0 — Spike de compatibilidad (gate; ~medio día, sin escribir el módulo definitivo)**
-- En Entra: crear la app reg de la API (Application ID URI + scope) y la app reg cliente para Claude con el **redirect URI de Anthropic** (obtenerlo de la pantalla de alta de custom connector / doc oficial).
-- En staging: exponer un `/.well-known/oauth-protected-resource` mínimo apuntando a Entra y validar un JWT de Entra en un endpoint de prueba.
-- Owner añade el custom connector en Organization settings → Connectors → Add → Custom → Web (URL de staging del MCP) + Client ID/Secret de Entra.
-- Un gerente pulsa Connect en Cowork y hace login con su cuenta Entra. **Éxito = el conector queda connected + 5 tools y una tool responde**. **Fallo/fricción = pasar a Opción B.**
+**Fase 0 — Spike de compatibilidad (gate; ~medio día). Runbook detallado: `docs/runbooks/spike-oauth-entra.md`.**
+Datos ya confirmados en la doc oficial de Anthropic (no hay que averiguarlos): redirect URI de las superficies hosted (incl. Cowork) = **`https://claude.ai/api/mcp/auth_callback`**; Entra **no soporta DCR/CIMD** → se **pre-registra Client ID/Secret**; y hay que registrar la **URL canónica del MCP como Application ID URI** en Entra (si no → `AADSTS9010010`). Resumen: una app registration en Entra (cliente+API), endpoint mínimo en staging (Protected Resource Metadata + 401 con `WWW-Authenticate` + validación del JWT de Entra), el Owner añade el custom connector, y un gerente pulsa Connect. **Éxito = connected + 5 tools + una tool responde → Opción A. Fallo/fricción → Opción B.**
 
 **Fase 1 — Resource server en `apps/factory` (Opción A)**
 - Endpoint PRM (`/factory-api/.well-known/oauth-protected-resource`) y 401 con `WWW-Authenticate`.
