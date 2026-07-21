@@ -144,54 +144,53 @@ La tarea sugerida aquí en la sesión anterior ya corrió: caso `orientador-ia-v
 
 ### Mensaje inicial sugerido para la próxima tarea (copiar/pegar)
 
-**Incremento B IMPLEMENTADO (2026-07-20)** — plugin `awk-prototipo` construido
-y verificado en sandbox (manifest de ejemplo VALIDA contra el schema real);
-queda su prueba real en el Mac. La deuda de robustez (ExceptionFilter + test
-de transición + gate v2 huérfano) sigue disponible como alternativa corta al
-final.
+**Incremento B CONSTRUIDO pero la prueba real de gerentes quedó BLOQUEADA por
+auth (D-039), y la auth ya fue EVALUADA A FONDO (D-040 + docs/08)**: la vía es
+OAuth con Entra ID; Enterprise-managed auth descartado. Lo siguiente es la
+**Fase 0 de docs/08 — el spike OAuth↔Entra en staging** (runbook listo en
+`docs/runbooks/spike-oauth-entra.md`), que decide entre Opción A (Entra como AS,
+factory solo resource server) y Opción B (factory como AS propio). El hand-off
+del conector al owner de la org queda DIFERIDO hasta que Fase 1 (OAuth) esté en
+producción.
+
+**Modelo recomendado: Opus** para el spike y la decisión A/B (tarea
+exploratoria y sensible a seguridad: OAuth, rarezas de Entra, validación de
+tokens — es decisión de arquitectura, no desarrollo sobre plantilla; criterio
+docs/07 / D-029). Para la **Fase 1** (implementar el resource server definitivo
+en el guard + mapeo a `factory_actors`, una vez confirmada la Opción A) basta
+**Sonnet**: es desarrollo estándar sobre el patrón multi-esquema ya existente.
 
 ```
-[factory] Fase 2 — prueba real del plugin awk-prototipo en Cowork (cierre de B)
+[factory] Fase 2 — Fase 0 de docs/08: spike OAuth con Entra ID para el conector Cowork
 
-Sesión guiada tipo D-016 (Claude guía, Leonardo ejecuta en el Mac). Antes de
-empezar: leer docs/STATUS.md ("Siguiente" punto 0) y
-docs/runbooks/plugin-awk-prototipo.md (pasos 2-4).
+Sesión guiada (Claude prepara el endpoint mínimo en staging + guía los clics de
+Entra; Leonardo ejecuta en Entra y en la consola de admin de Claude). Modelo:
+Opus (decisión de arquitectura + seguridad). Antes de empezar: leer
+docs/STATUS.md ("Siguiente" punto 0), docs/08-auth-conector-oauth.md y
+docs/runbooks/spike-oauth-entra.md (el runbook tiene el paso a paso completo).
 
-1. Token: poner el PAT de staging (ya emitido, en el gestor de Leonardo) en
-   ~/.claude/settings.json bloque "env" → AWKFACTORY_TOKEN. Verificar la
-   hipótesis clave: que la app de escritorio aplica ese env a la expansión
-   ${AWKFACTORY_TOKEN} del header del .mcp.json del plugin. Si no: fallback
-   launchctl setenv (documentado en el runbook) y anotar el resultado.
-2. Instalar el plugin desde copia local con la URL de staging
-   (https://staging.apps.awakelab.world/factory-api/mcp) — no commitear esa
-   copia. Verificar conector awkfactory: connected + authenticated + 5 tools.
-3. Prototipar algo pequeño con la skill de punta a punta (list_modules →
-   preguntas de negocio → HTML AWK-2026 → manifest → submit_prototype) y
-   verificar la submission `received` en /factory de staging y con
-   get_project_status.
-4. Cerrar: actualizar docs/STATUS.md y el runbook con lo aprendido (sobre todo
-   el punto 1); si hubo decisión estructural nueva, entrada en DECISIONES.
-   Después: incremento C (análisis server-side async).
+1. Entra: app registration (cliente+API) con redirect https://claude.ai/api/mcp/
+   auth_callback, Application ID URI = la URL canónica del MCP, un scope, y
+   client secret. Vigilar si Entra acepta el App ID URI CON path.
+2. Staging: exponer el endpoint mínimo en apps/factory — Protected Resource
+   Metadata (/.well-known/oauth-protected-resource), 401 con WWW-Authenticate, y
+   validación del JWT de Entra (rama temporal del guard, no definitiva).
+3. El Owner de la org añade el custom connector (Organization settings →
+   Connectors → Add → Custom → Web) con la URL + Client ID/Secret de Entra.
+4. Un gerente pulsa Connect y hace login con Entra. ÉXITO = connected + 5 tools
+   + una tool responde → confirmar Opción A. FALLO/fricción → Opción B.
+5. Cerrar: entrada en DECISIONES con el resultado (A vs B y por qué), actualizar
+   STATUS y docs/08. Si A: planificar Fase 1 (resource server definitivo +
+   mapeo a factory_actors, modelo Sonnet). Después: incrementos C y D.
 ```
 
 (Incrementos siguientes ya ordenados en D-036: C análisis server-side async,
-D dashboard v2. El mantenimiento vía `request_change` —backlog:
-`gestor-proyectos` "Desempeño por persona" solo-admin; `focus-flow`
-`hourlyDistribution` UTC→Madrid— y las promociones a producción quedan
-disponibles cuando se prioricen. Nota para B/C: el primer PAT real ya existe
-(emitido 2026-07-20 contra staging, en el gestor de Leonardo); producción
-necesitará su propio create-actor cuando el plugin apunte allí.)
-
-```
---- (Alternativa corta si se prefiere saldar deuda antes del incremento A) ---
-[factory] Robustez: ExceptionFilter global en apps/factory + test de transición
-Leer docs/STATUS.md ("Siguiente") y apps/factory/src/pipeline/{gates.service.ts,
-state-machine.ts}. Añadir un ExceptionFilter que mapee InvalidTransitionError a
-HTTP 400 con mensaje legible, y un test que verifique que el target de cada gate
-es una transición válida desde el estado real (no con transition mockeado). Todo
-verificable en el sandbox (copia fuera del mount si toca deps, D-023). Commit
-[factory]; actualizar STATUS.
-```
+D dashboard v2 — ambos DESPUÉS de resolver la auth del conector, que es lo único
+que abre el camino gerente→Fábrica sin CLI. El PAT-en-header se conserva para
+técnicos por Claude Code CLI. Backlog de mantenimiento vía `request_change`
+—`gestor-proyectos` "Desempeño por persona" solo-admin; `focus-flow`
+`hourlyDistribution` UTC→Madrid— y las promociones a producción, disponibles
+cuando se prioricen.)
 
 ### Receta de verificación local con BD (ya completada — queda de referencia para levantar el entorno de nuevo)
 
