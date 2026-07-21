@@ -28,7 +28,7 @@ Dos sistemas separados que conviene no mezclar:
 
 - **Core** (se construye una vez, a mano, con máxima calidad): autenticación SSO, RBAC (roles globales + permisos por módulo), gestión de usuarios, auditoría, notificaciones, componentes UI de marca.
 - **Módulos** (los genera la fábrica): aislados en su carpeta y su schema PG; solo acceden a `core` mediante servicios públicos del core y a otros módulos vía sus APIs — regla verificada por lint/CI.
-- **Identidad**: SSO único. Si el grupo usa Microsoft 365, integrar **Entra ID** (OIDC); si no, **Keycloak** self-hosted. Los roles de negocio viven en la plataforma, no en el IdP.
+- **Identidad**: login propio **usuario/contraseña** (+ A2F posteriormente) — la organización descartó integrar Entra ID para autenticación (D-041, 2026-07-21). Primera pieza real: el AS OAuth del conector Cowork en `apps/factory` (docs/08), reutilizable como semilla del login de plataforma. Un IdP externo (Entra/Keycloak) queda como reevaluación futura. Los roles de negocio viven en la plataforma, no en el mecanismo de auth.
 
 ## La Fábrica (control plane)
 

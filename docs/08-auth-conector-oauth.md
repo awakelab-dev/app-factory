@@ -1,107 +1,71 @@
-# 08 — Auth del conector Cowork: evaluación OAuth vs Enterprise-managed auth y plan
+# 08 — Auth del conector Cowork: OAuth con Authorization Server propio (usuario/contraseña)
 
-> Nota de diseño (decisión-soporte). Origen: D-039 — la prueba real del plugin `awk-prototipo` en Cowork destapó que la auth interina por PAT-en-header es incompatible con el conector de Cowork. Objetivo de este doc: elegir el mecanismo de auth del conector de **gerentes** y dejar el plan del incremento. Alcance fijado por Leonardo (2026-07-20): **solo desbloquear el conector**, reutilizando `factory_actors`, sin tocar el `dev-login` de la Plataforma todavía. IdP corporativo disponible: **Microsoft 365 / Entra ID**.
+> Nota de diseño (decisión-soporte). Origen: D-039 (la auth por PAT-en-header es incompatible con el conector de Cowork) → D-040 (evaluación OAuth, recomendaba Entra como AS con spike) → **D-041 (2026-07-21): la organización decide NO usar Entra ID para autenticación**. Vía vigente: **AS propio en `apps/factory` con login clásico usuario/contraseña** (A2F después). La versión anterior de este doc (evaluación Entra A vs B) queda superada; su runbook `docs/runbooks/spike-oauth-entra.md` está OBSOLETO.
 
-## 1. El problema, en una frase
+## 1. El problema y la restricción dura
 
-El conector de Cowork **conecta desde la nube de Anthropic, no desde el Mac** (doc oficial; confirmado en vivo en D-039). Por eso el `Authorization: Bearer ${AWKFACTORY_TOKEN}` del `.mcp.json`, expandido desde una variable local, no puede funcionar ahí: la nube no ve el entorno de la máquina. El modelo de auth de un conector remoto en Cowork es **OAuth** (flujo en el navegador; "Claude nunca ve la contraseña"), y en org Team/Enterprise el conector lo **habilita un Owner** a nivel organización. El PAT-en-header sigue siendo válido para técnicos vía Claude Code CLI (que sí conecta desde local).
+El conector de Cowork **conecta desde la nube de Anthropic, no desde el Mac** (D-039), y el alta de un custom connector en una org gestionada **exige OAuth** (Client ID/Secret + flujo en navegador). De ahí dos consecuencias que la decisión de la org NO cambia:
 
-## 2. Enterprise-managed auth: descartado (por ahora)
+1. **Usuario/contraseña no puede ir "en el conector"**: no existe ese campo. El usuario/contraseña vive en el **formulario de login de NUESTRO Authorization Server**, dentro del flujo OAuth que el conector dispara en el navegador ("Claude nunca ve la contraseña" — la ve nuestro AS).
+2. `apps/factory` debe cumplir el spec de autorización MCP igualmente (ver §2).
 
-`Enterprise-managed auth` ("autorizar el conector una vez para toda la org, el equipo hereda acceso en el primer login") **no nos sirve hoy**:
+Lo que SÍ cambia con D-041: **quién autentica**. Sin Entra, la única arquitectura posible es la que la versión anterior llamaba **Opción B, simplificada**: `apps/factory` como **Authorization Server + Resource Server**, sin federación a ningún IdP — autentica él mismo contra credenciales locales. La disyuntiva A/B (y su spike de compatibilidad con Entra) desaparece: ya no hay nada que decidir por spike; la prueba end-to-end con el conector pasa a ser **gate de validación de la implementación**, no de arquitectura.
 
-- **Presupone un IdP ya integrado** con Claude — soporta **Okta** al lanzamiento (más "coming soon"). Provisiona acceso "a través del identity provider de la organización". Es decir, asume resuelto justo lo que no tenemos integrado con Claude.
-- Está en **beta con lista de espera** (waitlist para clientes y para MCP providers).
-- El MCP tendría que implementar la extensión **Enterprise-Managed Authorization** del spec MCP.
-- La lista de conectores soportados hoy es cerrada (Asana, Atlassian, Canva, Figma, Granola, Linear, Supabase; Slack pronto).
+## 2. Lo que exige el spec MCP a `apps/factory` (sin cambios)
 
-Conclusión: reevaluar en el futuro (si Awakelab integra Entra con Claude vía EMA cuando Entra sea soportado), pero **no es el camino para desbloquear ahora**.
+Por el spec de autorización de MCP (OAuth 2.1):
 
-## 3. OAuth: lo que exige el spec MCP a `apps/factory`
+1. **Protected Resource Metadata (RFC 9728)**: `/.well-known/oauth-protected-resource` con `authorization_servers` (ahora: nuestro propio AS).
+2. **401 + `WWW-Authenticate`** apuntando a la URL del resource metadata cuando llega una request sin token válido.
+3. El AS publica **Authorization Server Metadata (RFC 8414)** / openid-configuration.
+4. **Authorization Code + PKCE (S256)**; cliente público → **refresh tokens rotativos**, access tokens de vida corta.
+5. **Resource Indicators (RFC 8707)**: Claude manda `resource=<URL canónica del MCP>`; el RS **valida la audiencia** del token. Prohibido token passthrough.
+6. **Sin DCR**: el alta del custom connector permite pre-registrar Client ID/Secret (Advanced settings) — y ahora los definimos **nosotros** en el AS.
+7. Todo por **HTTPS**; redirect URI con match exacto: `https://claude.ai/api/mcp/auth_callback` (superficies hosted, incl. Cowork — dato confirmado en doc oficial de Anthropic).
 
-Por el spec de autorización de MCP (basado en OAuth 2.1), con `apps/factory` como **resource server**:
+## 3. Arquitectura
 
-1. **Protected Resource Metadata (RFC 9728)**: exponer `/.well-known/oauth-protected-resource` con el campo `authorization_servers` (≥1 AS).
-2. **401 + `WWW-Authenticate`**: cuando llega una request sin token válido, responder 401 con la cabecera `WWW-Authenticate` apuntando a la URL del resource metadata. (Hoy el guard ya devuelve 401; falta la cabecera.)
-3. El **Authorization Server** (puede vivir en el mismo Nest o ser externo) debe publicar **Authorization Server Metadata (RFC 8414)** en `/.well-known/oauth-authorization-server`.
-4. Flujo **Authorization Code + PKCE** (OAuth 2.1). Cliente público → **refresh tokens rotativos**, access tokens de vida corta.
-5. **Resource Indicators (RFC 8707)**: el cliente (Claude) manda `resource=<URL canónica del MCP>`; el resource server **DEBE validar que el token fue emitido para él** (audiencia). Prohibido el token passthrough.
-6. **Dynamic Client Registration (RFC 7591)** es *SHOULD*, no *MUST*. Como el alta de custom connector en Claude permite **pre-registrar Client ID/Secret** (Advanced settings), **evitamos DCR**.
-7. Todo por **HTTPS**; redirect URIs con match exacto contra los pre-registrados.
+`apps/factory` = AS + RS, todo dentro del contenedor/prefijo existentes (cero infra nueva):
 
-Punto pivote: OAuth **autentica a una persona en el navegador**. Awakelab tiene esa identidad en **Entra ID**. Así que el AS de awkfactory debe, de un modo u otro, apoyarse en Entra para autenticar. De ahí las dos arquitecturas.
+- **AS con librería OIDC vetada, nunca a mano.** Candidata: `node-oidc-provider` (panva; OpenID-certified, el estándar de facto en Node). Verificar al implementar: Resource Indicators (RFC 8707), rotación de refresh tokens, PKCE obligatorio, y dónde publica su discovery. Si no encaja, evaluar alternativa antes de escribir una línea de flujo OAuth propio.
+- **Credenciales en `factory_actors` + `passwordHash`** (argon2id; migración aditiva). Decisión de Leonardo 2026-07-21: alcance mínimo fiel a este doc — no se toca `core.users` ni el `dev-login` de la Plataforma. El CLI gana `set-password` (y/o `create-actor --with-password`); el hash se guarda, la contraseña nunca. `factory_actors` sigue siendo **la fuente de autorización**: sin fila activa no hay login, y el rol/scope de negocio lo siguen decidiendo los servicios.
+- **Cliente `claude` pre-registrado** en el AS: Client ID/Secret que definimos nosotros (secret con hash en BD, se muestra una vez — mismo criterio que los PATs), redirect URI exacto `https://claude.ai/api/mcp/auth_callback`.
+- **Tokens propios**: access token JWT firmado por el AS (JWKS propio), `aud` = URL canónica del MCP (p. ej. `https://staging.apps.awakelab.world/factory-api/mcp`), vida corta; refresh rotativo (Claude gestiona el refresh; pide `offline_access` si el AS lo anuncia).
+- **Guard**: tercera rama en `FactoryAuthGuard` — valida el JWT del AS propio (firma, `iss`, `aud`, `exp`) y mapea `email` → fila activa de `factory_actors` → `request.actor {email, rol}`. **El PAT (técnicos por CLI) y el JWT de plataforma (admin por `/factory`) se mantienen intactos.** Auth multi-esquema.
+- **Persistencia del AS**: tablas `oauth_*` (códigos, sesiones/grants, refresh) en la BD de factory vía adapter Prisma. Migración aditiva.
+- **A2F (TOTP) después**, como fase propia sobre el login del AS — la decisión org lo contempla "posteriormente".
 
-## 4. Dos arquitecturas
+Ventajas ya argumentadas en la versión anterior para la Opción B y que siguen vigentes: hacia Claude el AS es **spec-limpio y predecible** (lo controlamos); control total de audiencia/vida/refresh; y es la **semilla del SSO de la Plataforma** (docs/03: la línea "Entra ID u Keycloak" queda sustituida por esta pieza mientras la org no adopte IdP). El costo también sigue vigente: **un AS que construir y operar** — asumido por D-041, ya no hay alternativa más corta.
 
-### Opción A — Entra como Authorization Server; `apps/factory` solo Resource Server
+## 4. Plan del incremento (por fases)
 
-`awkfactory` no emite tokens: su Protected Resource Metadata apunta `authorization_servers` a **Entra** (`https://login.microsoftonline.com/<tenant>/v2.0`). Claude hace el flujo OAuth **directamente contra Entra**; Entra emite el access token (JWT RS256) con audiencia = la API de awkfactory. `awkfactory` **solo valida** ese JWT (firma vía JWKS de Entra, `aud`, `tid`, expiración) y mapea el `email`/`oid` del token a una fila activa de `factory_actors` para el rol y el scope.
+**Fase 1 — AS + RS en `apps/factory`** (runbook: `docs/runbooks/oauth-conector-as-propio.md`)
+- Migración aditiva: `passwordHash` en `factory_actors` + tablas `oauth_*`; CLI `set-password`.
+- AS (librería) montado bajo `/factory-api/oauth/*` con formulario de login usuario/contraseña; cliente `claude` sembrado.
+- PRM + 401 `WWW-Authenticate` + tercera rama del guard.
+- Nginx: locations `/.well-known/*` en el host → contenedor factory (RFC 8414/9728 ponen el `.well-known` **en la raíz del host** cuando el issuer/resource llevan path — ver runbook; editar el `.conf` a mano, nunca scp).
+- Verificación: suite + smoke curl (PRM, ASM, 401 con header, token flow con un cliente de prueba).
+- **Modelo recomendado: Opus** — es superficie de seguridad (AS, hashing, tokens), no desarrollo sobre plantilla (criterio docs/07). La recomendación previa de Sonnet aplicaba a la Opción A (solo validar JWT ajeno), que ya no existe.
 
-- **Trabajo de código**: mínimo. Endpoint de PRM + una rama nueva en `FactoryAuthGuard` que valide JWT de Entra (hoy ya valida JWT de plataforma y PAT; sería la tercera rama, mismo patrón `→ request.actor {email, rol}`). Sin AS que construir ni operar.
-- **Trabajo de configuración (Owner/admin)**: en Entra, **dos app registrations** — una que **expone la API** (Application ID URI = audiencia, un scope p. ej. `mcp.access`) y otra (o la de "Claude") como **cliente** con el **redirect URI de Anthropic** pre-registrado; en Claude, el Owner añade el custom connector con la URL del MCP + el Client ID/Secret de Entra.
-- **Riesgo principal (a validar en un spike)**: compatibilidad fina Claude↔Entra — que Entra respete el `resource`/audiencia como el spec MCP espera (Entra tradicionalmente fija audiencia vía `scope=api://<app-id>/.default`, no vía `resource`), el registro exacto del redirect URI de Anthropic, y el manejo de metadata/consentimiento. Es el mismo tipo de fricción que ya nos mordió en D-039, ahora del lado Entra.
-- **Revocación / control**: Entra controla el ciclo de vida del token (expiración, revocación al desactivar la cuenta en Entra). La **autorización de negocio** (quién es gerente, sobre qué proyectos) la sigue mandando `factory_actors`: un usuario del tenant sin fila activa → denegado por el guard aunque Entra emita token.
+**Fase 2 — Alta y prueba end-to-end** (era "el spike"; ahora valida implementación, no arquitectura)
+- El Owner añade el custom connector (Organization settings → Connectors → Add → Custom → Web): URL del MCP + Client ID/Secret del AS. Reunión con el Owner: agendada (2026-07-22).
+- Un gerente pulsa Connect → login usuario/contraseña en nuestro AS → **ÉXITO = connected + 5 tools + una tool responde**.
+- Documentar en el runbook la vía OAuth para gerentes; el plugin queda **solo con la skill** (el conector deja de vivir en su `.mcp.json` — eso era el patrón PAT para CLI).
 
-### Opción B — `apps/factory` como Authorization Server + Resource Server, federando la autenticación a Entra
+**Fase 3 — A2F y endurecimiento**
+- TOTP sobre el login del AS; rate limiting/lockout del formulario; circuito operativo de reset de contraseña (hoy: `set-password` por CLI, manual).
+- Futuro: si la Plataforma retoma SSO, este AS es la base (o se reevalúa IdP externo — D-041 lo deja "por los momentos").
 
-`awkfactory` es su propio AS (con una librería OIDC vetada, no a mano): publica PRM+ASM, hace Authorization Code + PKCE con Claude, y **para autenticar a la persona federa a Entra por OIDC** (Entra como IdP "upstream"). Tras el login en Entra, mapea el email a `factory_actors`, y **emite su propio token** con audiencia = la URL del MCP, vida corta + refresh rotativo.
+## 5. Riesgos y validaciones
 
-- **Trabajo de código**: mayor — montar el AS (autorización, token, metadata, federación OIDC a Entra, almacenamiento de códigos/tokens/refresh). Usar librería (p. ej. un OpenID Provider de Node) para no hand-rollear la seguridad. Más superficie que mantener.
-- **Trabajo de configuración**: **una** app registration en Entra (awkfactory como cliente OIDC de Entra, redirect = el `/callback` de nuestro AS — bajo NUESTRO control, no el de Anthropic). En Claude, el Owner añade el custom connector con la URL + client id/secret que **nosotros** definimos.
-- **Ventaja**: hacia Claude el AS es **spec-limpio y predecible** (lo controlamos nosotros), aislando las rarezas de Entra; control total de audiencia/vida/refresh; `factory_actors` como fuente de autorización natural; y es la **semilla del SSO de la Plataforma** el día que se retome (aunque hoy no lo toquemos).
-- **Contra**: es, en esencia, empezar a construir el AS/IdP que docs/05 difería — más de lo que pide "solo desbloquear".
+- **Somos custodios de contraseñas**: argon2id, rate limiting y lockout en el login, y política de reset definida (aunque sea manual por CLI) son parte de la Fase 1/3, no opcionales. Es el precio de descartar el IdP.
+- **Discovery `.well-known` con path**: el matiz RFC 8414/9728 (path-inserted en la raíz del host) exige locations nuevas en Nginx; es el gotcha más probable de la prueba end-to-end.
+- **Redirect URI**: match exacto de `https://claude.ai/api/mcp/auth_callback` en el cliente registrado.
+- **Egress de Anthropic** (`160.79.104.0/21`): que ningún WAF lo bloquee; discovery/token < 10s.
+- **Compatibilidad Claude↔AS propio**: menor que con Entra (controlamos el AS), pero la prueba de Fase 2 es el gate igualmente.
 
-### Comparación
+## 6. Qué NO hace este incremento
 
-| Criterio | A — Entra como AS | B — factory como AS (federa a Entra) |
-|---|---|---|
-| Código nuevo en factory | Bajo (PRM + validar JWT) | Alto (AS con librería + federación) |
-| Config en Entra | 2 app regs (API + cliente Claude) | 1 app reg (factory cliente de Entra) |
-| Redirect URI a registrar | El de **Anthropic** (hay que averiguarlo) | El **nuestro** (bajo control) |
-| Predecibilidad hacia Claude | Depende de compat Entra↔MCP (riesgo) | Alta (AS propio spec-limpio) |
-| Control de token (aud/vida/refresh) | De Entra | Nuestro |
-| Operación/mantenimiento | Casi nulo | AS a mantener |
-| Encaja "solo desbloquear" | Sí | Es más de lo pedido |
-| Sirve de base al SSO de Plataforma | No directamente | Sí |
-| Autorización de negocio | `factory_actors` (igual en ambas) | `factory_actors` |
-
-## 5. Recomendación
-
-**Empezar por la Opción A (Entra como AS, factory como resource server), con un spike de compatibilidad como gate; dejar la Opción B como fallback documentado.**
-
-Razones, con el criterio del proyecto (mínimo, sensible a costo, un solo dev): A es el menor cambio de código, no añade un AS que operar, y aprovecha que Entra ya es el IdP real de Awakelab. El único gran riesgo (compat Claude↔Entra en `resource`/audiencia y redirect URI) es **barato de verificar** con un spike acotado **antes** de invertir en nada. Si el spike falla o resulta frágil, caemos a B, que es robusto hacia Claude a cambio de construir el AS — y ese trabajo no se pierde: es el arranque del SSO que la Plataforma necesitará igual. En ambos casos **la autorización de negocio no se mueve de `factory_actors`**: Entra autentica, la Fábrica decide quién es gerente y qué ve.
-
-Nota sobre el plugin: con OAuth, **el conector deja de vivir en el `.mcp.json` del plugin** (ese patrón de header estático es solo para el CLI). Para gerentes, el conector se añade como **custom connector a nivel org por el Owner** (solo URL; el resto se descubre por PRM/OAuth), y el **plugin queda aportando únicamente la skill** `awk-prototipo`. Hay que ajustar D-038 en esa dirección.
-
-## 6. Plan del incremento (por fases)
-
-**Fase 0 — Spike de compatibilidad (gate; ~medio día). Runbook detallado: `docs/runbooks/spike-oauth-entra.md`.**
-Datos ya confirmados en la doc oficial de Anthropic (no hay que averiguarlos): redirect URI de las superficies hosted (incl. Cowork) = **`https://claude.ai/api/mcp/auth_callback`**; Entra **no soporta DCR/CIMD** → se **pre-registra Client ID/Secret**; y hay que registrar la **URL canónica del MCP como Application ID URI** en Entra (si no → `AADSTS9010010`). Resumen: una app registration en Entra (cliente+API), endpoint mínimo en staging (Protected Resource Metadata + 401 con `WWW-Authenticate` + validación del JWT de Entra), el Owner añade el custom connector, y un gerente pulsa Connect. **Éxito = connected + 5 tools + una tool responde → Opción A. Fallo/fricción → Opción B.**
-
-**Fase 1 — Resource server en `apps/factory` (Opción A)**
-- Endpoint PRM (`/factory-api/.well-known/oauth-protected-resource`) y 401 con `WWW-Authenticate`.
-- Rama nueva en `FactoryAuthGuard`: validar JWT de Entra (JWKS cacheado, `aud` = nuestra API, `tid` = tenant, `exp`), extraer `email`, mapear a `factory_actors` (fila activa + rol) → `request.actor`. Un email del tenant sin fila activa: 403. Tests de la nueva rama (token válido/inválido/audiencia mala/email no autorizado).
-- El PAT-en-header y el JWT de plataforma **se mantienen** (técnicos por CLI, admin por /factory). Auth multi-esquema.
-
-**Fase 2 — Alta y prueba end-to-end**
-- Owner añade el connector de **producción** (create-actor sigue existiendo solo para PATs de CLI; los gerentes ya no necesitan PAT).
-- Prototipar algo pequeño de punta a punta desde Cowork con la skill → submission `received` en `/factory`.
-- Documentar en el runbook la vía OAuth para gerentes (reemplaza los pasos de token local, que quedan marcados como solo-CLI).
-
-**Fase 3 — Limpieza / decisión de futuro**
-- Decidir si `factory_actors` para gerentes se sigue rellenando a mano (create-actor sin token, solo email+rol para la allowlist) o si el rol se deriva de grupos de Entra (más adelante).
-- Anotar la ruta a Enterprise-managed auth / SSO de Plataforma como trabajo futuro (Opción B revivida o EMA cuando Entra sea soportado).
-
-## 7. Riesgos y validaciones
-
-- **Compat `resource`/audiencia en Entra** (Opción A): el mayor. Lo resuelve el spike de Fase 0. Si Entra no fija la audiencia como Claude espera, Opción B.
-- **Redirect URI de Anthropic**: hay que obtener el valor exacto para registrarlo en Entra (match exacto o el flujo falla).
-- **Alcance de red**: el MCP debe ser alcanzable desde las IPs de Anthropic (staging/prod ya son públicos por HTTPS; si algún día se cierra por firewall, allowlistear las IPs de Anthropic).
-- **Revocación**: en A, desactivar en Entra corta el acceso; además `factory_actors` permite denegar sin tocar Entra. Definir cuál es la palanca operativa.
-- **Vida del token**: access token corto + refresh rotativo (el cliente de Claude gestiona el refresh). Confirmar tiempos por defecto de Entra.
-
-## 8. Qué NO hace este incremento
-
-- **No toca el `dev-login` de la Plataforma** ni introduce SSO para apps/api/apps/web (alcance = solo el conector, decisión de Leonardo).
-- **No elimina el PAT**: sigue como auth de técnicos por Claude Code CLI (donde la expansión local sí funciona).
-- **No adopta Enterprise-managed auth** (descartado en §2; reevaluable a futuro).
+- **No toca el `dev-login`** ni introduce login usuario/contraseña en apps/api/apps/web (alcance = solo el conector; el AS podrá reutilizarse después).
+- **No elimina el PAT**: sigue como auth de técnicos por Claude Code CLI.
+- **No adopta Enterprise-managed auth** (descartado en D-040; con la salida de Entra, más lejos aún).

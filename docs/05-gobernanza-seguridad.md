@@ -31,5 +31,5 @@ Si nada aplica → auto-aprobación con muestreo aleatorio (p. ej. 1 de cada 5 s
 
 - El runner de generación trabaja en contenedor efímero, con token de solo-escritura sobre ramas `factory/*` (nunca `main`), y sin acceso a secretos de producción.
 - Merge a `main` solo vía PR con checks verdes; producción solo por promoción desde staging.
-- El conector MCP autentica a cada gerente (OAuth contra el SSO): `submit` y `approve` quedan firmados por persona.
+- El conector MCP autentica a cada gerente (OAuth contra el AS propio de la Fábrica, login usuario/contraseña — D-041; la formulación original "OAuth contra el SSO" quedó sin IdP al descartar la org Entra ID): `submit` y `approve` quedan firmados por persona.
 - Prompt injection: el HTML del prototipo es entrada no confiable; el runner lo trata como datos (nunca como instrucciones con autoridad) y las plantillas limitan lo que puede escribirse.

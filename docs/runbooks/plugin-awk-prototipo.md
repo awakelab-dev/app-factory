@@ -109,4 +109,4 @@ Además, en org Team/Enterprise el *Install* del conector lo habilita un **Owner
 
 ### 6.c Camino a seguir
 
-El conector de **gerentes** se replantea a **OAuth** (adelanta docs/05) y/o **Enterprise-managed auth**; el **PAT-en-header** se conserva solo para técnicos por **Claude Code CLI**. La prueba real de gerentes queda bloqueada hasta implementar la auth OAuth en el MCP de `apps/factory` y que un owner habilite el conector a nivel org.
+El conector de **gerentes** va por **OAuth con AS propio de la Fábrica** (usuario/contraseña; Entra descartado por la org y Enterprise-managed auth descartado en D-040 — decisión final D-041, plan en `docs/08-auth-conector-oauth.md` + `docs/runbooks/oauth-conector-as-propio.md`); el **PAT-en-header** se conserva solo para técnicos por **Claude Code CLI**. La prueba real de gerentes queda bloqueada hasta implementar la Fase 1 de docs/08 y que un owner habilite el conector a nivel org (reunión 2026-07-22). Con OAuth, el plugin queda aportando **solo la skill** — el conector sale del `.mcp.json`.

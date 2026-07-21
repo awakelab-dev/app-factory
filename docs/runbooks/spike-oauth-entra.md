@@ -1,4 +1,6 @@
-# Runbook — Spike OAuth con Entra ID para el conector Cowork (Fase 0 de docs/08)
+# [OBSOLETO 2026-07-21, D-041] Runbook — Spike OAuth con Entra ID para el conector Cowork
+
+> **OBSOLETO — NO EJECUTAR.** La organización decidió no usar Entra ID para autenticación (D-041) antes de que este spike llegara a correr. La vía vigente es el AS propio con usuario/contraseña: ver `docs/08-auth-conector-oauth.md` y `docs/runbooks/oauth-conector-as-propio.md`. Se conserva solo como registro de los datos verificados de la doc de Anthropic (redirect URI, egress, no-DCR), ya trasladados al runbook nuevo.
 
 > Objetivo: verificar en **staging** si Claude/Cowork conecta el MCP `awkfactory` por **OAuth con Entra ID como Authorization Server** (Opción A de `docs/08-auth-conector-oauth.md`). Es un **spike acotado y desechable** — endpoint mínimo + config de Entra + alta del conector + un gerente conecta. **No** es la implementación definitiva del guard.
 >
