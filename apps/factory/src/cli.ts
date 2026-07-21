@@ -1,6 +1,10 @@
 import 'reflect-metadata';
+import { randomBytes } from 'node:crypto';
+import * as readline from 'node:readline';
+import { Writable } from 'node:stream';
 import { NestFactory } from '@nestjs/core';
 import { CliModule } from './cli.module';
+import { importEsm } from './oauth/esm-loader';
 import { ActorsService } from './pipeline/actors.service';
 import { AnalysisRunnerService } from './pipeline/analysis-runner.service';
 import { ChangeRequestsService } from './pipeline/change-requests.service';
@@ -34,6 +38,12 @@ import type { FactoryActorRole, GateDecision, ProjectStatus } from './pipeline/t
  *   #   (imprime el token UNA vez; reemitir revoca los anteriores del mismo email)
  *   pnpm --filter=@awk/factory run cli -- revoke-actor --email gerente@awakelab.dev
  *
+ *   # Login OAuth del conector Cowork (docs/08, D-041):
+ *   pnpm --filter=@awk/factory run cli -- set-password --email gerente@awakelab.dev
+ *   #   (prompt oculto; guarda solo el hash argon2id. El actor debe existir)
+ *   pnpm --filter=@awk/factory run cli -- oauth-genkeys
+ *   #   (genera JWKS ES256 + cookie keys + client secret para el .env de factory)
+ *
  * Requiere FACTORY_DATABASE_URL, ANTHROPIC_API_KEY y PLATFORM_REPO_PATH
  * (analyze/generate) — ver .env.example.
  */
@@ -65,6 +75,26 @@ function requiredArg(value: string | undefined, name: string): string {
     throw new Error(`Falta el argumento posicional <${name}>`);
   }
   return value;
+}
+
+/** Lee una contraseña por stdin sin mostrarla (eco silenciado). */
+function promptHidden(query: string): Promise<string> {
+  return new Promise((resolve) => {
+    let muted = false;
+    const mutedOut = new Writable({
+      write(chunk, encoding, callback) {
+        if (!muted) process.stdout.write(chunk, encoding as BufferEncoding);
+        callback();
+      }
+    });
+    const rl = readline.createInterface({ input: process.stdin, output: mutedOut, terminal: true });
+    rl.question(query, (answer) => {
+      rl.close();
+      process.stdout.write('\n');
+      resolve(answer);
+    });
+    muted = true;
+  });
 }
 
 function parseGateDecision(value: string | undefined): GateDecision {
@@ -166,6 +196,39 @@ async function main(): Promise<void> {
         break;
       }
 
+      case 'set-password': {
+        const flags = parseFlags(rest);
+        const email = requiredFlag(flags, 'email');
+        const password = flags.password ?? (await promptHidden('Contraseña (mín. 12 caracteres): '));
+        const confirm = flags.password ?? (await promptHidden('Repite la contraseña: '));
+        if (password !== confirm) {
+          throw new Error('Las contraseñas no coinciden.');
+        }
+        await app.get(ActorsService).setPassword(email, password);
+        console.log(`Contraseña de login del AS seteada para ${email} (solo se guardó el hash argon2id).`);
+        break;
+      }
+
+      case 'oauth-genkeys': {
+        const { generateKeyPair, exportJWK, calculateJwkThumbprint } = await importEsm<{
+          generateKeyPair: (alg: string, opts?: { extractable?: boolean }) => Promise<{ privateKey: unknown }>;
+          exportJWK: (key: unknown) => Promise<Record<string, unknown>>;
+          calculateJwkThumbprint: (jwk: Record<string, unknown>) => Promise<string>;
+        }>('jose');
+        const { privateKey } = await generateKeyPair('ES256', { extractable: true });
+        const jwk = await exportJWK(privateKey);
+        jwk.alg = 'ES256';
+        jwk.use = 'sig';
+        jwk.kid = await calculateJwkThumbprint(jwk);
+        console.log('# Secretos del Authorization Server — pégalos en /opt/awkfactory/<entorno>/.env');
+        console.log('# (una vez; NO los commitees; SIN COMILLAS — misma regla que el resto del .env).');
+        console.log('# Ver docs/runbooks/oauth-conector-as-propio.md.\n');
+        console.log(`FACTORY_OAUTH_JWKS=${JSON.stringify({ keys: [jwk] })}`);
+        console.log(`FACTORY_OAUTH_COOKIE_KEYS=${randomBytes(32).toString('hex')},${randomBytes(32).toString('hex')}`);
+        console.log(`FACTORY_OAUTH_CLIENT_SECRET=${randomBytes(32).toString('hex')}`);
+        break;
+      }
+
       case 'amend-gate': {
         const gateId = requiredArg(rest[0], 'gateId');
         const flags = parseFlags(rest.slice(1));
@@ -195,7 +258,7 @@ async function main(): Promise<void> {
 
       default:
         console.error(
-          `Comando desconocido: "${command ?? ''}". Comandos: create-project, analyze, decide-gate, generate, request-change, amend-gate, create-actor, revoke-actor, advance, status (ver el comentario al inicio de src/cli.ts).`
+          `Comando desconocido: "${command ?? ''}". Comandos: create-project, analyze, decide-gate, generate, request-change, amend-gate, create-actor, revoke-actor, set-password, oauth-genkeys, advance, status (ver el comentario al inicio de src/cli.ts).`
         );
         process.exitCode = 1;
     }

@@ -99,9 +99,39 @@ model FactoryActor {
   role      FactoryActorRole
   tokenHash String           @unique
   revokedAt DateTime?
+  /// Hash argon2id de la contraseña de login del Authorization Server propio
+  /// (docs/08, D-041). NULL = actor solo-PAT (técnico por CLI) que no hace
+  /// login OAuth. Se setea por CLI (`set-password`); el hash, nunca la clave.
+  passwordHash String?
 
   @@index([email])
   @@map("factory_actors")
+}
+
+/// Almacén único del adapter de node-oidc-provider (docs/08, D-041). Persiste
+/// TODOS los tipos de modelo de la librería (Session, Grant, AccessToken,
+/// RefreshToken, AuthorizationCode, Interaction, ReplayDetection, ...) en una
+/// tabla, discriminados por `model`. El `payload` es un JSONB opaco cuya forma
+/// la define la librería — por eso no se modela campo a campo. Las columnas
+/// auxiliares soportan los find-by del contrato del adapter (grantId, userCode,
+/// uid) y el single-use (`consumedAt`) sin parsear el payload.
+model OauthModel {
+  model     String
+  id        String
+  payload   Json
+  grantId   String?
+  userCode  String?
+  uid       String?
+  expiresAt DateTime?
+  consumedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@id([model, id])
+  @@index([grantId])
+  @@index([userCode])
+  @@index([uid])
+  @@index([expiresAt])
+  @@map("oauth_models")
 }
 
 /// Un prototipo enviado desde Cowork vía `submit_prototype` (D-036): la

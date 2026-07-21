@@ -59,7 +59,7 @@ Hoy la raíz del host la sirve el contenedor web → añadir al `.conf` de stagi
 ### 2.e Verificación (antes de tocar al Owner)
 
 - Suite verde (patrón D-023 si el mount no coopera) + lint/typecheck/build.
-- Smoke por HTTPS: PRM (ambas formas), ASM/openid-configuration del AS, 401 con header en `/mcp`, y un Authorization Code + PKCE completo con un cliente de prueba (p. ej. script con `openid-client`) → token → `tools/list` del MCP con ese token = 5 tools.
+- Smoke por HTTPS: PRM (ambas formas), ASM/openid-configuration del AS, 401 con header en `/mcp`, y un Authorization Code + PKCE completo con un cliente de prueba → token → `tools/list` del MCP con ese token = 5 tools. **Script listo (D-042): `node apps/factory/scripts/oauth-smoke.mjs --base https://staging.apps.awakelab.world --client-id claude --client-secret <secret> --email <gerente> --password '<pwd>'`** (Node 22+, sin deps; hace login por POST y para en el primer fallo indicando el punto exacto). Sin `--email/--password` corre solo los checks de metadata/401.
 - Deploy: merge a main con CI verde → deploy automático de staging → `~/migrate-factory.sh staging latest` (EN el Lightsail; SOLO tras CI de main verde).
 
 ## 3. Fase 2 — Alta del conector y prueba (necesita al Owner)

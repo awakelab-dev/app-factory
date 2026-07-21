@@ -1,5 +1,6 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash, randomBytes } from 'node:crypto';
+import { hash as argon2Hash, verify as argon2Verify } from '@node-rs/argon2';
 import { PrismaService } from '../prisma/prisma.service';
 import type { FactoryActorContext, FactoryActorRole } from './types';
 
@@ -77,6 +78,71 @@ export class ActorsService {
       where: { tokenHash: ActorsService.hashToken(token) }
     });
     if (!actor || actor.revokedAt) return null;
+    return { email: actor.email, role: actor.role as FactoryActorRole };
+  }
+
+  /**
+   * Resuelve un email (del `sub` de un token del AS) a su actor ACTIVO. null si
+   * no hay fila activa (el guard responde 403 en ese caso — token bien firmado
+   * pero email no autorizado, runbook §2.c paso 9).
+   */
+  async findActiveByEmail(email: string): Promise<FactoryActorContext | null> {
+    const actor = await this.prisma.factoryActor.findFirst({
+      where: { email, revokedAt: null },
+      orderBy: { createdAt: 'desc' }
+    });
+    if (!actor) return null;
+    return { email: actor.email, role: actor.role as FactoryActorRole };
+  }
+
+  // ── Login del Authorization Server propio (docs/08, D-041) ──────────────
+  // El PAT (arriba) es para técnicos por Claude Code CLI; esto es para el
+  // conector de Cowork, que dispara un flujo OAuth y el gerente se autentica
+  // con usuario/contraseña en NUESTRO formulario de login. argon2id (no
+  // SHA-256): aquí SÍ hay una contraseña de baja entropía que fortalecer.
+
+  /**
+   * Setea/actualiza la contraseña del actor ACTIVO más reciente de un email.
+   * Guarda solo el hash argon2id; la contraseña en claro nunca toca la BD.
+   * Un actor sin fila activa no puede tener contraseña (crear PAT primero con
+   * `create-actor` — el email es la identidad, el PAT y la contraseña son dos
+   * credenciales del mismo actor).
+   */
+  async setPassword(email: string, password: string): Promise<void> {
+    if (password.length < 12) {
+      throw new BadRequestException('La contraseña debe tener al menos 12 caracteres.');
+    }
+    const actor = await this.prisma.factoryActor.findFirst({
+      where: { email, revokedAt: null },
+      orderBy: { createdAt: 'desc' }
+    });
+    if (!actor) {
+      throw new NotFoundException(`No hay un actor activo para "${email}" — créalo antes con create-actor.`);
+    }
+    const passwordHash = await argon2Hash(password);
+    await this.prisma.factoryActor.update({ where: { id: actor.id }, data: { passwordHash } });
+  }
+
+  /**
+   * Valida email+contraseña contra el actor ACTIVO con `passwordHash`. Devuelve
+   * el actor o null (login denegado). Mensaje genérico aguas arriba: no filtrar
+   * si el email no existe, está revocado o la contraseña es incorrecta.
+   * El hash argon2id se computa siempre que haya candidato para no exponer por
+   * tiempo si el email existe.
+   */
+  async verifyCredentials(email: string, password: string): Promise<FactoryActorContext | null> {
+    const actor = await this.prisma.factoryActor.findFirst({
+      where: { email, revokedAt: null, passwordHash: { not: null } },
+      orderBy: { createdAt: 'desc' }
+    });
+    if (!actor?.passwordHash) return null;
+    let ok = false;
+    try {
+      ok = await argon2Verify(actor.passwordHash, password);
+    } catch {
+      ok = false;
+    }
+    if (!ok) return null;
     return { email: actor.email, role: actor.role as FactoryActorRole };
   }
 }

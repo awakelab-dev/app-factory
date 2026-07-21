@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ControlPlaneModule } from './control-plane/control-plane.module';
+import { OauthModule } from './oauth/oauth.module';
 import { PipelineModule } from './pipeline/pipeline.module';
 import { PrismaModule } from './prisma/prisma.module';
 
@@ -11,6 +12,6 @@ import { PrismaModule } from './prisma/prisma.module';
  * JWT — los runners de análisis/generación se siguen operando solo por CLI.
  */
 @Module({
-  imports: [PrismaModule, PipelineModule, ControlPlaneModule]
+  imports: [PrismaModule, PipelineModule, OauthModule, ControlPlaneModule]
 })
 export class AppModule {}

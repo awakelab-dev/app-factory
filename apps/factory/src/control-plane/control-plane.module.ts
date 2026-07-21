@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
+import { OauthModule } from '../oauth/oauth.module';
 import { PipelineModule } from '../pipeline/pipeline.module';
 import { getJwtSecret } from './auth.constants';
 import { ChangeRequestsController } from './change-requests.controller';
@@ -27,7 +28,7 @@ import { SubmissionsController } from './submissions.controller';
  * no se carga: los guards/controllers no existen ahí.
  */
 @Module({
-  imports: [PipelineModule, JwtModule.register({ secret: getJwtSecret() })],
+  imports: [PipelineModule, OauthModule, JwtModule.register({ secret: getJwtSecret() })],
   controllers: [
     HealthController,
     ProjectsController,

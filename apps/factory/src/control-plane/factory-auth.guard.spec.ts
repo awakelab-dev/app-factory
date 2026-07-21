@@ -4,21 +4,31 @@ import type { Reflector } from '@nestjs/core';
 import type { JwtService } from '@nestjs/jwt';
 import { describe, expect, it, vi } from 'vitest';
 import type { ActorsService } from '../pipeline/actors.service';
+import type { OauthVerifierService } from '../oauth/oauth-verifier.service';
 import type { FactoryActorContext } from '../pipeline/types';
 import { FactoryAuthGuard } from './factory-auth.guard';
 
-function buildContext(headers: Record<string, string | undefined> = {}) {
+/** Token JWT falso cuyo header declara ES256 (para enrutar a la rama del AS propio). */
+function esToken(): string {
+  const header = Buffer.from(JSON.stringify({ alg: 'ES256', typ: 'JWT' })).toString('base64url');
+  return `${header}.cGF5bG9hZA.c2ln`;
+}
+
+function buildContext(headers: Record<string, string | undefined> = {}, url = '/factory-api/projects') {
   const request: {
     headers: Record<string, string | undefined>;
+    url: string;
+    originalUrl: string;
     user?: unknown;
     actor?: FactoryActorContext;
-  } = { headers };
+  } = { headers, url, originalUrl: url };
+  const response = { setHeader: vi.fn() };
   const context = {
     getHandler: () => ({}),
     getClass: () => ({}),
-    switchToHttp: () => ({ getRequest: () => request })
+    switchToHttp: () => ({ getRequest: () => request, getResponse: () => response })
   } as unknown as ExecutionContext;
-  return { context, request };
+  return { context, request, response };
 }
 
 function buildGuard(
@@ -27,6 +37,8 @@ function buildGuard(
     payload?: unknown;
     verifyFails?: boolean;
     patActor?: FactoryActorContext | null;
+    asEmail?: { email: string } | null;
+    emailActor?: FactoryActorContext | null;
   } = {}
 ) {
   const reflector = {
@@ -45,9 +57,13 @@ function buildGuard(
         )
   } as unknown as JwtService;
   const actors = {
-    findActiveByToken: vi.fn().mockResolvedValue(options.patActor ?? null)
+    findActiveByToken: vi.fn().mockResolvedValue(options.patActor ?? null),
+    findActiveByEmail: vi.fn().mockResolvedValue(options.emailActor ?? null)
   } as unknown as ActorsService;
-  return new FactoryAuthGuard(reflector, jwtService, actors);
+  const oauthVerifier = {
+    verify: vi.fn().mockResolvedValue(options.asEmail ?? null)
+  } as unknown as OauthVerifierService;
+  return new FactoryAuthGuard(reflector, jwtService, actors, oauthVerifier);
 }
 
 describe('FactoryAuthGuard', () => {
@@ -113,11 +129,56 @@ describe('FactoryAuthGuard', () => {
     await expect(guard.canActivate(context)).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
-  it('un token sin prefijo awkf_ va por la rama JWT, no por la de PATs', async () => {
+  it('un token sin prefijo awkf_ ni header ES va por la rama JWT de plataforma', async () => {
     const guard = buildGuard({ verifyFails: true, patActor: { email: 'x@y.dev', role: 'gerente' } });
     const { context } = buildContext({ authorization: 'Bearer jwt-cualquiera' });
 
     // verifyFails: si tocara la rama PAT pasaría; debe fallar como JWT inválido.
     await expect(guard.canActivate(context)).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  // ── Rama del Authorization Server propio (docs/08, D-041) ────────────────
+  it('deja pasar un JWT ES256 del AS con email de un actor activo (conector Cowork)', async () => {
+    const gerente: FactoryActorContext = { email: 'gerente@awakelab.dev', role: 'gerente' };
+    const guard = buildGuard({ asEmail: { email: 'gerente@awakelab.dev' }, emailActor: gerente });
+    const { context, request } = buildContext({ authorization: `Bearer ${esToken()}` });
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(request.actor).toEqual(gerente);
+    expect(request.user).toBeUndefined();
+  });
+
+  it('401 con JWT ES256 que no verifica (firma/aud/iss/exp mal)', async () => {
+    const guard = buildGuard({ asEmail: null });
+    const { context } = buildContext({ authorization: `Bearer ${esToken()}` });
+
+    await expect(guard.canActivate(context)).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('403 con JWT ES256 válido pero email sin fila activa en factory_actors (runbook §2.c)', async () => {
+    const guard = buildGuard({ asEmail: { email: 'ajeno@awakelab.dev' }, emailActor: null });
+    const { context } = buildContext({ authorization: `Bearer ${esToken()}` });
+
+    await expect(guard.canActivate(context)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  // ── 401 con WWW-Authenticate en el endpoint MCP (Resource Server) ─────────
+  it('el 401 en /factory-api/mcp lleva WWW-Authenticate hacia la PRM', async () => {
+    const guard = buildGuard();
+    const { context, response } = buildContext({}, '/factory-api/mcp');
+
+    await expect(guard.canActivate(context)).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(response.setHeader).toHaveBeenCalledWith(
+      'WWW-Authenticate',
+      expect.stringContaining('resource_metadata=')
+    );
+  });
+
+  it('el 401 en un endpoint admin (no MCP) NO añade WWW-Authenticate', async () => {
+    const guard = buildGuard();
+    const { context, response } = buildContext({}, '/factory-api/projects');
+
+    await expect(guard.canActivate(context)).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(response.setHeader).not.toHaveBeenCalled();
   });
 });
