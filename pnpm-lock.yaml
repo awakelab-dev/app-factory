@@ -144,6 +144,9 @@ importers:
       '@prisma/client':
         specifier: ^7.8.0
         version: 7.8.0(prisma@7.8.0(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(typescript@5.9.3))(typescript@5.9.3)
+      express:
+        specifier: ^5.2.1
+        version: 5.2.1
       jose:
         specifier: ^6.2.3
         version: 6.2.3
