@@ -60,21 +60,34 @@ async function bootstrap(): Promise<void> {
     submitLogin(provider, actors)
   );
 
-  // 3) Passthrough al Authorization Server. El issuer LLEVA path
-  //    (/factory-api/oauth), así que node-oidc-provider monta SUS rutas bajo ese
-  //    path y anuncia los endpoints como issuer/<ruta> (p. ej. .../factory-api/oauth/auth).
-  //    Por eso hay que pasarle la URL COMPLETA, NO stripear el prefijo (eso era la
-  //    receta del caso issuer-SIN-path, que dejaba los endpoints en la raíz). Express
-  //    borra el prefijo del mount en req.url → lo restauramos desde originalUrl.
-  const toOidc = (req: Request, res: Response): void => {
-    req.url = req.originalUrl;
+  // 3) Passthrough al Authorization Server. node-oidc-provider monta SUS rutas en
+  //    la RAÍZ de donde se le monta (sirve /auth, /token, /.well-known/openid-configuration,
+  //    NO las formas con /factory-api/oauth por delante). El `app.use` de Express ya
+  //    deja req.url relativo al mount (p. ej. /auth) y fija req.baseUrl=/factory-api/oauth,
+  //    que el provider usa para ANUNCIAR los endpoints con ese prefijo (issuer con path).
+  //    Por eso NO hay que tocar req.url: reescribirlo a la URL completa hacía que el
+  //    provider recibiera /factory-api/oauth/auth y devolviera 404 (verificado en el
+  //    entorno real; el 200 que se vio antes era un artefacto de build stale). D-042.
+  server.use(OAUTH_MOUNT_PATH, (req: Request, res: Response) => oidcCallback(req, res));
+
+  // 4) Discovery en la raíz del host (RFC 8414 path-inserted, p. ej.
+  //    /.well-known/oauth-authorization-server/factory-api/oauth). El provider sirve
+  //    estos documentos en SU raíz (/.well-known/...); se reescribe la petición a esa
+  //    forma y se fija req.originalUrl al prefijo del issuer para que el provider
+  //    anuncie las URLs con /factory-api/oauth (calcula el prefijo = originalUrl − url).
+  const asMetaAtRoot = (wellKnown: string) => (req: Request, res: Response): void => {
+    (req as Request & { originalUrl: string }).originalUrl = `${OAUTH_MOUNT_PATH}${wellKnown}`;
+    req.url = wellKnown;
     oidcCallback(req, res);
   };
-  server.use(OAUTH_MOUNT_PATH, toOidc);
-  // 4) Discovery en la raíz del host (RFC 8414/9728 path-inserted) → mismo provider,
-  //    URL completa (el provider registra estas formas por su cuenta al llevar path el issuer).
-  server.get('/.well-known/oauth-authorization-server/factory-api/oauth', toOidc);
-  server.get('/.well-known/openid-configuration/factory-api/oauth', toOidc);
+  server.get(
+    '/.well-known/oauth-authorization-server/factory-api/oauth',
+    asMetaAtRoot('/.well-known/oauth-authorization-server')
+  );
+  server.get(
+    '/.well-known/openid-configuration/factory-api/oauth',
+    asMetaAtRoot('/.well-known/openid-configuration')
+  );
 
   // 5) Body parsers para el RESTO (control plane + MCP). El MCP recibe hasta 5MB
   //    de HTML en submit_prototype → límite holgado.
