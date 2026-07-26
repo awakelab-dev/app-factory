@@ -80,8 +80,21 @@ export function configuredJwks(): { keys: unknown[] } | null {
   return null;
 }
 
-/** Único scope del AS (runbook §2.c: `offline_access` para el refresh rotativo). */
+/** Scope OIDC del AS: `offline_access` habilita el refresh token rotativo. */
 export const OAUTH_SCOPES = ['offline_access'] as const;
+
+/**
+ * Scope REAL del Resource Server (MCP). `offline_access` es un scope OIDC
+ * reservado y node-oidc-provider NO lo pone en el access token de un recurso —
+ * sin un scope propio del recurso, la autorización termina "sin scope concedido"
+ * y el AS rehúsa emitir (verificado con PG real, D-042). Este es el scope que
+ * viaja en el access token del MCP; el guard no lo inspecciona (valida aud+firma),
+ * pero el flujo OAuth necesita que ALGO se conceda al recurso.
+ */
+export const OAUTH_MCP_SCOPE = 'mcp';
+
+/** scopes_supported anunciado en PRM/discovery: el refresh + el scope del MCP. */
+export const OAUTH_SCOPES_SUPPORTED = [...OAUTH_SCOPES, OAUTH_MCP_SCOPE] as const;
 
 /**
  * Protected Resource Metadata (RFC 9728, runbook §2.c). `resource` idéntico a
@@ -91,7 +104,7 @@ export function protectedResourceMetadata() {
   return {
     resource: mcpResource(),
     authorization_servers: [oauthIssuer()],
-    scopes_supported: [...OAUTH_SCOPES],
+    scopes_supported: [...OAUTH_SCOPES_SUPPORTED],
     bearer_methods_supported: ['header'] as const
   };
 }

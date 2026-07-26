@@ -1,7 +1,7 @@
 import { Logger } from '@nestjs/common';
 import type { Request, RequestHandler, Response } from 'express';
 import type { ActorsService } from '../pipeline/actors.service';
-import { OAUTH_MOUNT_PATH } from './oauth.config';
+import { OAUTH_MCP_SCOPE, OAUTH_MOUNT_PATH, OAUTH_SCOPES } from './oauth.config';
 import type { OidcInteractionDetails, OidcProviderLike } from './oidc-provider.types';
 
 /**
@@ -141,8 +141,22 @@ export function submitLogin(provider: OidcProviderLike, actors: ActorsService): 
         res.send(loginPage(uid, 'Credenciales incorrectas. Verifica tu correo y contraseña.'));
         return;
       }
+      // Cliente `claude` de primera parte, pre-registrado y de confianza: se
+      // pre-concede el Grant aquí mismo (scope OIDC + recurso del propio request)
+      // y se resuelven login Y consent en una sola respuesta. Así se evita el
+      // segundo salto al prompt de consentimiento — que node-oidc-provider negaba
+      // con access_denied al no tener grant previo (verificado con PG real). El
+      // gerente ya se autenticó; no aporta una pantalla de consentimiento extra.
+      const clientId = details.params.client_id;
+      const resource = details.params.resource;
+      const grant = new provider.Grant({ accountId: actor.email, clientId: clientId ?? '' });
+      // OIDC: offline_access (refresh token). Recurso: el scope propio del MCP.
+      grant.addOIDCScope(OAUTH_SCOPES.join(' '));
+      if (resource) grant.addResourceScope(resource, OAUTH_MCP_SCOPE);
+      const grantId = await grant.save();
       await provider.interactionFinished(req, res, {
-        login: { accountId: actor.email, remember: false }
+        login: { accountId: actor.email, remember: false },
+        consent: { grantId }
       });
     } catch (error) {
       logger.error(`submitLogin falló (uid=${uid}): ${(error as Error).message}`);

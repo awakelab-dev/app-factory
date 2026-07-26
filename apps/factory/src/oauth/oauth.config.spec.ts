@@ -19,7 +19,7 @@ describe('oauth.config (PRM y discovery)', () => {
     expect(protectedResourceMetadata()).toEqual({
       resource: 'https://staging.apps.awakelab.world/factory-api/mcp',
       authorization_servers: ['https://staging.apps.awakelab.world/factory-api/oauth'],
-      scopes_supported: ['offline_access'],
+      scopes_supported: ['offline_access', 'mcp'],
       bearer_methods_supported: ['header']
     });
   });

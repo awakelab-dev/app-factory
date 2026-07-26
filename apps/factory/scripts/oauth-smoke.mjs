@@ -130,7 +130,7 @@ async function main() {
   const state = b64url(randomBytes(16));
   const authUrl =
     `${asm.authorization_endpoint}?response_type=code&client_id=${encodeURIComponent(CLIENT_ID)}` +
-    `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent('offline_access')}` +
+    `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent('offline_access mcp')}` +
     `&resource=${encodeURIComponent(RESOURCE)}&code_challenge=${challenge}&code_challenge_method=S256&state=${state}`;
 
   // Seguir redirecciones a mano preservando cookies; parar al llegar al redirect_uri externo.

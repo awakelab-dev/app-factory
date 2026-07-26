@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import type { PrismaService } from '../prisma/prisma.service';
 import { importEsm } from './esm-loader';
 import {
+  OAUTH_MCP_SCOPE,
   OAUTH_MOUNT_PATH,
   OAUTH_SCOPES,
   cookieKeys,
@@ -50,7 +51,14 @@ export async function createOidcProvider(prisma: PrismaService, jwks: OauthJwks)
         // Confidencial (tiene secret) PERO además usa PKCE — como Anthropic
         // pre-registra Client ID/Secret al alta del custom connector.
         token_endpoint_auth_method: 'client_secret_basic',
-        scope: OAUTH_SCOPES.join(' ')
+        // Solo scopes OIDC en el metadato del cliente; `mcp` es scope de RECURSO
+        // (se valida contra getResourceServerInfo al pedirlo con resource=MCP).
+        scope: OAUTH_SCOPES.join(' '),
+        // Nuestra JWKS es solo ES256 (sin RSA). El default de este campo es RS256,
+        // que sin clave RSA hace fallar la request de autorización con
+        // invalid_client_metadata. Lo fijamos a ES256 (aunque no emitamos id_token
+        // en el flujo puro-OAuth, el provider valida este metadato igual). D-042.
+        id_token_signed_response_alg: 'ES256'
       }
     ],
     jwks,
@@ -60,6 +68,13 @@ export async function createOidcProvider(prisma: PrismaService, jwks: OauthJwks)
     claims: { openid: ['sub'] },
     pkce: { required: () => true },
     rotateRefreshToken: true,
+    // Emitir refresh token para el cliente `claude` aunque no venga `openid` en el
+    // request. offline_access, en el flujo puro-OAuth de MCP (sin OIDC), lo descarta
+    // la semántica OIDC → sin este override no habría refresh y Claude tendría que
+    // re-autenticarse cada hora. El cliente permite el grant refresh_token. D-042.
+    async issueRefreshToken(_ctx: unknown, client: { grantTypeAllowed(t: string): boolean }, _code: unknown) {
+      return client.grantTypeAllowed('refresh_token');
+    },
     ttl: {
       AccessToken: 60 * 60, // 1h (getResourceServerInfo puede afinar por recurso)
       AuthorizationCode: 60,
@@ -98,7 +113,7 @@ export async function createOidcProvider(prisma: PrismaService, jwks: OauthJwks)
             throw new errors.InvalidTarget();
           }
           return {
-            scope: OAUTH_SCOPES.join(' '),
+            scope: OAUTH_MCP_SCOPE, // scope propio del recurso (no offline_access, reservado)
             audience: resource, // `aud` del JWT = URL canónica del MCP
             accessTokenTTL: 60 * 60,
             accessTokenFormat: 'jwt' as const,
@@ -113,6 +128,18 @@ export async function createOidcProvider(prisma: PrismaService, jwks: OauthJwks)
   // Detrás del Nginx del host (TLS offloading): confiar en x-forwarded-proto/for
   // para emitir URLs https correctas y marcar las cookies como secure.
   provider.proxy = true;
+
+  // Trazabilidad de errores del AS (si no, un access_denied llega opaco a Claude).
+  const emitter = provider as unknown as {
+    on(ev: string, cb: (ctx: unknown, err: { error?: string; error_description?: string; error_detail?: string; message?: string; stack?: string }) => void): void;
+  };
+  emitter.on('authorization.error', (_ctx, err) =>
+    logger.warn(`authorization.error: ${err.error} — ${err.error_description ?? ''} — ${err.error_detail ?? ''}`)
+  );
+  emitter.on('interaction.error', (_ctx, err) =>
+    logger.warn(`interaction.error: ${err.error} — ${err.error_description ?? ''} — ${err.error_detail ?? ''}`)
+  );
+  emitter.on('server_error', (_ctx, err) => logger.error(`server_error: ${err.message} ${err.stack ?? ''}`));
   logger.log(`Authorization Server listo — issuer=${issuer} resource=${resource}`);
   return provider;
 }
