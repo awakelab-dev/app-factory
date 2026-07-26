@@ -62,6 +62,20 @@ Hoy la raíz del host la sirve el contenedor web → añadir al `.conf` de stagi
 - Smoke por HTTPS: PRM (ambas formas), ASM/openid-configuration del AS, 401 con header en `/mcp`, y un Authorization Code + PKCE completo con un cliente de prueba → token → `tools/list` del MCP con ese token = 5 tools. **Script listo (D-042): `node apps/factory/scripts/oauth-smoke.mjs --base https://staging.apps.awakelab.world --client-id claude --client-secret <secret> --email <gerente> --password '<pwd>'`** (Node 22+, sin deps; hace login por POST y para en el primer fallo indicando el punto exacto). Sin `--email/--password` corre solo los checks de metadata/401.
 - Deploy: merge a main con CI verde → deploy automático de staging → `~/migrate-factory.sh staging latest` (EN el Lightsail; SOLO tras CI de main verde).
 
+### 2.f Deploy a staging — pasos ejecutados (2026-07-26, D-042b)
+
+Secuencia real ya ejecutada y verde. Todo lo `local` desde la raíz del repo en el Mac; el resto vía `ssh AWK-Dev`. `<...>` = secreto/valor del entorno.
+
+1. **Merge + CI → auto-deploy**: `git push origin HEAD` → esperar CI **y** Deploy verdes (`gh run watch`).
+2. **Re-copiar el compose** (ganó el passthrough de env OAuth): `scp deploy/docker-compose.yml AWK-Dev:/opt/awkfactory/staging/docker-compose.yml`.
+3. **Generar secretos** (local, sin BD): `pnpm --filter=@awk/factory run cli -- oauth-genkeys` → imprime `FACTORY_OAUTH_JWKS`/`_COOKIE_KEYS`/`_CLIENT_SECRET`.
+4. **Añadir env al `.env` del server** (nano, nunca scp) — las 3 líneas del paso 3 + `FACTORY_OAUTH_ISSUER`/`_MCP_RESOURCE`/`_CLIENT_ID=claude`/`_REDIRECT_URI` de `deploy/staging.env.example`. Sin comillas.
+5. **Migración**: `ssh AWK-Dev '~/migrate-factory.sh staging latest'`.
+6. **Recrear factory con el PROYECTO correcto**: `ssh AWK-Dev 'cd /opt/awkfactory/staging && docker compose -p awk-staging pull factory && docker compose -p awk-staging up -d --force-recreate factory'`. **GOTCHA**: el stack real corre bajo el proyecto `awk-staging`; un `docker compose` sin `-p awk-staging` usa el default `staging`, levanta un stack paralelo y choca en el puerto 18104.
+7. **Nginx** (nano, 443 server block, antes de `location /`): `location /.well-known/oauth- { proxy_pass http://127.0.0.1:18104; ... }` y `location /.well-known/openid-configuration { ... }` (ver `deploy/nginx/staging.conf`); `sudo nginx -t && sudo systemctl reload nginx`. NO toca `acme-challenge`.
+8. **Gerente + contraseña** (túnel SSH a `awkfactory_staging`, como D-031): `ssh -N -L 5433:<ENDPOINT>:5432 AWK-Dev` (terminal A) y, con `FACTORY_DATABASE_URL=postgresql://app_factory_staging:<PASS>@localhost:5433/awkfactory_staging?sslmode=require&uselibpqcompat=true`, `create-actor --email <g> --role gerente` + `set-password --email <g>` (terminal B).
+9. **Smoke** (§2.e): `node apps/factory/scripts/oauth-smoke.mjs --base https://staging.apps.awakelab.world --client-id claude --client-secret <secret> --email <g> --password '<pwd>'` → 6/6 verde.
+
 ## 3. Fase 2 — Alta del conector y prueba (necesita al Owner)
 
 1. Owner: **Organization settings → Connectors → Add → Custom → Web** (`claude.ai/admin-settings/connectors`).
