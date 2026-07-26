@@ -6,6 +6,7 @@ import {
   OAUTH_MOUNT_PATH,
   OAUTH_SCOPES,
   cookieKeys,
+  devClient,
   mcpResource,
   oauthIssuer,
   registeredClient
@@ -38,6 +39,7 @@ export async function createOidcProvider(prisma: PrismaService, jwks: OauthJwks)
   const issuer = oauthIssuer();
   const resource = mcpResource();
   const client = registeredClient();
+  const dev = devClient();
 
   const configuration = {
     adapter: createPrismaOidcAdapter(prisma),
@@ -59,7 +61,24 @@ export async function createOidcProvider(prisma: PrismaService, jwks: OauthJwks)
         // invalid_client_metadata. Lo fijamos a ES256 (aunque no emitamos id_token
         // en el flujo puro-OAuth, el provider valida este metadato igual). D-042.
         id_token_signed_response_alg: 'ES256'
-      }
+      },
+      // Cliente PÚBLICO de prueba local (solo si FACTORY_OAUTH_DEV_REDIRECT está
+      // seteada — staging/dev, nunca producción). Permite ejercitar el flujo real
+      // (login+consent en el navegador) sin depender del Owner. D-042b.
+      ...(dev
+        ? [
+            {
+              client_id: dev.clientId,
+              redirect_uris: [dev.redirectUri],
+              grant_types: ['authorization_code', 'refresh_token'],
+              response_types: ['code'],
+              // Público (sin secret): PKCE obligatorio + redirect loopback.
+              token_endpoint_auth_method: 'none',
+              scope: OAUTH_SCOPES.join(' '),
+              id_token_signed_response_alg: 'ES256'
+            }
+          ]
+        : []),
     ],
     jwks,
     cookies: { keys: cookieKeys() },

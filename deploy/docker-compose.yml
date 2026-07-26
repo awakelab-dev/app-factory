@@ -66,6 +66,9 @@ services:
       FACTORY_OAUTH_REDIRECT_URI: ${FACTORY_OAUTH_REDIRECT_URI}
       FACTORY_OAUTH_COOKIE_KEYS: ${FACTORY_OAUTH_COOKIE_KEYS}
       FACTORY_OAUTH_JWKS: ${FACTORY_OAUTH_JWKS}
+      # Cliente público de prueba local (solo staging/dev; vacío en producción).
+      FACTORY_OAUTH_DEV_REDIRECT: ${FACTORY_OAUTH_DEV_REDIRECT:-}
+      FACTORY_OAUTH_DEV_CLIENT_ID: ${FACTORY_OAUTH_DEV_CLIENT_ID:-dev-local}
     ports:
       - '127.0.0.1:${FACTORY_PORT_HOST}:3100'
     healthcheck:

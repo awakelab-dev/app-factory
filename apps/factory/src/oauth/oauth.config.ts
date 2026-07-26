@@ -51,6 +51,20 @@ export function registeredClient(): RegisteredClient {
   };
 }
 
+/**
+ * Cliente PÚBLICO opcional para PROBAR el flujo OAuth en local sin depender del
+ * Owner (docs/08 Fase 2). Se registra SOLO si `FACTORY_OAUTH_DEV_REDIRECT` está
+ * seteada (p. ej. http://localhost:8765/callback) — pensado para staging/dev,
+ * NUNCA producción (no setees esa env allí). Sin secret (public + PKCE obligatorio);
+ * el login sigue exigiendo fila activa en factory_actors + contraseña, así que no
+ * abre una vía de acceso nueva. Lo usa apps/factory/scripts/oauth-login-test.mjs.
+ */
+export function devClient(): { clientId: string; redirectUri: string } | null {
+  const redirectUri = process.env.FACTORY_OAUTH_DEV_REDIRECT;
+  if (!redirectUri) return null;
+  return { clientId: process.env.FACTORY_OAUTH_DEV_CLIENT_ID ?? 'dev-local', redirectUri };
+}
+
 /** Claves de cookie de las sesiones/interacciones del AS (rotables: la primera firma, todas verifican). */
 export function cookieKeys(): string[] {
   const raw = process.env.FACTORY_OAUTH_COOKIE_KEYS;
