@@ -17,23 +17,38 @@ export interface OauthJwks {
 
 const logger = new Logger('OauthKeys');
 
-/** JWKS privado ES256: de env FACTORY_OAUTH_JWKS (prod) o par efímero (solo dev). */
+interface JoseLite {
+  generateKeyPair: (alg: string, opts?: { extractable?: boolean; modulusLength?: number }) => Promise<{ privateKey: unknown }>;
+  exportJWK: (key: unknown) => Promise<Record<string, unknown>>;
+  calculateJwkThumbprint: (jwk: Record<string, unknown>) => Promise<string>;
+}
+
+/** Genera un JWK privado firmante (alg dado) con kid = thumbprint. */
+async function genSigningJwk(jose: JoseLite, alg: string): Promise<Record<string, unknown>> {
+  const { privateKey } = await jose.generateKeyPair(alg, { extractable: true });
+  const jwk = await jose.exportJWK(privateKey);
+  jwk.alg = alg;
+  jwk.use = 'sig';
+  jwk.kid = await jose.calculateJwkThumbprint(jwk);
+  return jwk;
+}
+
+/**
+ * JWKS privado: de env FACTORY_OAUTH_JWKS (prod) o par efímero (solo dev).
+ * DOS claves: ES256 (firma de los access token del recurso) + RS256 (default de
+ * `id_token_signed_response_alg` de los clientes, incl. los que se registran por
+ * DCR sin especificar alg). Sin la RSA, un cliente DCR con el default RS256 falla
+ * con invalid_client_metadata (D-042b).
+ */
 export async function resolveOauthJwks(): Promise<OauthJwks> {
   const configured = configuredJwks();
   if (configured) return { keys: configured.keys as Record<string, unknown>[] };
 
-  const { generateKeyPair, exportJWK, calculateJwkThumbprint } = await importEsm<{
-    generateKeyPair: (alg: string, opts?: { extractable?: boolean }) => Promise<{ privateKey: unknown }>;
-    exportJWK: (key: unknown) => Promise<Record<string, unknown>>;
-    calculateJwkThumbprint: (jwk: Record<string, unknown>) => Promise<string>;
-  }>('jose');
-  const { privateKey } = await generateKeyPair('ES256', { extractable: true });
-  const jwk = await exportJWK(privateKey);
-  jwk.alg = 'ES256';
-  jwk.use = 'sig';
-  jwk.kid = await calculateJwkThumbprint(jwk);
-  logger.warn('FACTORY_OAUTH_JWKS ausente — usando un par ES256 EFÍMERO (solo dev).');
-  return { keys: [jwk] };
+  const jose = await importEsm<JoseLite>('jose');
+  const ec = await genSigningJwk(jose, 'ES256');
+  const rsa = await genSigningJwk(jose, 'RS256');
+  logger.warn('FACTORY_OAUTH_JWKS ausente — usando claves ES256+RS256 EFÍMERAS (solo dev).');
+  return { keys: [ec, rsa] };
 }
 
 /** Deriva el JWKS público (sin el componente privado `d`) para el verificador. */

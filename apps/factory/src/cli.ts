@@ -215,15 +215,20 @@ async function main(): Promise<void> {
           exportJWK: (key: unknown) => Promise<Record<string, unknown>>;
           calculateJwkThumbprint: (jwk: Record<string, unknown>) => Promise<string>;
         }>('jose');
-        const { privateKey } = await generateKeyPair('ES256', { extractable: true });
-        const jwk = await exportJWK(privateKey);
-        jwk.alg = 'ES256';
-        jwk.use = 'sig';
-        jwk.kid = await calculateJwkThumbprint(jwk);
+        const gen = async (alg: string) => {
+          const { privateKey } = await generateKeyPair(alg, { extractable: true });
+          const jwk = await exportJWK(privateKey);
+          jwk.alg = alg;
+          jwk.use = 'sig';
+          jwk.kid = await calculateJwkThumbprint(jwk);
+          return jwk;
+        };
+        // ES256 (firma de access tokens) + RS256 (default de los clientes DCR).
+        const keys = [await gen('ES256'), await gen('RS256')];
         console.log('# Secretos del Authorization Server — pégalos en /opt/awkfactory/<entorno>/.env');
         console.log('# (una vez; NO los commitees; SIN COMILLAS — misma regla que el resto del .env).');
         console.log('# Ver docs/runbooks/oauth-conector-as-propio.md.\n');
-        console.log(`FACTORY_OAUTH_JWKS=${JSON.stringify({ keys: [jwk] })}`);
+        console.log(`FACTORY_OAUTH_JWKS=${JSON.stringify({ keys })}`);
         console.log(`FACTORY_OAUTH_COOKIE_KEYS=${randomBytes(32).toString('hex')},${randomBytes(32).toString('hex')}`);
         console.log(`FACTORY_OAUTH_CLIENT_SECRET=${randomBytes(32).toString('hex')}`);
         break;

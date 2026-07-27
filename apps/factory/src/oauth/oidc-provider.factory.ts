@@ -120,6 +120,14 @@ export async function createOidcProvider(prisma: PrismaService, jwks: OauthJwks)
     features: {
       // Vistas de interacción de ejemplo de la librería: FUERA (usamos las nuestras).
       devInteractions: { enabled: false },
+      // Dynamic Client Registration (RFC 7591): cada cliente Claude (de cualquier
+      // cuenta/organización) se auto-registra al conectarse — sin pre-registrar
+      // Client ID/Secret por org. Es el mecanismo del spec MCP para escalar a muchas
+      // cuentas independientes (D-042b). Registro abierto (sin initial access token,
+      // como esperan los clientes MCP); el gate de acceso real sigue siendo el login
+      // contra `factory_actors`, y los tokens quedan atados por `aud` al MCP — un
+      // cliente registrado sin login no puede nada.
+      registration: { enabled: true, initialAccessToken: false },
       resourceIndicators: {
         enabled: true,
         // Si Claude omite `resource`, apuntamos al MCP igualmente.
