@@ -1,112 +1,84 @@
-# Runbook — Instalación del plugin `awk-prototipo` (marketplace privado + token)
+# Runbook — plugin `awk-prototipo` + onboarding (OAuth, D-042b)
 
-Fuente del plugin: `plugins/awk-prototipo/` en este repo (skill `awk-prototipo` + conector MCP `awkfactory`). Marketplace privado: este mismo repo (`.claude-plugin/marketplace.json` en la raíz). Contexto de diseño: D-036/D-037, docs/04.
+Fuente: `plugins/awk-prototipo/` (skill + conector MCP `awkfactory`). Marketplace privado: `.claude-plugin/marketplace.json` en la raíz del repo. El conector usa **OAuth** contra el Authorization Server propio de la Fábrica (docs/08, D-041/D-042); ya NO usa PAT-en-header (eso queda solo para técnicos por Claude Code CLI, ver nota histórica al final).
 
-## 1. Emitir el PAT del gerente
+## Modelo de escala (varias organizaciones Claude separadas)
 
-Por gerente y por entorno (staging y producción tienen BDs de fábrica separadas — el PAT de staging NO sirve en producción):
+Tres piezas independientes:
 
-```bash
-# túnel SSH a la managed PG (como en D-031) + .env apuntando por el túnel
-pnpm --filter=@awk/factory run cli -- create-actor --email <gerente>@awakelab.dev --role gerente
-```
+| Pieza | Cómo se distribuye | Quién / cuántas veces |
+|---|---|---|
+| **Autorización** (quién puede usar la Fábrica) | fila en `factory_actors` + contraseña | **Central**: la Fábrica, 1 vez por persona (cualquier cuenta/org/externo). |
+| **Registro del cliente OAuth** | **DCR** (RFC 7591), auto | Cero. Cada cliente Claude se auto-registra; sin Client ID/Secret que repartir. |
+| **Skill + conector (el plugin)** | marketplace privado o archivo `.plugin` | Usuario (self-serve) donde se permita; en orgs gestionadas, el **admin de cada org habilita el conector 1 vez** para su equipo. |
 
-- El token (`awkf_…`) se imprime UNA sola vez; en BD queda solo el hash.
-- Reemitir para el mismo email crea token nuevo y REVOCA los anteriores.
-- Entregarlo al gerente por canal seguro (gestor de contraseñas, nunca email/Slack en claro).
+Clave: distribuir el plugin NO da acceso. El acceso lo da el login OAuth contra `factory_actors`. Por eso se puede repartir ancho sin riesgo, y revocar es `revoke-actor`.
 
-## 2. Poner el token en el entorno de la sesión (el punto delicado)
+## 1. Onboarding de una persona (central — lo hace la Fábrica)
 
-> ⚠️ **IMPORTANTE (D-039, 2026-07-20)**: lo de esta sección aplica a **Claude Code CLI** (conecta desde local). **NO funciona en Cowork/Claude Desktop**: los conectores de Cowork corren desde la **nube de Anthropic**, no desde el Mac (doc oficial), así que NO ven variables locales (`settings.json` ni `launchctl`). Para el conector de **gerentes en Cowork** el PAT-en-header no sirve → se replantea a OAuth (ver §6). El PAT sigue siendo válido para técnicos por CLI.
-
-El conector lleva `"Authorization": "Bearer ${AWKFACTORY_TOKEN}"`. La expansión `${VAR}` en headers de `.mcp.json` está **documentada** (docs.claude.com/en/docs/claude-code/mcp, "Environment variable expansion in .mcp.json"; también `${VAR:-default}`) y **verificada en vivo** con Claude Code v2.1.215 (STATUS 2026-07-20). Si la variable no existe, el config carga igual con warning y el header viaja con el texto literal → 401.
-
-**Problema**: la app de escritorio (Cowork) NO hereda el shell del usuario (las apps GUI de macOS no leen `~/.zshrc`), así que `export AWKFACTORY_TOKEN=…` en el shell no basta.
-
-**Vía recomendada — `~/.claude/settings.json`** (el bloque `env` aplica variables de entorno a cada sesión; documentado en docs.claude.com/en/docs/claude-code/settings y NO depende del shell):
-
-```json
-{
-  "env": {
-    "AWKFACTORY_TOKEN": "awkf_…"
-  }
-}
-```
-
-> **Estado**: documentado para Claude Code; que la app de escritorio lo aplique a la expansión de headers está **pendiente de verificar en el Mac** (primera prueba real del incremento B). Es la hipótesis fuerte: Cowork corre sobre Claude Code y lee los mismos settings.
-
-**Fallback si settings.json no lo aplicara** (entorno de GUI de macOS):
+Por entorno (staging y producción tienen BDs separadas). Vía túnel SSH a la managed PG (patrón D-031); `<ENDPOINT>`/`<PASS>` salen de `FACTORY_DATABASE_URL` en `/opt/awkfactory/<entorno>/.env`.
 
 ```bash
-launchctl setenv AWKFACTORY_TOKEN "awkf_…"   # vale hasta el reboot; reiniciar la app después
+# Terminal A — túnel (dejar abierto)
+ssh -N -L 5433:<ENDPOINT>:5432 AWK-Dev
+
+# Terminal B — desde el repo
+export FACTORY_DATABASE_URL='postgresql://app_factory_<entorno>:<PASS>@localhost:5433/awkfactory_<entorno>?sslmode=require&uselibpqcompat=true'
+pnpm --filter=@awk/factory run cli -- create-actor  --email <persona>@<dominio> --role gerente
+pnpm --filter=@awk/factory run cli -- set-password  --email <persona>@<dominio>   # prompt oculto, mín. 12
 ```
 
-(persistente: un LaunchAgent que ejecute ese `setenv` al login — documentarlo solo si hace falta).
+- La persona entra con **ese email + esa contraseña** en el formulario de login del AS (no con su cuenta de Claude).
+- Revocar acceso: `revoke-actor --email <persona>@<dominio>`.
 
-## 3. Instalar el plugin
+## 2. Habilitar el conector por organización (admin de cada org, 1 vez)
 
-Dos vías según el perfil:
+En organizaciones Claude gestionadas, un admin/Owner habilita el conector para su equipo (política de Anthropic — no se puede saltar; es **una acción por org, no por usuario**):
 
-**a) Técnicos (Leonardo) — marketplace privado por git** (requiere acceso de lectura al repo `awakelab-dev/app-factory`):
+- Organization settings → Connectors → Add → Custom → Web (o "Browse connectors → Add to your team").
+- **URL**: `https://apps.awakelab.world/factory-api/mcp` (producción) o `https://staging.apps.awakelab.world/factory-api/mcp` (staging).
+- **No hace falta Client ID/Secret**: con DCR el cliente se auto-registra. (Si la UI los exige igualmente, usar el cliente `claude` pre-registrado: Client ID `claude` + el `FACTORY_OAUTH_CLIENT_SECRET` del `.env`.)
 
-```bash
-claude plugin marketplace add awakelab-dev/app-factory
-claude plugin install awk-prototipo@awakelab
-```
+Cuentas personales/externas que permitan añadir conectores: lo hacen ellas mismas con la misma URL.
 
-**b) Gerentes — archivo `.plugin` (recomendado hoy)**: los gerentes no tienen acceso al repo. Empaquetar y distribuir el zip:
+## 3. Instalar el plugin + conectar (usuario)
 
-```bash
-cd plugins/awk-prototipo && zip -r /tmp/awk-prototipo.plugin . -x "*.DS_Store"
-```
+- **Marketplace privado** (técnicos con acceso al repo):
+  ```bash
+  claude plugin marketplace add awakelab-dev/app-factory
+  claude plugin install awk-prototipo@awakelab
+  ```
+- **Archivo `.plugin`** (quien no tiene acceso al repo; se sube desde la app de Cowork):
+  ```bash
+  cd plugins/awk-prototipo && zip -r /tmp/awk-prototipo.plugin . -x "*.DS_Store"
+  ```
+- **Conectar**: al primer uso del conector, Claude abre el navegador → login en el formulario del AS (email/contraseña del paso 1) → consentimiento → listo. **ÉXITO** = conector conectado + 5 tools + `list_modules` responde.
 
-El gerente instala el `.plugin` desde Cowork (vista previa + botón de instalación). Contra: las actualizaciones son manuales (redistribuir el archivo). Cuando la organización configure marketplaces gestionados a nivel admin, migrar a esa vía.
+## 4. Probar el flujo SIN depender de un admin (dev/staging)
 
-## 4. Probar contra staging antes de producción
+Para iterar sin el alta del admin (útil antes de la reunión con cada Owner):
 
-El `.mcp.json` publicado apunta a **producción**. Para la prueba real:
-
-1. Copia local del plugin con la URL cambiada a `https://staging.apps.awakelab.world/factory-api/mcp` (no commitear ni publicar esa copia).
-2. PAT emitido contra `awkfactory_staging` (el primero ya existe: emitido 2026-07-20, en el gestor de Leonardo).
-3. En Cowork: verificar conector `awkfactory` conectado + autenticado + 5 tools.
-4. Prototipar algo pequeño con la skill de punta a punta → debe llegar como submission `received` al proyecto en `/factory` de staging.
-
-Para producción: `create-actor` contra `awkfactory_production` (no existe aún ningún PAT allí) y el plugin publicado tal cual.
+- **Flujo real en tu navegador** (cliente público `dev-local`, solo si `FACTORY_OAUTH_DEV_REDIRECT` está en el `.env` de staging):
+  ```bash
+  node apps/factory/scripts/oauth-login-test.mjs --base https://staging.apps.awakelab.world
+  ```
+- **Chequeo headless de cada deploy** (cliente `claude`):
+  ```bash
+  node apps/factory/scripts/oauth-smoke.mjs --base https://staging.apps.awakelab.world \
+    --client-id claude --client-secret <secret> --email <persona> --password '<pwd>'
+  ```
 
 ## 5. Diagnóstico rápido
 
 | Síntoma | Causa probable |
 |---|---|
-| Conector "unauthenticated" / tools fallan con 401 | `AWKFACTORY_TOKEN` no está en el entorno de la sesión (paso 2), token revocado, o PAT del entorno equivocado (staging vs producción). El 401 es idéntico a propósito para token inexistente y revocado. |
-| Warning de variable ausente al listar MCP | La variable no se expandió — el header viaja literal. Revisar paso 2 y reiniciar la app. |
-| `submit_prototype` devuelve 409 | Slug ya existe: usar `request_change` sobre el módulo o cambiar `moduleSlug`. |
-| Error de validación del manifest | Revisar `plugins/awk-prototipo/skills/awk-prototipo/references/manifest.md` (límites, literales de `sensitivity`). |
-| PAT de 401 aunque "parece" bien | Verificar longitud **69** (`awkf_` + 64 hex). Un token truncado al copiar (p. ej. 24 chars) da 401 idéntico al de revocado. `python3 -c "import json,os;t=json.load(open(os.path.expanduser('~/.claude/settings.json')))['env']['AWKFACTORY_TOKEN'];print(len(t))"`. |
-| Plugin instalado por `claude plugin install` no aparece en Cowork | Correcto: el CLI instala a scope Claude Code, Cowork NO lo carga. En Cowork **subir el `.plugin`** desde la app (§3.c). |
-| Conector con *Install* deshabilitado, tooltip "Contact an organization owner…" | Org gestionada: un Owner debe habilitar el conector a nivel org. No es un fallo de token. Ver §6. |
+| `invalid_client` al iniciar el flujo | El cliente no existe: DCR deshabilitado, o `dev-local` sin `FACTORY_OAUTH_DEV_REDIRECT` en el `.env` del contenedor (recordá `-p awk-staging` al recrear). |
+| Login correcto pero **403** al usar tools | El email logueado no tiene fila **activa** en `factory_actors` (paso 1) — `create-actor`. |
+| Login siempre rechazado | Sin `passwordHash` (falta `set-password`) o contraseña de otra época. |
+| Conector con *Install* deshabilitado ("Contact an organization owner") | Org gestionada: el admin debe habilitar el conector (paso 2). No es fallo de auth. |
+| `submit_prototype` → 409 | Slug ya existe: `request_change` sobre el módulo o cambiar `moduleSlug`. |
+| Discovery/`/mcp` 404 por HTTPS | Falta el bloque Nginx `/.well-known/oauth-*`+`openid-configuration*` a la raíz → contenedor factory (runbook oauth §2.d/2.f). |
 
-## 6. Hallazgos de la prueba real en Cowork (D-039, 2026-07-20)
+## Nota histórica (PAT → OAuth)
 
-La prueba end-to-end en Cowork (Mac de Leonardo) reveló que **la auth interina por PAT-en-header es incompatible con el conector de Cowork**. Resumen accionable:
-
-- **Longitud del PAT**: un PAT válido son **69 caracteres** (`awkf_` + `randomBytes(32).toString('hex')`, `actors.service.ts:45`). Verificar al pegar (una copia truncada da 401). Con el token completo, `curl` al MCP de staging responde **200** — endpoint y PAT son correctos.
-- **Instalar en Cowork ≠ CLI**: `claude plugin marketplace add`/`install` instala a nivel Claude Code (scope user) y **Cowork no lo ve**. En Cowork hay que **subir el archivo `.plugin`** desde la app (la tarjeta de un `.plugin` trae el botón "Save plugin"). Queda en `~/…/.remote-plugins/<id>/`.
-
-### 6.a Vía de instalación del `.plugin` (Cowork)
-
-```bash
-cd plugins/awk-prototipo && zip -r /tmp/awk-prototipo.plugin . -x "*.DS_Store"
-# subir /tmp/awk-prototipo.plugin desde la app (no por CLI)
-```
-
-Para probar **staging**: copia local con la URL cambiada a `https://staging.apps.awakelab.world/factory-api/mcp`, empaquetar igual y subir. No commitear esa copia.
-
-### 6.b El bloqueo: conectores de Cowork corren desde la nube
-
-Doc oficial (support.claude.com, "Use connectors to extend Claude's capabilities", Custom connectors): los custom connectors *"connect to your MCP server from Anthropic's cloud, not from your local device. This is true even if you're using Cowork or Claude Desktop"*; el servidor debe ser alcanzable por **internet público** (staging lo es). Consecuencia: `Authorization: Bearer ${AWKFACTORY_TOKEN}` expandido desde variable LOCAL **no funciona en Cowork** (la nube no ve `settings.json`/`launchctl`). Solo funciona en el CLI (que conecta desde local).
-
-Además, en org Team/Enterprise el *Install* del conector lo habilita un **Owner** (Organization settings → Connectors → Browse connectors → Add to your team), y el alta de custom connector pide **OAuth (Client ID/secret)**, no un bearer estático.
-
-### 6.c Camino a seguir
-
-El conector de **gerentes** va por **OAuth con AS propio de la Fábrica** (usuario/contraseña; Entra descartado por la org y Enterprise-managed auth descartado en D-040 — decisión final D-041, plan en `docs/08-auth-conector-oauth.md` + `docs/runbooks/oauth-conector-as-propio.md`); el **PAT-en-header** se conserva solo para técnicos por **Claude Code CLI**. La prueba real de gerentes queda bloqueada hasta implementar la Fase 1 de docs/08 y que un owner habilite el conector a nivel org (reunión 2026-07-22). Con OAuth, el plugin queda aportando **solo la skill** — el conector sale del `.mcp.json`.
+El diseño original (D-036) usaba un PAT (`awkf_…`) en `Authorization: Bearer` del `.mcp.json`. La prueba real en Cowork (D-039) mostró que **los conectores de Cowork corren desde la nube de Anthropic**, no ven variables locales, y que las orgs gestionadas exigen alta por un admin — por eso el PAT-en-header **solo sirve para técnicos por Claude Code CLI** (que conecta desde local). El conector de gerentes migró a **OAuth con AS propio** (D-041) e implementado/validado en staging (D-042/D-042b). El PAT sigue vigente en el `FactoryAuthGuard` para el uso CLI; el `.mcp.json` del plugin ya no lleva token.
