@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Activación de la Fábrica AwkFactory · Guía para administradores de cuenta</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --azul-01192:#011932; --azul-01264:#01264C; --azul-03260:#003260; --azul-27334:#27334F;
+    --azul-31446:#314668; --cian:#19F7F1; --cian-2:#0ABCC9; --cian-pale:#D9FBFF;
+    --claro:#F0F3FC; --gris:#E2E6F2; --tenue:#72A3C4;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'Poppins',system-ui,sans-serif;background:var(--gris);color:var(--azul-01192);
+       -webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .page{max-width:900px;margin:0 auto;background:#fff;}
+  header{background:linear-gradient(135deg,var(--azul-01264),var(--azul-01192));color:var(--claro);padding:32px 40px 28px;}
+  .logo{height:34px;margin-bottom:20px;display:block;}
+  header h1{margin:0 0 6px;font-size:25px;font-weight:600;line-height:1.25;}
+  header p{margin:0;color:var(--tenue);font-size:14px;}
+  .badge{display:inline-block;margin-top:14px;background:rgba(25,247,241,.14);border:1px solid var(--cian-2);
+         color:var(--cian-pale);border-radius:999px;padding:5px 13px;font-size:12.5px;font-weight:500;}
+  main{padding:30px 40px 36px;}
+  .lead{font-size:14.5px;line-height:1.6;margin:0 0 26px;color:var(--azul-27334);}
+  .lead strong{color:var(--azul-01192);}
+  .step{display:flex;gap:16px;margin-bottom:22px;padding-bottom:22px;border-bottom:1px solid var(--gris);}
+  .step:last-of-type{border-bottom:none;}
+  .num{flex:0 0 34px;height:34px;border-radius:50%;background:var(--cian);color:var(--azul-01192);
+       display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;}
+  .step h2{margin:4px 0 8px;font-size:16px;font-weight:600;}
+  .step p{margin:0 0 8px;font-size:13.7px;line-height:1.6;color:var(--azul-27334);}
+  .path{font-size:13px;background:var(--claro);border-left:3px solid var(--cian-2);padding:9px 12px;
+        border-radius:0 7px 7px 0;margin:8px 0;color:var(--azul-31446);}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.6px;background:var(--azul-01192);
+       color:var(--cian-pale);padding:2.5px 7px;border-radius:5px;word-break:break-all;}
+  .note{background:var(--cian-pale);border:1px solid var(--cian-2);border-radius:9px;padding:13px 16px;
+        font-size:13.2px;line-height:1.55;color:var(--azul-01264);margin:22px 0 0;}
+  .note strong{color:var(--azul-01192);}
+  footer{background:var(--azul-01192);color:var(--tenue);padding:18px 40px;font-size:12.3px;
+         display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+  footer strong{color:var(--cian-pale);font-weight:500;}
+  @media print{ body{background:#fff;} .page{max-width:none;} header{padding:26px 30px 22px;} main{padding:24px 30px;} }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <img class="logo" src="https://media.awakelab.world/MARCA_AWK26/awakelab_logo_fondo-oscuro_transparente.png" alt="Awakelab" />
+    <h1>Activar la Fábrica de Aplicaciones en tu cuenta Claude</h1>
+    <p>Guía para el administrador del Centro de Costo · Departamento de Sistemas y Desarrollo</p>
+    <span class="badge">3 pasos · se hacen UNA sola vez por cuenta</span>
+  </header>
+
+  <main>
+    <p class="lead">
+      La <strong>Fábrica (AwkFactory)</strong> permite que gerentes, líderes, supervisores y analistas creen aplicaciones
+      desde Cowork y las envíen a Sistemas para convertirlas en módulos de la plataforma corporativa.
+      Para habilitarla en tu cuenta hacen falta <strong>tres acciones, una sola vez</strong>.
+      No hay que repetir nada por cada usuario.
+    </p>
+
+    <div class="step">
+      <div class="num">1</div>
+      <div>
+        <h2>Habilitar el conector de la Fábrica</h2>
+        <p>Agregá el conector para que quede disponible a todo tu equipo:</p>
+        <div class="path">Organization settings → Connectors → Add → Custom → Web</div>
+        <p>Dirección del servidor (URL):</p>
+        <p><code>https://apps.awakelab.world/factory-api/mcp</code></p>
+        <p><strong>No hace falta introducir claves ni secretos.</strong> Si el formulario pidiera un
+        “Client ID / Client Secret”, avisá a Sistemas y te los entregamos por canal seguro.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="num">2</div>
+      <div>
+        <h2>Permitir plugins y skills</h2>
+        <p>Activá el uso de plugins/skills para el equipo. Si tu plan permite añadir una
+        fuente de plugins de la organización, agregá el plugin <strong>awk-prototipo</strong>:
+        así tus usuarios lo reciben sin instalar nada.</p>
+        <p>Si esa opción no está disponible, no hay problema: Sistemas entrega el archivo del
+        plugin y cada usuario lo carga una vez desde Cowork.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="num">3</div>
+      <div>
+        <h2>Avisar a Sistemas quiénes usarán la Fábrica</h2>
+        <p>Enviá a Sistemas y Desarrollo la <strong>lista de personas</strong> (nombre y correo)
+        de tu Centro de Costo que deben quedar habilitadas.</p>
+        <p>Sistemas les crea el acceso y les entrega sus credenciales por canal seguro.
+        Cada persona iniciará sesión con <strong>ese correo y contraseña de la Fábrica</strong>
+        (no con su cuenta de Claude).</p>
+      </div>
+    </div>
+
+    <div class="note">
+      <strong>Sobre el control de acceso:</strong> tener el conector o el plugin instalado
+      <em>no</em> da acceso a la Fábrica. El acceso lo otorga Sistemas persona por persona, y se
+      puede revocar en cualquier momento de forma centralizada — sin depender de la cuenta de Claude
+      que utilice cada usuario.
+    </div>
+  </main>
+
+  <footer>
+    <span>¿Dudas o para coordinar el alta? <strong>Departamento de Sistemas y Desarrollo</strong></span>
+    <span><strong>leonardo.barreto@awakelab.dev</strong></span>
+  </footer>
+</div>
+</body>
+</html>

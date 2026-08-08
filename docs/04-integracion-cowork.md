@@ -1,10 +1,47 @@
 # 04 · Integración con Cowork y pipeline de conversión
 
+## Modelo operativo aprobado (reunión de Gerencia, 2026-07-26 — D-044)
+
+Decisiones de negocio que fijan CÓMO se usa la Fábrica en la organización:
+
+- **Quién crea apps**: gerentes, líderes y colaboradores con perfil de gestión (supervisores, analistas). Todos entran con rol `gerente` de `factory_actors` (el rol ya cubre estos perfiles; no se crea uno nuevo).
+- **Superficie única: Cowork.** No se usa Claude Code CLI fuera del Departamento de Sistemas.
+- **~4 cuentas Claude, una por Centro de Costo.** El admin de cada cuenta activa **una sola vez** los permisos necesarios (plugins, conectores). Son 4 altas en total, no una por usuario.
+- **Externos y cuentas personales NO se conectan**: entregan el **código fuente del prototipo** al Departamento de Sistemas y Desarrollo (único, transversal), que lo ingresa al pipeline a nombre del solicitante. Cero conectores externos que gobernar.
+- **Git solo dentro de Sistemas.** Ningún usuario de negocio ve git, CLI ni infraestructura.
+
+### Reparto de responsabilidades
+
+| Acción | Quién | Frecuencia |
+|---|---|---|
+| Activar plugin + conector en la cuenta | Admin del Centro de Costo | 1 vez por cuenta (**4 en total**) |
+| Provisionar persona (`create-actor` + `set-password`) | Sistemas y Desarrollo | 1 vez por persona |
+| Prototipar, enviar, actualizar, monitorear | Usuario de gestión, en Cowork | Cuando lo necesite |
+| Análisis, generación, revisión técnica, merge/deploy | Sistemas + pipeline de la Fábrica (gates docs/05) | Por proyecto |
+| Ingerir prototipos de externos | Sistemas (reciben el código fuente) | Por prototipo externo |
+
+**Control de acceso**: distribuir el plugin NO da acceso. El acceso lo da el login OAuth contra `factory_actors` (docs/08, D-041/D-042). Alta y baja son centrales (`create-actor` / `revoke-actor`), independientes de la cuenta Claude que use la persona.
+
+### El flujo del usuario en Cowork (sin git, en lenguaje natural)
+
+La skill traduce la conversación a las 5 tools del conector; el usuario no escribe comandos técnicos:
+
+1. **Crear** — "Quiero una app para X" → la skill guía y produce el prototipo + manifest.
+2. **Enviar** — "Enviala a la Fábrica" → `submit_prototype`.
+3. **Monitorear** (en cualquier momento) — "¿Cómo va mi proyecto?" → `get_project_status`.
+4. **Actualizar** — "Al módulo X agregale Y" → `request_change`.
+5. **Aprobar lo suyo** — gates funcional y de aceptación → `approve_spec`.
+
+### Brechas conocidas para el self-service pleno
+
+- **Análisis server-side automático (incremento C)**: hoy `submit_prototype` deja el proyecto en `received` y el análisis lo dispara Sistemas por CLI (D-030/D-036). Hasta cerrarlo, hay un paso humano por envío — aceptable con el volumen de 4 cuentas, pero es EL bloqueante del "envío y avanza solo".
+- **Vista de status en Cowork**: `get_project_status` cubre la consulta puntual; falta un artefacto de seguimiento que el usuario deje abierto y se refresque. Requisito explícito de Gerencia ("monitorear en cualquier momento").
+
 ## Tipo de integración: plugin de organización (skill + conector MCP)
 
 Tu preferencia (integración directa en vez de ZIP manual) es la correcta, y la forma concreta es un **plugin de Claude distribuido por el marketplace privado de la organización** que combina las dos piezas:
 
-> **Estado (2026-07-20, incremento B de D-036)**: plugin CONSTRUIDO en `plugins/awk-prototipo/` (skill + conector `.mcp.json` con `Bearer ${AWKFACTORY_TOKEN}`); el marketplace privado es este mismo repo (`.claude-plugin/marketplace.json`). Instalación, emisión de PATs y dónde vive el token en una sesión de Cowork: `docs/runbooks/plugin-awk-prototipo.md`.
+> **Estado (2026-07-26, D-042b/D-043)**: plugin en `plugins/awk-prototipo/` v0.2.0 (skill + conector `.mcp.json` **sin token: OAuth**). El conector se autentica contra el AS propio de la Fábrica (login usuario/contraseña) y el cliente se auto-registra por **DCR** — no hay Client ID/Secret que repartir por cuenta. Instalación, onboarding y diagnóstico: `docs/runbooks/plugin-awk-prototipo.md`. Alta por cuenta (admin): `docs/runbooks/onboarding-cuenta-claude.md`.
 
 ### 1. Skill `awk-prototipo` — estandariza la entrada
 
