@@ -5,7 +5,7 @@ Plugin de organización de Awakelab para Cowork/Claude Code: convierte la sesió
 ## Componentes
 
 - **Skill `awk-prototipo`** — guía el prototipado: identidad Awakelab 2026, preguntas de negocio, clasificación de sensibilidad por entidad (docs/05), y produce `prototype.html` + `prototype.manifest.json` antes de enviar.
-- **Conector MCP `awkfactory`** (`.mcp.json`) — remote MCP de la Fábrica en `https://apps.awakelab.world/factory-api/mcp` con las 5 tools del contrato v1: `list_modules`, `submit_prototype`, `get_project_status`, `request_change`, `approve_spec`.
+- **Conector MCP `awkfactory`** (`.mcp.json`) — remote MCP de la Fábrica en `https://apps.awakelab.world/factory-api/mcp` con las tools del contrato: `list_modules`, `list_projects`, `submit_prototype`, `get_project_status`, `request_change`, `approve_spec`.
 
 ## Autenticación — OAuth (D-042b)
 

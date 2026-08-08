@@ -62,6 +62,7 @@ Un remote MCP server (parte de la API de la fábrica) habilitado para la organiz
 | `request_change` | **Mantenimiento (tu punto 4)**: describe un cambio sobre un módulo ya desplegado → la fábrica lanza el mismo pipeline en modo incremental → PR sobre el módulo existente. |
 | `approve_spec` / `answer_question` | El gerente responde dudas del pipeline o aprueba la spec funcional sin salir de Cowork. |
 | `list_modules` | Catálogo de módulos existentes y sus capacidades — **antiduplicación**: antes de aceptar un prototipo nuevo, Claude comprueba si ya existe algo equivalente y lo sugiere. |
+| `list_projects` | **Seguimiento (D-044)**: proyectos propios con fase del pipeline, versión de spec y gates pendientes. El **scope lo decide el servidor por rol**: un gerente ve solo los suyos; un admin (Sistemas) ve todos — una sola tool sirve a la vista personal y a la consolidada. Alimenta el artefacto de status en Cowork. |
 
 ### El dashboard (URL de seguimiento)
 

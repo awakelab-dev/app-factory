@@ -11,7 +11,7 @@ import { ProjectsService } from '../pipeline/projects.service';
 import { SubmissionsService } from '../pipeline/submissions.service';
 import type { FactoryActorContext, ProjectStatus } from '../pipeline/types';
 import { CurrentActor } from './current-actor.decorator';
-import { toChangeRequestDto, toGateDto, toModuleSummaryDto, toProjectDetailDto } from './mappers';
+import { toChangeRequestDto, toGateDto, toModuleSummaryDto, toProjectDetailDto, toProjectSummaryDto } from './mappers';
 
 /**
  * Conector MCP `awkfactory` (D-036, incremento A de Fase 2): MCP server
@@ -99,6 +99,23 @@ export class McpController {
         const projects = await this.projects.listModules();
         return toolJson(projects.map(toModuleSummaryDto));
       }
+    );
+
+    server.registerTool(
+      'list_projects',
+      {
+        title: 'Listar mis proyectos en la Fábrica',
+        description:
+          'Proyectos propios en curso con su fase del pipeline, versión de spec y cuántos gates están pendientes. ' +
+          'Un gerente ve SOLO los suyos; un admin (Sistemas) ve todos — el alcance lo decide el servidor según el rol, no el parámetro. ' +
+          'Úsalo para responder "¿cómo van mis proyectos?" y para alimentar vistas de seguimiento.',
+        inputSchema: {}
+      },
+      async () =>
+        this.guarded(async () => {
+          const projects = await this.projects.list(actor);
+          return projects.map(toProjectSummaryDto);
+        })
     );
 
     server.registerTool(

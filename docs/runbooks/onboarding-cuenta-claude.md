@@ -41,7 +41,7 @@ pnpm --filter=@awk/factory run cli -- set-password --email <persona>@<dominio>  
    cd plugins/awk-prototipo && zip -r /tmp/awk-prototipo.plugin . -x "*.DS_Store"
    ```
 2. Al primer uso del conector, Claude abre el navegador → **login con el email y la contraseña de la Fábrica** (Parte 2) → consentimiento.
-3. **ÉXITO** = conector conectado + 5 tools + "¿qué módulos existen?" responde.
+3. **ÉXITO** = conector conectado + tools visibles + "¿qué módulos existen?" responde.
 
 Uso cotidiano (lenguaje natural, sin comandos técnicos): crear prototipo → "enviala a la Fábrica" → "¿cómo va mi proyecto?" → "agregale X al módulo Y".
 

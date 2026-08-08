@@ -71,9 +71,59 @@ describe('McpController (conector awkfactory, D-036)', () => {
       'approve_spec',
       'get_project_status',
       'list_modules',
+      'list_projects',
       'request_change',
       'submit_prototype'
     ]);
+  });
+
+  // list_projects (D-044): alimenta la vista de seguimiento. El scope lo decide
+  // el SERVIDOR por rol — el gerente ve los suyos, Sistemas (admin) ve todos.
+  it('list_projects delega en ProjectsService.list con el actor (scope por rol) y mapea el resumen', async () => {
+    const { projects, submissions, changeRequests, gates } = buildServices();
+    (projects as unknown as { list: unknown }).list = vi.fn().mockResolvedValue([
+      {
+        id: 'proj-9',
+        createdAt: new Date('2026-07-20T10:00:00Z'),
+        updatedAt: new Date('2026-07-21T10:00:00Z'),
+        moduleSlug: 'gestor-vacaciones',
+        displayName: 'Gestor de vacaciones',
+        requestedBy: gerente.email,
+        sourceType: 'cowork_prototype',
+        status: 'pending_approval',
+        specs: [{ version: 1, gates: [{ status: 'pending' }, { status: 'approved' }] }]
+      }
+    ]);
+    const controller = new McpController(projects, submissions, changeRequests, gates);
+    const client = await connectClient(controller, gerente);
+
+    const result = await client.callTool({ name: 'list_projects', arguments: {} });
+
+    expect((projects as unknown as { list: ReturnType<typeof vi.fn> }).list).toHaveBeenCalledWith(gerente);
+    const text = (result.content as { type: string; text: string }[])[0]?.text ?? '';
+    expect(JSON.parse(text)).toEqual([
+      expect.objectContaining({
+        id: 'proj-9',
+        moduleSlug: 'gestor-vacaciones',
+        status: 'pending_approval',
+        requestedBy: gerente.email,
+        latestSpecVersion: 1,
+        pendingGates: 1
+      })
+    ]);
+  });
+
+  it('list_projects con actor admin (Sistemas) pide la lista SIN filtrar por email', async () => {
+    const { projects, submissions, changeRequests, gates } = buildServices();
+    const admin: FactoryActorContext = { email: 'leonardo.barreto@awakelab.dev', role: 'admin' };
+    (projects as unknown as { list: unknown }).list = vi.fn().mockResolvedValue([]);
+    const controller = new McpController(projects, submissions, changeRequests, gates);
+    const client = await connectClient(controller, admin);
+
+    await client.callTool({ name: 'list_projects', arguments: {} });
+
+    // El servicio recibe el actor admin → ProjectsService.list no aplica filtro.
+    expect((projects as unknown as { list: ReturnType<typeof vi.fn> }).list).toHaveBeenCalledWith(admin);
   });
 
   it('list_modules devuelve el catálogo mapeado (slug, estado, resumen de spec)', async () => {

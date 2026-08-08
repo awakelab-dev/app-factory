@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Estado de mis proyectos · AwkFactory</title>
+<style>
+  :root{
+    color-scheme: light;
+    --azul-01192:#011932; --azul-01264:#01264C; --azul-03260:#003260;
+    --azul-27334:#27334F; --azul-31446:#314668; --azul-34547:#34547A;
+    --cian:#19F7F1; --cian-2:#0ABCC9; --cian-3:#0B93AA; --cian-pale:#D9FBFF;
+    --claro:#F0F3FC; --gris:#E2E6F2; --tenue:#72A3C4;
+    --ok:#0FCED3; --warn:#E8A33D; --bad:#D96666;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;padding:20px;background:var(--claro);color:var(--azul-01192);
+    font-family:'Poppins',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;
+  }
+  .wrap{max-width:1100px;margin:0 auto;}
+  header.top{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px;}
+  .brand{font-weight:700;font-size:19px;letter-spacing:-.2px;}
+  .brand span{color:var(--cian-3);}
+  .scope{font-size:12.5px;color:var(--azul-34547);background:#fff;border:1px solid var(--gris);
+         border-radius:999px;padding:5px 13px;font-weight:500;}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px;}
+  .kpi{background:#fff;border:1px solid var(--gris);border-radius:12px;padding:14px 16px;}
+  .kpi .n{font-size:26px;font-weight:700;line-height:1.1;}
+  .kpi .l{font-size:12px;color:var(--azul-34547);margin-top:3px;}
+  .kpi.attn{border-color:var(--cian-2);background:linear-gradient(180deg,#fff,var(--cian-pale));}
+  .kpi.attn .n{color:var(--cian-3);}
+  .controls{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center;}
+  input[type=search],select{
+    font-family:inherit;font-size:13px;padding:8px 11px;border:1px solid var(--gris);
+    border-radius:9px;background:#fff;color:var(--azul-01192);min-width:170px;
+  }
+  input[type=search]{flex:1;min-width:210px;}
+  input:focus,select:focus{outline:none;border-color:var(--cian-2);box-shadow:0 0 0 3px rgba(10,188,201,.15);}
+  .card{background:#fff;border:1px solid var(--gris);border-radius:12px;padding:16px 18px;margin-bottom:11px;}
+  .card.attn{border-left:4px solid var(--cian-2);}
+  .card-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;}
+  .name{font-weight:600;font-size:15.5px;}
+  .slug{font-size:12px;color:var(--azul-34547);font-family:ui-monospace,Menlo,monospace;margin-top:2px;}
+  .who{font-size:12px;color:var(--azul-34547);margin-top:5px;}
+  .pill{font-size:11.5px;font-weight:600;padding:4px 11px;border-radius:999px;white-space:nowrap;}
+  .badge-gate{display:inline-block;margin-top:9px;font-size:12px;font-weight:600;color:var(--azul-01192);
+    background:var(--cian-pale);border:1px solid var(--cian-2);border-radius:999px;padding:4px 11px;}
+  .track{display:flex;gap:3px;margin-top:13px;}
+  .track i{flex:1;height:6px;border-radius:3px;background:var(--gris);}
+  .track i.done{background:var(--cian-2);}
+  .track i.now{background:var(--cian);box-shadow:0 0 0 2px rgba(25,247,241,.3);}
+  .track i.bad{background:var(--bad);}
+  .phase{display:flex;justify-content:space-between;margin-top:7px;font-size:11.5px;color:var(--azul-34547);}
+  .group-h{margin:22px 0 10px;font-size:13px;font-weight:600;color:var(--azul-31446);
+           border-bottom:1px solid var(--gris);padding-bottom:6px;}
+  .empty,.err{background:#fff;border:1px dashed var(--tenue);border-radius:12px;padding:26px;text-align:center;color:var(--azul-34547);}
+  .err{border-color:var(--bad);border-style:solid;color:var(--azul-01192);text-align:left;}
+  .err code{background:var(--azul-01192);color:var(--cian-pale);padding:2px 6px;border-radius:5px;font-size:12px;}
+  .hint{font-size:12px;color:var(--azul-34547);margin-top:14px;line-height:1.6;}
+  .skel{height:74px;background:linear-gradient(90deg,#fff,var(--gris),#fff);background-size:200% 100%;
+        animation:sh 1.2s infinite;border-radius:12px;margin-bottom:11px;}
+  @keyframes sh{0%{background-position:200% 0}100%{background-position:-200% 0}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="brand">Awke<span>lab</span> · Estado de proyectos</div>
+      <div class="slug" id="sub">Fábrica de aplicaciones</div>
+    </div>
+    <div class="scope" id="scope">Cargando…</div>
+  </header>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="controls" id="controls" style="display:none">
+    <input type="search" id="q" placeholder="Buscar por nombre o módulo…" />
+    <select id="fEstado"><option value="">Todas las fases</option></select>
+    <select id="fPersona" style="display:none"><option value="">Todas las personas</option></select>
+    <select id="fOrden">
+      <option value="upd">Más recientes primero</option>
+      <option value="name">Por nombre</option>
+      <option value="gates">Pendientes de aprobación primero</option>
+    </select>
+  </div>
+
+  <div id="list"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
+  <p class="hint" id="hint"></p>
+</div>
+
+<script>
+// Fases del pipeline (docs/03) en orden, para dibujar el avance.
+var FASES = ['received','analyzing','spec_ready','pending_approval','generating','verifying','pr_review','staging','manager_acceptance','deployed'];
+var ETIQUETA = {
+  received:'Recibido', analyzing:'En análisis', spec_ready:'Especificación lista',
+  pending_approval:'Esperando tu aprobación', generating:'Construyendo', verifying:'Verificando',
+  pr_review:'Revisión técnica', staging:'En pruebas', manager_acceptance:'Validación final',
+  deployed:'En producción', changes_requested:'Cambios solicitados', rejected:'Rechazado', error:'Con problema'
+};
+var COLOR = {
+  deployed:['#0FCED3','#00341f'], pending_approval:['#D9FBFF','#01264C'], manager_acceptance:['#D9FBFF','#01264C'],
+  rejected:['#F8D7D7','#7A1C1C'], error:['#F8D7D7','#7A1C1C'], changes_requested:['#FBE7CD','#6B3D06']
+};
+var ESPERAN_A_MI = ['pending_approval','manager_acceptance'];
+
+var estado = { proyectos: [], error: null };
+var pref = {};
+try { pref = JSON.parse(localStorage.getItem('awk-estado-pref') || '{}'); } catch (e) { pref = {}; }
+
+function guardarPref() {
+  try {
+    localStorage.setItem('awk-estado-pref', JSON.stringify({
+      q: el('q').value, estado: el('fEstado').value, persona: el('fPersona').value, orden: el('fOrden').value
+    }));
+  } catch (e) { /* sin persistencia, no es crítico */ }
+}
+function el(id){ return document.getElementById(id); }
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return '&#' + c.charCodeAt(0) + ';'; }); }
+
+function fecha(iso){
+  if (!iso) return '';
+  var d = new Date(iso), ahora = new Date(), min = Math.round((ahora - d) / 60000);
+  if (min < 60) return 'hace ' + Math.max(1, min) + ' min';
+  if (min < 60 * 24) return 'hace ' + Math.round(min / 60) + ' h';
+  var dias = Math.round(min / 1440);
+  if (dias < 30) return 'hace ' + dias + ' día' + (dias === 1 ? '' : 's');
+  return d.toLocaleDateString('es', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+// Nombre cualificado del conector awkfactory (verificado en vivo: la llamada
+// llega al conector con este nombre).
+var TOOL = 'mcp__awkfactory__list_projects';
+
+function parsear(r){
+  if (!r) return null;
+  if (r.isError) throw new Error(textoDe(r) || 'La Fábrica devolvió un error.');
+  if (r.structuredContent) return r.structuredContent;
+  var t = textoDe(r);
+  return t ? JSON.parse(t) : null;
+}
+function textoDe(r){
+  if (r && r.content && r.content.length) {
+    for (var i = 0; i < r.content.length; i++) if (r.content[i] && r.content[i].text) return r.content[i].text;
+  }
+  return '';
+}
+
+async function cargar(){
+  var r = await window.cowork.callMcpTool(TOOL, {});
+  var data = parsear(r);
+  estado.proyectos = Array.isArray(data) ? data : ((data && (data.projects || data.items)) || []);
+}
+
+function pintar(){
+  var ps = estado.proyectos.slice();
+  var personas = {};
+  ps.forEach(function(p){ if (p.requestedBy) personas[p.requestedBy] = true; });
+  var nombres = Object.keys(personas);
+  var esSistemas = nombres.length > 1; // varias personas ⇒ vista consolidada (admin)
+
+  el('scope').textContent = esSistemas
+    ? 'Vista consolidada · Sistemas (' + nombres.length + ' personas)'
+    : 'Mis proyectos';
+  el('sub').textContent = esSistemas
+    ? 'Todos los proyectos en curso en la Fábrica'
+    : 'Fábrica de aplicaciones';
+
+  // KPIs
+  var esperan = ps.filter(function(p){ return p.pendingGates > 0 || ESPERAN_A_MI.indexOf(p.status) >= 0; }).length;
+  var vivos = ps.filter(function(p){ return p.status === 'deployed'; }).length;
+  var curso = ps.filter(function(p){ return ['deployed','rejected'].indexOf(p.status) < 0; }).length;
+  var atasco = ps.filter(function(p){ return ['error','rejected','changes_requested'].indexOf(p.status) >= 0; }).length;
+  el('kpis').innerHTML =
+    kpi(ps.length, 'Proyectos') +
+    kpi(esperan, esSistemas ? 'Esperando aprobación' : 'Requieren tu acción', esperan > 0) +
+    kpi(curso, 'En curso') +
+    kpi(vivos, 'En producción') +
+    (atasco ? kpi(atasco, 'Necesitan atención') : '');
+
+  // Filtros
+  var selE = el('fEstado');
+  if (selE.options.length <= 1) {
+    var vistos = {};
+    ps.forEach(function(p){ vistos[p.status] = true; });
+    Object.keys(vistos).forEach(function(s){
+      var o = document.createElement('option'); o.value = s; o.textContent = ETIQUETA[s] || s; selE.appendChild(o);
+    });
+  }
+  var selP = el('fPersona');
+  if (esSistemas && selP.options.length <= 1) {
+    selP.style.display = '';
+    nombres.sort().forEach(function(n){
+      var o = document.createElement('option'); o.value = n; o.textContent = n; selP.appendChild(o);
+    });
+  }
+  el('controls').style.display = ps.length ? 'flex' : 'none';
+
+  var q = el('q').value.toLowerCase().trim();
+  var fe = el('fEstado').value, fp = el('fPersona').value, orden = el('fOrden').value;
+  var vis = ps.filter(function(p){
+    if (fe && p.status !== fe) return false;
+    if (fp && p.requestedBy !== fp) return false;
+    if (q && (String(p.displayName || '').toLowerCase().indexOf(q) < 0 &&
+              String(p.moduleSlug || '').toLowerCase().indexOf(q) < 0)) return false;
+    return true;
+  });
+  vis.sort(function(a, b){
+    if (orden === 'name') return String(a.displayName).localeCompare(String(b.displayName), 'es');
+    if (orden === 'gates') return (b.pendingGates || 0) - (a.pendingGates || 0) ||
+                                  new Date(b.updatedAt) - new Date(a.updatedAt);
+    return new Date(b.updatedAt) - new Date(a.updatedAt);
+  });
+
+  var cont = el('list');
+  if (!ps.length) {
+    cont.innerHTML = '<div class="empty"><strong>Todavía no tienes proyectos en la Fábrica.</strong><br>' +
+      'Crea un prototipo en Cowork y pide «envíala a la Fábrica» para empezar.</div>';
+    return;
+  }
+  if (!vis.length) { cont.innerHTML = '<div class="empty">Ningún proyecto coincide con el filtro.</div>'; return; }
+
+  if (esSistemas && !fp && orden === 'upd') {
+    var porPersona = {};
+    vis.forEach(function(p){ (porPersona[p.requestedBy] = porPersona[p.requestedBy] || []).push(p); });
+    cont.innerHTML = Object.keys(porPersona).sort().map(function(n){
+      return '<div class="group-h">' + esc(n) + ' · ' + porPersona[n].length + '</div>' +
+             porPersona[n].map(tarjeta).join('');
+    }).join('');
+  } else {
+    cont.innerHTML = vis.map(tarjeta).join('');
+  }
+
+  el('hint').textContent = 'Se actualiza al abrir esta vista o con el botón de recargar. ' +
+    'Para pedir un cambio o aprobar una especificación, escríbelo en el chat de Cowork.';
+}
+
+function kpi(n, l, attn){
+  return '<div class="kpi' + (attn ? ' attn' : '') + '"><div class="n">' + n + '</div><div class="l">' + esc(l) + '</div></div>';
+}
+
+function tarjeta(p){
+  var idx = FASES.indexOf(p.status);
+  var malo = ['rejected','error','changes_requested'].indexOf(p.status) >= 0;
+  var c = COLOR[p.status] || ['#E2E6F2','#27334F'];
+  var pasos = FASES.map(function(_, i){
+    if (malo && i === Math.max(idx, 0)) return '<i class="bad"></i>';
+    if (idx < 0) return '<i></i>';
+    return i < idx ? '<i class="done"></i>' : (i === idx ? '<i class="now"></i>' : '<i></i>');
+  }).join('');
+  var pide = p.pendingGates > 0;
+  return '<div class="card' + (pide ? ' attn' : '') + '">' +
+    '<div class="card-head"><div>' +
+      '<div class="name">' + esc(p.displayName) + '</div>' +
+      '<div class="slug">' + esc(p.moduleSlug) + (p.latestSpecVersion ? ' · spec v' + p.latestSpecVersion : '') + '</div>' +
+      '<div class="who">Solicitado por ' + esc(p.requestedBy) + ' · actualizado ' + esc(fecha(p.updatedAt)) + '</div>' +
+    '</div>' +
+    '<span class="pill" style="background:' + c[0] + ';color:' + c[1] + '">' + esc(ETIQUETA[p.status] || p.status) + '</span>' +
+    '</div>' +
+    (pide ? '<div class="badge-gate">' + p.pendingGates + ' aprobación' + (p.pendingGates === 1 ? '' : 'es') + ' pendiente' + (p.pendingGates === 1 ? '' : 's') + '</div>' : '') +
+    '<div class="track">' + pasos + '</div>' +
+    '<div class="phase"><span>Recibido</span><span>En producción</span></div>' +
+  '</div>';
+}
+
+function fallo(e){
+  var msg = (e && e.message ? e.message : String(e)) || '';
+  el('scope').textContent = 'Sin datos';
+  el('kpis').innerHTML = '';
+  var cuerpo;
+  if (/400|not found|unknown tool|no such tool|-32601/i.test(msg)) {
+    // La tool list_projects existe en el código pero aún no en el servidor desplegado.
+    cuerpo = '<strong>La Fábrica todavía no expone la lista de proyectos.</strong><br><br>' +
+      'La vista está lista, pero el servidor de la Fábrica necesita el despliegue que incluye ' +
+      '<code>list_projects</code>. En cuanto esté desplegado, recarga esta vista.';
+  } else if (/401|unauthorized|autoriza|token|login/i.test(msg)) {
+    cuerpo = '<strong>Necesitas iniciar sesión en la Fábrica.</strong><br><br>' +
+      'Usa el conector <code>awkfactory</code> en el chat de Cowork para completar el inicio de sesión y vuelve a recargar.';
+  } else if (/403|forbidden|no está autorizado/i.test(msg)) {
+    cuerpo = '<strong>Tu usuario aún no está habilitado en la Fábrica.</strong><br><br>' +
+      'Solicita el alta al Departamento de Sistemas y Desarrollo.';
+  } else {
+    cuerpo = '<strong>No se pudieron cargar los proyectos.</strong><br><br>' +
+      'Comprueba que el conector <code>awkfactory</code> esté conectado en Cowork.';
+  }
+  el('list').innerHTML = '<div class="err">' + cuerpo +
+    '<br><br><span style="font-size:12px;color:#34547A">Detalle técnico: ' + esc(msg) + '</span></div>';
+}
+
+['q','fEstado','fPersona','fOrden'].forEach(function(id){
+  el(id).addEventListener('input', function(){ guardarPref(); pintar(); });
+  el(id).addEventListener('change', function(){ guardarPref(); pintar(); });
+});
+
+(async function(){
+  if (pref.q) el('q').value = pref.q;
+  if (pref.orden) el('fOrden').value = pref.orden;
+  try {
+    await cargar();
+    if (pref.estado) { var o = document.createElement('option'); }
+    pintar();
+    if (pref.estado) { el('fEstado').value = pref.estado; pintar(); }
+    if (pref.persona) { el('fPersona').value = pref.persona; pintar(); }
+  } catch (e) { fallo(e); }
+})();
+</script>
+</body>
+</html>
