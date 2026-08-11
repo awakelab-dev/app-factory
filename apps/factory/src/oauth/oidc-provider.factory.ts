@@ -167,6 +167,25 @@ export async function createOidcProvider(prisma: PrismaService, jwks: OauthJwks)
     logger.warn(`interaction.error: ${err.error} — ${err.error_description ?? ''} — ${err.error_detail ?? ''}`)
   );
   emitter.on('server_error', (_ctx, err) => logger.error(`server_error: ${err.message} ${err.stack ?? ''}`));
+
+  // Registro dinámico (DCR): si Claude manda un metadato que no aceptamos, sin
+  // esto el motivo se pierde y el cliente solo ve "couldn't register". Se loguea
+  // el error Y el cuerpo recibido para poder ajustar la política. D-043.
+  const onRegError = (ctx: unknown, err: { error?: string; error_description?: string; error_detail?: string }) => {
+    let body = '';
+    try {
+      const oidc = (ctx as { oidc?: { body?: unknown } } | undefined)?.oidc;
+      body = JSON.stringify(oidc?.body ?? {});
+    } catch {
+      body = '(no serializable)';
+    }
+    logger.warn(
+      `registration.error: ${err.error} — ${err.error_description ?? ''} — ${err.error_detail ?? ''} | payload=${body}`
+    );
+  };
+  emitter.on('registration_create.error', onRegError);
+  emitter.on('registration_update.error', onRegError);
+  emitter.on('registration_read.error', onRegError);
   logger.log(`Authorization Server listo — issuer=${issuer} resource=${resource}`);
   return provider;
 }
