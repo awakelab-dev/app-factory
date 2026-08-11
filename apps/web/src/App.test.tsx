@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthUser } from '@awk/types';
 import { App } from './App';
@@ -54,8 +54,11 @@ describe('App (shell)', () => {
     expect(screen.getByRole('link', { name: 'Usuarios' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Moodle Insights' })).toBeInTheDocument();
     expect(screen.queryByText('Demo Hello')).not.toBeInTheDocument();
-    // el índice redirige al primer ítem visible del registry (moodle-insights)
-    expect(window.location.pathname).toBe('/moodle-insights');
+    // El índice redirige al primer ítem visible del registry (moodle-insights).
+    // waitFor y no un expect directo: el redirect ocurre en un efecto posterior a
+    // que el nav ya esté en pantalla, así que leer window.location de inmediato
+    // devuelve '/' de forma intermitente (falló así en CI el 2026-08-11).
+    await waitFor(() => expect(window.location.pathname).toBe('/moodle-insights'));
   });
 
   it('un usuario sin rol admin no ve el módulo de administración (moodle-insights sí)', async () => {
