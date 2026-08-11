@@ -25,35 +25,58 @@ jobs:
     name: Deploy staging
     if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    # Necesario para que GITHUB_TOKEN pueda leer los paquetes de GHCR.
+    permissions:
+      contents: read
+      packages: read
     steps:
-      - name: SSH deploy (pull + up)
+      - name: SSH deploy (login + pull + up)
         uses: appleboy/ssh-action@v1
+        env:
+          # El deploy hacía `pull` confiando en un `docker login` MANUAL hecho una
+          # vez en el server: cuando esa credencial caducó, el pull empezó a fallar
+          # con "error from registry: denied" y el deploy se rompió en silencio
+          # (2026-08-11). Ahora el propio workflow inyecta un token efímero.
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           host: ${{ secrets.LIGHTSAIL_HOST }}
           username: ${{ secrets.LIGHTSAIL_SSH_USER }}
           key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          envs: GHCR_USER,GHCR_TOKEN
           script: |
             set -euo pipefail
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
             cd /opt/awkfactory/staging
             docker compose --env-file .env -p awk-staging pull
             docker compose --env-file .env -p awk-staging up -d
             docker image prune -f
+            docker logout ghcr.io
 
   production:
     name: Promote to production
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     steps:
-      - name: SSH deploy (re-tag + pull + up)
+      - name: SSH deploy (login + re-tag + pull + up)
         uses: appleboy/ssh-action@v1
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           host: ${{ secrets.LIGHTSAIL_HOST }}
           username: ${{ secrets.LIGHTSAIL_SSH_USER }}
           key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          envs: GHCR_USER,GHCR_TOKEN
           script: |
             set -euo pipefail
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
             cd /opt/awkfactory/production
             sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=${{ inputs.image_tag }}/" .env
             docker compose --env-file .env -p awk-production pull
             docker compose --env-file .env -p awk-production up -d
             docker image prune -f
+            docker logout ghcr.io
