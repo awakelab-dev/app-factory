@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>App Factory · Awakelab — Resumen ejecutivo</title>
+<link rel="icon" href="https://media.awakelab.world/MARCA_AWK26/awakelab_isotipo_fondo-oscuro_transparente.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --c-cyan-100:#D9FBFF; --c-cyan-300:#19F7F1; --c-cyan-400:#11EAEA;
+    --c-cyan-500:#0FCED3; --c-cyan-600:#0ABCC9; --c-cyan-700:#0B93AA;
+    --b-050:#F0F3FC; --b-100:#E2E6F2;
+    --b-300:#72A3C4; --b-400:#4E7EA5; --b-500:#3B6996; --b-600:#34547A; --b-700:#314668; --b-800:#27334F;
+    --d-500:#003670; --d-600:#003260; --d-700:#01264C; --d-800:#012142; --d-900:#011932;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:'Poppins',system-ui,sans-serif;
+    background:#01121f;
+    color:var(--b-050);
+    display:flex;align-items:center;justify-content:center;
+    overflow:hidden;
+  }
+  #viewport{position:relative;width:100vw;height:100vh;display:flex;align-items:center;justify-content:center}
+  #stage{width:1600px;height:900px;transform-origin:center center;position:relative;flex:none}
+
+  .slide{
+    position:absolute;inset:0;
+    background:
+      radial-gradient(1100px 620px at 88% -12%, rgba(15,206,211,.20), transparent 60%),
+      radial-gradient(880px 560px at 4% 108%, rgba(0,54,112,.85), transparent 62%),
+      linear-gradient(148deg,#012142 0%,#011932 52%,#01264C 100%);
+    padding:48px 64px 38px;
+    display:none;flex-direction:column;
+    box-shadow:0 40px 120px rgba(0,0,0,.55);
+  }
+  .slide.active{display:flex}
+
+  /* ---------- header ---------- */
+  header{display:flex;align-items:center;justify-content:space-between;margin-bottom:26px;flex:none}
+  .logo{height:38px;width:auto;display:block}
+  .logo-fb{display:none;font-size:25px;font-weight:600;letter-spacing:-.02em;color:#fff}
+  .logo-fb b{color:var(--c-cyan-300);font-weight:600}
+  .eyebrow{
+    font-size:12.5px;font-weight:600;letter-spacing:.24em;text-transform:uppercase;
+    color:var(--c-cyan-400);display:flex;align-items:center;gap:12px;
+  }
+  .eyebrow::before{content:"";width:34px;height:2px;background:var(--c-cyan-400);border-radius:2px}
+  h1{font-size:41px;font-weight:600;letter-spacing:-.018em;line-height:1.12;margin-top:12px}
+  h1 em{font-style:normal;color:var(--c-cyan-300)}
+  .sub{font-size:16px;font-weight:300;color:var(--b-300);margin-top:10px;max-width:1120px;line-height:1.5}
+  .title-block{flex:none;margin-bottom:30px}
+
+  /* ---------- slide 1 : flujo ---------- */
+  .flow{position:relative;display:grid;grid-template-columns:repeat(5,1fr);grid-template-rows:1fr;gap:20px;flex:1}
+  .flow::before{
+    content:"";position:absolute;left:34px;right:34px;top:26px;height:2px;
+    background:linear-gradient(90deg,var(--c-cyan-300),var(--c-cyan-600) 55%,rgba(11,147,170,.25));
+    border-radius:2px;
+  }
+  .step{position:relative;display:flex;flex-direction:column}
+  .dot{
+    position:relative;z-index:2;width:54px;height:54px;border-radius:50%;
+    background:linear-gradient(150deg,var(--c-cyan-300),var(--c-cyan-600));
+    color:#011932;font-weight:700;font-size:21px;
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:0 0 0 9px rgba(1,25,50,1),0 0 34px rgba(25,247,241,.32);
+  }
+  .card{
+    margin-top:22px;flex:1;
+    background:linear-gradient(165deg,rgba(49,70,104,.55),rgba(1,33,66,.55));
+    border:1px solid rgba(114,163,196,.30);
+    border-radius:16px;padding:20px 19px 18px;
+    display:flex;flex-direction:column;
+  }
+  .card h3{font-size:20px;font-weight:600;color:#fff;letter-spacing:-.01em}
+  .card p{font-size:14.4px;font-weight:300;line-height:1.62;color:var(--b-100);margin-top:9px;flex:1}
+  .card p b{font-weight:500;color:#fff}
+  .tool{
+    margin-top:14px;padding-top:12px;border-top:1px solid rgba(114,163,196,.25);
+    font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12.2px;
+    color:var(--c-cyan-300);letter-spacing:.01em;line-height:1.5;
+  }
+  .tool span{color:var(--b-300);font-family:'Poppins',sans-serif;display:block;font-size:10.5px;
+    letter-spacing:.14em;text-transform:uppercase;margin-bottom:5px;font-weight:600}
+
+  .states{
+    flex:none;margin-top:20px;display:flex;align-items:center;gap:14px;
+  }
+  .states .k{
+    font-size:10.5px;font-weight:700;letter-spacing:.17em;text-transform:uppercase;
+    color:var(--b-300);white-space:nowrap;line-height:1.4;max-width:118px;
+  }
+  .states .track{display:flex;align-items:center;flex:1;gap:0}
+  .states .st{
+    font-size:11.6px;font-weight:400;color:var(--b-100);white-space:nowrap;
+    background:rgba(114,163,196,.12);border:1px solid rgba(114,163,196,.28);
+    border-radius:8px;padding:5px 9px;
+  }
+  .states .st.hi{color:var(--c-cyan-100);background:rgba(25,247,241,.13);border-color:rgba(25,247,241,.40)}
+  .states .sep{flex:1;height:1px;background:rgba(114,163,196,.32);min-width:6px}
+
+  .banner{
+    flex:none;margin-top:18px;
+    display:flex;align-items:center;gap:30px;
+    background:linear-gradient(90deg,rgba(15,206,211,.15),rgba(1,38,76,.35) 62%);
+    border:1px solid rgba(25,247,241,.35);border-left:4px solid var(--c-cyan-300);
+    border-radius:14px;padding:17px 26px;
+  }
+  .banner .big{font-size:19px;font-weight:600;color:var(--c-cyan-100);white-space:nowrap}
+  .banner .small{font-size:14px;font-weight:300;color:var(--b-100);line-height:1.5}
+  .banner .small b{font-weight:500;color:#fff}
+
+  /* ---------- slide 2 : arquitectura ---------- */
+  .arch{display:grid;grid-template-columns:1fr 92px 1fr;gap:0;flex:1;align-items:stretch}
+  .col{
+    background:linear-gradient(170deg,rgba(49,70,104,.50),rgba(1,33,66,.55));
+    border:1px solid rgba(114,163,196,.30);border-radius:20px;padding:18px 20px 16px;
+    display:flex;flex-direction:column;
+  }
+  .col.platform{border-color:rgba(25,247,241,.34)}
+  .col-head{display:flex;align-items:baseline;gap:12px;padding-bottom:11px;margin-bottom:13px;
+    border-bottom:1px solid rgba(114,163,196,.28)}
+  .col-head h2{font-size:22px;font-weight:600;color:#fff;letter-spacing:-.01em}
+  .col-head code{font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12.5px;color:var(--c-cyan-300)}
+  .col-head .who{margin-left:auto;font-size:11px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;
+    color:var(--b-300);text-align:right}
+
+  .layer{
+    background:rgba(1,25,50,.55);border:1px solid rgba(114,163,196,.24);
+    border-radius:13px;padding:11px 15px;margin-bottom:9px;
+    display:flex;flex-direction:column;justify-content:center;flex:1;
+  }
+  .layer:last-child{margin-bottom:0}
+  .layer.accent{border-color:rgba(25,247,241,.42);background:rgba(15,206,211,.10)}
+  .layer .lt{font-size:15.5px;font-weight:600;color:#fff;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .layer .lt .tag{
+    font-family:ui-monospace,'SF Mono',Menlo,monospace;font-weight:400;font-size:11.5px;
+    color:var(--c-cyan-300);background:rgba(25,247,241,.10);
+    border:1px solid rgba(25,247,241,.28);border-radius:6px;padding:2px 8px;
+  }
+  .layer .ld{font-size:12.6px;font-weight:300;color:var(--b-100);line-height:1.45;margin-top:5px}
+  .layer .ld b{font-weight:500;color:#fff}
+
+  .bridge{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:0 6px}
+  .bridge svg{display:block}
+  .bridge .lbl{font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--c-cyan-300);text-align:center;line-height:1.45}
+  .bridge .lbl small{display:block;font-size:10px;letter-spacing:.06em;color:var(--b-300);
+    font-weight:400;text-transform:none;margin-top:4px}
+
+  .infra{
+    flex:none;margin-top:14px;display:flex;align-items:center;gap:16px;
+    background:linear-gradient(90deg,rgba(0,54,112,.55),rgba(1,25,50,.35));
+    border:1px solid rgba(114,163,196,.30);border-radius:14px;padding:12px 20px;
+  }
+  .infra .k{font-size:11px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--c-cyan-300);white-space:nowrap;padding-right:18px;border-right:1px solid rgba(114,163,196,.30)}
+  .chips{display:flex;flex-wrap:wrap;gap:7px 8px;flex:1}
+  .chip{
+    font-size:11.9px;font-weight:400;color:var(--b-100);
+    background:rgba(114,163,196,.13);border:1px solid rgba(114,163,196,.30);
+    border-radius:999px;padding:4px 12px;white-space:nowrap;
+  }
+  .chip b{font-weight:600;color:#fff}
+
+  /* ---------- footer / nav ---------- */
+  footer{
+    flex:none;margin-top:16px;display:flex;align-items:center;justify-content:space-between;
+    font-size:11.5px;color:var(--b-400);letter-spacing:.06em;
+  }
+  footer .principle{color:var(--b-300);font-weight:300;letter-spacing:0;font-size:12.6px}
+  footer .principle b{color:var(--c-cyan-300);font-weight:500}
+  .pager{display:flex;align-items:center;gap:9px}
+  .pager i{width:26px;height:3px;border-radius:3px;background:rgba(114,163,196,.35);display:block}
+  .pager i.on{background:var(--c-cyan-300);width:40px}
+
+  #hint{
+    position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:20;
+    font-size:12.5px;color:var(--b-300);background:rgba(1,25,50,.8);
+    border:1px solid rgba(114,163,196,.35);border-radius:999px;padding:6px 16px;
+    backdrop-filter:blur(6px);transition:opacity .6s;pointer-events:none;
+  }
+  #hint.off{opacity:0}
+  @media print{#hint{display:none}}
+</style>
+</head>
+<body>
+<div id="viewport">
+<div id="stage">
+
+  <!-- ================= SLIDE 1 ================= -->
+  <section class="slide active" id="s1">
+    <header>
+      <img class="logo" src="https://media.awakelab.world/MARCA_AWK26/awakelab_logo_fondo-oscuro_transparente.png" alt="Awakelab" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><div class="logo-fb">awake<b>lab</b></div>
+      <div class="eyebrow">App Factory · 01 / 02</div>
+    </header>
+
+    <div class="title-block">
+      <h1>Del prototipo a <em>producción</em></h1>
+      <p class="sub">Quien conoce el proceso lo prototipa en Cowork y ese prototipo entra en la Fábrica. Sale convertido en un módulo real de la plataforma corporativa — con API, base de datos, roles y deploy — sin tocar git, CLI ni infraestructura.</p>
+    </div>
+
+    <div class="flow">
+      <div class="step">
+        <div class="dot">1</div>
+        <div class="card">
+          <h3>Prototipa</h3>
+          <p>En Cowork, en lenguaje natural. La skill <b>awk-prototipo</b> aplica la identidad Awakelab y hace las preguntas de negocio: quién lo usa, qué datos maneja, cuáles son sensibles.</p>
+          <div class="tool"><span>Salida</span>HTML + prototype.manifest.json</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="dot">2</div>
+        <div class="card">
+          <h3>Envía a la Fábrica</h3>
+          <p>Una frase basta. El conector comprueba antes si <b>ya existe un módulo equivalente</b> y lo sugiere: es el freno a la duplicación de soluciones.</p>
+          <div class="tool"><span>Conector MCP</span>submit_prototype<br>list_modules</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="dot">3</div>
+        <div class="card">
+          <h3>Aprueba la spec</h3>
+          <p>La Fábrica no genera código del HTML: primero redacta una <b>spec funcional en lenguaje de negocio</b> + una spec técnica. Se valida la funcional; Sistemas revisa la técnica.</p>
+          <div class="tool"><span>Gate humano</span>approve_spec<br>answer_question</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="dot">4</div>
+        <div class="card">
+          <h3>Sigue el estado</h3>
+          <p>Generación con Agent SDK, verificación en CI y PR ocurren solas. El avance se consulta <b>en cualquier momento</b>, desde Cowork o el dashboard.</p>
+          <div class="tool"><span>Seguimiento</span>get_project_status<br>list_projects</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="dot">5</div>
+        <div class="card">
+          <h3>Valida y evoluciona</h3>
+          <p>Preview en staging → aceptación funcional → producción. Después, cada mejora entra <b>por el mismo camino</b>, sin abrir un ticket.</p>
+          <div class="tool"><span>Mantenimiento</span>request_change</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="states">
+      <div class="k">El pipeline<br>por dentro</div>
+      <div class="track">
+        <div class="st">Recibido</div><div class="sep"></div>
+        <div class="st">Analizando</div><div class="sep"></div>
+        <div class="st">Spec lista</div><div class="sep"></div>
+        <div class="st hi">Aprobación funcional</div><div class="sep"></div>
+        <div class="st">Generando</div><div class="sep"></div>
+        <div class="st">Verificando</div><div class="sep"></div>
+        <div class="st hi">PR en revisión</div><div class="sep"></div>
+        <div class="st">Staging</div><div class="sep"></div>
+        <div class="st hi">Aceptación</div><div class="sep"></div>
+        <div class="st">Desplegado</div>
+      </div>
+    </div>
+
+    <div class="banner">
+      <div class="big">Sin git. Sin CLI. Sin infraestructura.</div>
+      <div class="small">Superficie única: <b>Cowork</b>. El equipo de desarrollo deja de convertir prototipos a mano y pasa a <b>revisar y aprobar</b> lo que la Fábrica genera — el gate humano es parte del diseño, no una limitación temporal.</div>
+    </div>
+
+    <footer>
+      <div class="principle">En <b>cian</b>, los tres momentos en que decide una persona: aprobar la spec, revisar la PR y aceptar el resultado.</div>
+      <div class="pager"><i class="on"></i><i></i></div>
+    </footer>
+  </section>
+
+  <!-- ================= SLIDE 2 ================= -->
+  <section class="slide" id="s2">
+    <header>
+      <img class="logo" src="https://media.awakelab.world/MARCA_AWK26/awakelab_logo_fondo-oscuro_transparente.png" alt="Awakelab" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><div class="logo-fb">awake<b>lab</b></div>
+      <div class="eyebrow">Arquitectura · 02 / 02</div>
+    </header>
+
+    <div class="title-block">
+      <h1>Dos sistemas: la <em>Fábrica</em> que produce y la <em>Plataforma</em> que opera</h1>
+      <p class="sub">Un solo frontend, una sola API y una sola base de datos para toda la organización. Cada prototipo aprobado se convierte en un módulo aislado dentro de esa plataforma — nunca en otra app suelta.</p>
+    </div>
+
+    <div class="arch">
+      <!-- FÁBRICA -->
+      <div class="col">
+        <div class="col-head">
+          <h2>La Fábrica</h2><code>awkfactory</code>
+          <div class="who">Control plane<br>Produce los módulos</div>
+        </div>
+        <div class="layer accent">
+          <div class="lt">Conector MCP <span class="tag">OAuth · sin tokens que repartir</span></div>
+          <div class="ld">Puerta de entrada desde Cowork. <b>6 tools</b> cubren enviar, aprobar, consultar y pedir cambios. El acceso lo da el login corporativo, no el plugin.</div>
+        </div>
+        <div class="layer">
+          <div class="lt">API de la Fábrica <span class="tag">NestJS</span></div>
+          <div class="ld">Proyectos, specs versionadas, gates y auditoría de quién aprobó qué. Expone el <b>dashboard de seguimiento</b> con timeline y preview links.</div>
+        </div>
+        <div class="layer">
+          <div class="lt">Runners de generación <span class="tag">Claude Agent SDK headless</span></div>
+          <div class="ld">Contenedores efímeros con el monorepo clonado: rellenan la <b>plantilla de módulo</b> según la spec aprobada, ejecutan build y tests, y abren PR. Cola BullMQ + Redis.</div>
+        </div>
+        <div class="layer">
+          <div class="lt">Verificación y gobernanza <span class="tag">CI + revisión</span></div>
+          <div class="ld">Typecheck, lint de fronteras entre módulos, tests y migraciones contra BD efímera. Revisión humana <b>obligatoria</b> si hay datos sensibles, migraciones compartidas o alta complejidad.</div>
+        </div>
+      </div>
+
+      <!-- PUENTE -->
+      <div class="bridge">
+        <div class="lbl">Pull&nbsp;Request<small>al monorepo</small></div>
+        <svg width="80" height="34" viewBox="0 0 80 34" fill="none" aria-hidden="true">
+          <defs><linearGradient id="g" x1="0" y1="0" x2="80" y2="0">
+            <stop offset="0" stop-color="#0B93AA"/><stop offset="1" stop-color="#19F7F1"/>
+          </linearGradient></defs>
+          <path d="M0 17h60" stroke="url(#g)" stroke-width="3" stroke-linecap="round"/>
+          <path d="M58 7l16 10-16 10z" fill="#19F7F1"/>
+        </svg>
+        <div class="lbl">Deploy<small>staging → prod</small></div>
+      </div>
+
+      <!-- PLATAFORMA -->
+      <div class="col platform">
+        <div class="col-head">
+          <h2>La Plataforma</h2><code>awkplatform</code>
+          <div class="who">Producto<br>Opera el día a día</div>
+        </div>
+        <div class="layer">
+          <div class="lt">Shell web <span class="tag">React + Vite · Tailwind + shadcn/ui</span></div>
+          <div class="ld">Una única aplicación con la identidad Awakelab. El menú y las rutas se construyen <b>según el rol de cada persona</b> y los manifests de los módulos instalados.</div>
+        </div>
+        <div class="layer accent">
+          <div class="lt">Core común <span class="tag">se construye una vez, a mano</span></div>
+          <div class="ld">Autenticación, <b>RBAC</b>, usuarios, auditoría, notificaciones y componentes de marca. Es lo que elimina la duplicación entre departamentos.</div>
+        </div>
+        <div class="layer">
+          <div class="lt">Módulos generados <span class="tag">API NestJS · modules/</span></div>
+          <div class="ld">Un prototipo = un módulo aislado en su carpeta y su schema. Solo puede hablar con el core y con otros módulos <b>por sus APIs públicas</b> — regla verificada por lint en CI.</div>
+        </div>
+        <div class="layer">
+          <div class="lt">Datos <span class="tag">PostgreSQL 16 + Prisma</span></div>
+          <div class="ld">Schema <b>core</b> + un schema por módulo, con relaciones reales y migraciones versionadas. <b>Row-Level Security</b> para lo confidencial: la clasificación de la spec se vuelve política ejecutable.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="infra">
+      <div class="k">Infraestructura</div>
+      <div class="chips">
+        <div class="chip">Monorepo <b>pnpm + Turborepo</b></div>
+        <div class="chip">100% <b>TypeScript</b> de punta a punta</div>
+        <div class="chip"><b>GitHub Actions</b> → GHCR</div>
+        <div class="chip"><b>Docker Compose</b> sobre el Lightsail existente del grupo</div>
+        <div class="chip">Nginx nativo + certbot</div>
+        <div class="chip">Lightsail <b>managed PostgreSQL</b> · privado y cifrado</div>
+        <div class="chip">Entornos <b>staging + producción</b>, promoción por re-tag</div>
+      </div>
+    </div>
+
+    <footer>
+      <div class="principle">Principio rector: <b>convención sobre configuración</b> — un stack único y una plantilla fija son lo que hacen fiable la generación con IA.</div>
+      <div class="pager"><i></i><i class="on"></i></div>
+    </footer>
+  </section>
+
+</div>
+</div>
+
+<div id="hint">Haz clic o usa ← → para navegar</div>
+
+<script>
+  var i = 0, slides = document.querySelectorAll('.slide');
+  function show(n){
+    i = (n + slides.length) % slides.length;
+    slides.forEach(function(s, k){ s.classList.toggle('active', k === i); });
+  }
+  function go(d){ show(i + d); }
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); go(1); }
+    if (e.key === 'ArrowLeft'  || e.key === 'PageUp')  { e.preventDefault(); go(-1); }
+    if (e.key === '1') show(0);
+    if (e.key === '2') show(1);
+  });
+  document.addEventListener('click', function(e){ go(e.shiftKey ? -1 : 1); });
+  setTimeout(function(){ var h = document.getElementById('hint'); if (h) h.classList.add('off'); }, 4500);
+  function fit(){
+    var s = Math.min(window.innerWidth / 1600, window.innerHeight / 900);
+    document.getElementById('stage').style.transform = 'scale(' + s + ')';
+  }
+  window.addEventListener('resize', fit); fit();
+</script>
+</body>
+</html>
