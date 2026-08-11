@@ -150,8 +150,10 @@ export function submitLogin(provider: OidcProviderLike, actors: ActorsService): 
       const clientId = details.params.client_id;
       const resource = details.params.resource;
       const grant = new provider.Grant({ accountId: actor.email, clientId: clientId ?? '' });
-      // OIDC: offline_access (refresh token). Recurso: el scope propio del MCP.
-      grant.addOIDCScope(OAUTH_SCOPES.join(' '));
+      // Se concede TODO lo que pidió el request (no solo offline_access): si queda
+      // algún scope sin conceder, el provider abre un segundo prompt de consent y
+      // el flujo da un salto extra. Claude pide "offline_access mcp". D-043.
+      grant.addOIDCScope(details.params.scope ?? OAUTH_SCOPES.join(' '));
       if (resource) grant.addResourceScope(resource, OAUTH_MCP_SCOPE);
       const grantId = await grant.save();
       await provider.interactionFinished(req, res, {

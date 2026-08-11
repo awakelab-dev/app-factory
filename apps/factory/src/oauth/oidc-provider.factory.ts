@@ -53,9 +53,10 @@ export async function createOidcProvider(prisma: PrismaService, jwks: OauthJwks)
         // Confidencial (tiene secret) PERO además usa PKCE — como Anthropic
         // pre-registra Client ID/Secret al alta del custom connector.
         token_endpoint_auth_method: 'client_secret_basic',
-        // Solo scopes OIDC en el metadato del cliente; `mcp` es scope de RECURSO
-        // (se valida contra getResourceServerInfo al pedirlo con resource=MCP).
-        scope: OAUTH_SCOPES.join(' '),
+        // Mismos scopes que anuncia la PRM: el metadato `scope` del cliente ACOTA
+        // lo que puede pedir, así que debe incluir `mcp` (si no, el request con
+        // "offline_access mcp" no obtiene código). D-043.
+        scope: [...OAUTH_SCOPES, OAUTH_MCP_SCOPE].join(' '),
         // Nuestra JWKS es solo ES256 (sin RSA). El default de este campo es RS256,
         // que sin clave RSA hace fallar la request de autorización con
         // invalid_client_metadata. Lo fijamos a ES256 (aunque no emitamos id_token
@@ -74,7 +75,7 @@ export async function createOidcProvider(prisma: PrismaService, jwks: OauthJwks)
               response_types: ['code'],
               // Público (sin secret): PKCE obligatorio + redirect loopback.
               token_endpoint_auth_method: 'none',
-              scope: OAUTH_SCOPES.join(' '),
+              scope: [...OAUTH_SCOPES, OAUTH_MCP_SCOPE].join(' '),
               id_token_signed_response_alg: 'ES256'
             }
           ]
@@ -82,7 +83,14 @@ export async function createOidcProvider(prisma: PrismaService, jwks: OauthJwks)
     ],
     jwks,
     cookies: { keys: cookieKeys() },
-    scopes: [...OAUTH_SCOPES],
+    // `mcp` va TAMBIÉN como scope del AS, no solo del recurso: lo anunciamos en la
+    // PRM (`scopes_supported`) y los clientes que se auto-registran por DCR —Claude
+    // lo hace— lo repiten en el metadato `scope` del registro, que se valida contra
+    // ESTA lista. Sin él: "scope must only contain Authorization Server supported
+    // scope values" → invalid_client_metadata y el conector no llega a conectar
+    // (visto en staging con Claude real, D-043). La audiencia/permiso efectivo lo
+    // sigue fijando getResourceServerInfo por recurso.
+    scopes: [...OAUTH_SCOPES, OAUTH_MCP_SCOPE],
     // Sin OIDC: es OAuth puro para MCP. `sub` = email del actor.
     claims: { openid: ['sub'] },
     pkce: { required: () => true },
