@@ -128,9 +128,14 @@ function fecha(iso){
   return d.toLocaleDateString('es', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-// Nombre cualificado del conector awkfactory (verificado en vivo: la llamada
-// llega al conector con este nombre).
-var TOOL = 'mcp__awkfactory__list_projects';
+// Nombres cualificados del conector. El conector de organización se expone con un
+// id propio (verificado en vivo: devuelve los proyectos), y el que aporta el plugin
+// como `awkfactory`. Si el admin recrea el conector el id cambia, así que se prueban
+// en orden — todos deben estar en el allowlist del artefacto.
+var TOOLS = [
+  'mcp__6f2963dd-c536-4f0e-8bfd-47c93939f588__list_projects',
+  'mcp__awkfactory__list_projects'
+];
 
 function parsear(r){
   if (!r) return null;
@@ -147,9 +152,20 @@ function textoDe(r){
 }
 
 async function cargar(){
-  var r = await window.cowork.callMcpTool(TOOL, {});
-  var data = parsear(r);
-  estado.proyectos = Array.isArray(data) ? data : ((data && (data.projects || data.items)) || []);
+  var ultimo = null;
+  for (var i = 0; i < TOOLS.length; i++) {
+    try {
+      var r = await window.cowork.callMcpTool(TOOLS[i], {});
+      var data = parsear(r);
+      estado.proyectos = Array.isArray(data) ? data : ((data && (data.projects || data.items)) || []);
+      return;
+    } catch (e) {
+      ultimo = e;
+      // Un nombre fuera del allowlist o inexistente: se prueba el siguiente.
+      if (!/allowlist|not in this artifact|unknown tool|not found/i.test(e && e.message ? e.message : '')) throw e;
+    }
+  }
+  throw ultimo || new Error('No se pudo contactar el conector de la Fábrica.');
 }
 
 function pintar(){
