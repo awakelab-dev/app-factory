@@ -5,6 +5,7 @@
  */
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client';
+import { INCIDENCIAS_AULA_SEED_AULAS } from '../src/modules/incidencias-aula/incidencias-aula-seed-data';
 import { ORIENTADOR_ACADEMIES } from './seed-data/orientador-academies';
 
 const connectionString =
@@ -31,6 +32,17 @@ async function main(): Promise<void> {
     update: {},
     create: { name: 'orientador_admin', description: 'Panel admin del módulo orientador-ia (leads, academias)' }
   });
+  // incidencias-aula (2026-08-15): tres roles DISJUNTOS sobre la misma
+  // entidad — docente (solo sus partes), coordinación (bandeja completa y
+  // cierre) y dirección (resumen agregado, sin datos identificativos).
+  const incidenciasRoles: Array<{ name: string; description: string }> = [
+    { name: 'incidencias_docente', description: 'Incidencias de aula: registra partes y consulta los suyos' },
+    { name: 'incidencias_coordinacion', description: 'Incidencias de aula: bandeja completa, seguimiento y cierre' },
+    { name: 'incidencias_direccion', description: 'Incidencias de aula: resumen mensual agregado, sin datos identificativos' }
+  ];
+  for (const role of incidenciasRoles) {
+    await prisma.role.upsert({ where: { name: role.name }, update: {}, create: role });
+  }
 
   const users: Array<{ email: string; displayName: string; roleId: string }> = [
     { email: 'leonardo.barreto@awakelab.dev', displayName: 'Leonardo Barreto', roleId: admin.id },
@@ -60,12 +72,23 @@ async function main(): Promise<void> {
     });
   }
 
+  // incidencias-aula (gate funcional 2026-08-15, decisión 6): las 6 aulas del
+  // prototipo son datos INVENTADOS. Se siembran SOLO fuera de producción; allí
+  // la tabla arranca VACÍA y la puebla un admin desde /incidencias-aula/aulas.
+  if (process.env.NODE_ENV !== 'production') {
+    for (const nombre of INCIDENCIAS_AULA_SEED_AULAS) {
+      await prisma.aula.upsert({ where: { nombre }, update: {}, create: { nombre } });
+    }
+  }
+
   await prisma.auditEvent.create({
     data: { action: 'core.seed', metadata: { users: users.map((u) => u.email) } }
   });
 
   console.log(
-    `Seed aplicado: roles admin/user/orientador_admin, usuarios dev y ${ORIENTADOR_ACADEMIES.length} academias de orientador-ia.`
+    `Seed aplicado: roles admin/user/orientador_admin + los 3 de incidencias-aula, usuarios dev, ` +
+      `${ORIENTADOR_ACADEMIES.length} academias de orientador-ia y ` +
+      `${process.env.NODE_ENV !== 'production' ? `${INCIDENCIAS_AULA_SEED_AULAS.length} aulas de demo` : 'sin aulas de demo (producción)'}.`
   );
 }
 

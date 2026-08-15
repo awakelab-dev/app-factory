@@ -1,0 +1,51 @@
+{
+  "name": "Registro de Incidencias de Aula",
+  "actors": [
+    {
+      "role": "Docente",
+      "description": "Registra la incidencia (alumno afectado, aula, tipo, gravedad, fecha y relato de los hechos) y consulta el estado y el seguimiento de los partes que él mismo ha abierto. No ve los de otros docentes."
+    },
+    {
+      "role": "Coordinación",
+      "description": "Ve todas las incidencias del centro, toma el caso, añade entradas de seguimiento y lo cierra registrando la resolución adoptada y la comunicación a la familia. Es el único rol que puede cerrar."
+    },
+    {
+      "role": "Dirección",
+      "description": "Solo lectura sobre el resumen mensual agregado: volumen, incidencias abiertas, tiempo medio de cierre, distribución por tipo y por aula. No accede al nombre del alumno ni al relato de los hechos."
+    }
+  ],
+  "purpose": "Centraliza el registro y el seguimiento de las incidencias de aula de un centro de FP: el docente abre el parte con lo ocurrido, coordinación lo toma, deja seguimiento y lo cierra con una resolución, y dirección consulta un resumen mensual agregado sin datos identificativos. Reemplaza el Excel compartido y los correos a coordinación, que hoy no dejan trazabilidad de quién actuó, cuándo se cerró la incidencia ni cuánto tardó, y expone datos de alumnos en hojas y buzones sin control de acceso.",
+  "entities": [
+    {
+      "name": "Incidencia",
+      "description": "Parte de incidencia: alumno afectado identificado, aula, tipo, gravedad, fecha del hecho, relato objetivo de lo ocurrido y docente que lo registra.",
+      "sensitivity": "datos_personales"
+    },
+    {
+      "name": "Seguimiento de la incidencia",
+      "description": "Entradas cronológicas de coordinación sobre las actuaciones realizadas con el alumno y su familia. Van asociadas a un alumno identificable.",
+      "sensitivity": "datos_personales"
+    },
+    {
+      "name": "Resolución",
+      "description": "Medida adoptada al cerrar la incidencia y comunicación a la familia, con fecha de cierre. Afecta al expediente de un alumno identificable.",
+      "sensitivity": "datos_personales"
+    },
+    {
+      "name": "Aula o grupo",
+      "description": "Grupos del centro (por ejemplo 1º DAM - A, 2º DAW) usados para clasificar y agregar las incidencias.",
+      "sensitivity": "interno"
+    },
+    {
+      "name": "Catálogo de tipos de incidencia",
+      "description": "Tipología configurable de incidencias (convivencia, retraso reiterado, material dañado, ausencia sin justificar, uso indebido de dispositivos, otro).",
+      "sensitivity": "publico"
+    }
+  ],
+  "relatedProcesses": [
+    "Excel compartido de incidencias que hoy rellena cada docente",
+    "Correo a coordinación para avisar de una incidencia y pedir actuación",
+    "Comunicación a las familias del alumno afectado",
+    "Informe de convivencia que dirección revisa cada mes"
+  ]
+}

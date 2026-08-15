@@ -16,7 +16,7 @@ generator client {
 // y el runtime recibe el adapter (@prisma/adapter-pg) en el constructor.
 datasource db {
   provider = "postgresql"
-  schemas  = ["core", "moodle", "orientador", "proyectos", "focus"]
+  schemas  = ["core", "moodle", "orientador", "proyectos", "focus", "incidencias"]
 }
 
 /// Usuario de la plataforma. La identidad vendrá del IdP (SSO pendiente,
@@ -529,4 +529,127 @@ model FocusTimerState {
 
   @@map("timer_state")
   @@schema("focus")
+}
+
+// ---------------------------------------------------------------------------
+// Módulo incidencias-aula (spec docs/pipeline/incidencias-aula/): registro y
+// seguimiento de incidencias de aula/convivencia de un centro de FP interno
+// de Awakelab (gate funcional, decisión 1 — NO es encargo de cliente externo,
+// por eso los roles se quedan con nombre genérico sin prefijo). Primer módulo
+// con tres roles de manifest nuevos y capacidades DISJUNTAS sobre la misma
+// entidad (`incidencias_docente`/`incidencias_coordinacion`/
+// `incidencias_direccion`, D-011 — declarados aquí y en el manifest, sin
+// tocar packages/auth). Datos personales de alumnado, potencialmente menor de
+// edad (gate funcional, decisión 2): sin RLS (mismo criterio que
+// `orientador-ia`), control vía RBAC de endpoint + permisos por fila en
+// `IncidenciasPermissionsService` + auditoría de accesos al detalle.
+//
+// `docenteId`/`cerradaPorId` (`IncidenciaSeguimiento.autorId`) son referencias
+// conceptuales a `core.users.id`, mismo patrón que `proyectos.tasks.assigneeId`/
+// `focus.tasks.userId`: `String @db.Uuid` SIN `@relation` hacia `core.User` —
+// se resuelven a nivel de aplicación, sin FK de base de datos cruzando
+// módulo↔core.
+//
+// `Aula` (gate funcional, decisión 4 — AMPLIACIÓN de alcance respecto a la
+// spec técnica original): catálogo editable SOLO por `admin` de plataforma
+// (alta + renombrar/activar/desactivar), nunca por coordinación ni dirección.
+// Baja LÓGICA (`activa=false`), nunca DELETE: hay incidencias que referencian
+// el aula y el resumen de dirección sigue agregando también las inactivas
+// para no falsear el histórico. Sin sincronización desde `moodle.courses`
+// (gate funcional, decisión 4): este módulo no se acopla a que el centro
+// tenga `moodle-insights` sincronizado. Las 6 aulas de demostración del
+// prototipo son datos INVENTADOS y se siembran SOLO fuera de producción
+// (gate funcional, decisión 6) — ver
+// `apps/api/src/modules/incidencias-aula/incidencias-aula-seed-data.ts`.
+//
+// `IncidenciaTipo` se mantiene como enum cerrado (gate funcional, decisión 3:
+// sin pantalla de administración de catálogo en este MVP).
+// ---------------------------------------------------------------------------
+
+enum IncidenciaTipo {
+  convivencia
+  retraso_reiterado
+  material_danado
+  ausencia_injustificada
+  uso_indebido_dispositivos
+  otro
+
+  @@schema("incidencias")
+}
+
+enum IncidenciaGravedad {
+  baja
+  media
+  alta
+
+  @@schema("incidencias")
+}
+
+enum EstadoIncidencia {
+  abierta
+  en_curso
+  cerrada
+
+  @@schema("incidencias")
+}
+
+/// Catálogo de aulas/grupos del centro. Alta/edición solo-admin (gate
+/// funcional, decisión 4) — ver `IncidenciasAulasService`.
+model Aula {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  nombre    String   @unique
+  activa    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  incidencias Incidencia[]
+
+  @@map("aulas")
+  @@schema("incidencias")
+}
+
+/// Parte de incidencia registrado por un docente. `alumnoNombre` es texto
+/// libre en este MVP (gate funcional, decisión 7 — sin catálogo de alumnado).
+/// `fechaHecho` es día de calendario (`@db.Date`, no timestamptz), igual
+/// motivo que `proyectos.sprints.startDate/endDate`: la fecha del hecho no
+/// depende de la zona horaria de quien lo registra o consulta.
+model Incidencia {
+  id           String             @id @default(uuid(7)) @db.Uuid
+  alumnoNombre String
+  aulaId       String             @db.Uuid
+  aula         Aula               @relation(fields: [aulaId], references: [id])
+  tipo         IncidenciaTipo
+  gravedad     IncidenciaGravedad
+  fechaHecho   DateTime           @db.Date
+  relato       String             @db.Text
+  docenteId    String             @db.Uuid // core.users.id, sin FK cross-schema
+  estado       EstadoIncidencia   @default(abierta)
+  resolucion   String?            @db.Text
+  cerradaAt    DateTime?
+  cerradaPorId String?            @db.Uuid // core.users.id de coordinación
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  seguimientos IncidenciaSeguimiento[]
+
+  @@index([docenteId])
+  @@index([estado])
+  @@index([aulaId])
+  @@map("incidencias")
+  @@schema("incidencias")
+}
+
+/// Línea de tiempo de seguimiento de coordinación (incluye la entrada
+/// automática de "tomar el caso"). `autorId` con la misma convención de
+/// referencia sin FK que `docenteId`/`cerradaPorId` de arriba.
+model IncidenciaSeguimiento {
+  id           String     @id @default(uuid(7)) @db.Uuid
+  incidenciaId String     @db.Uuid
+  incidencia   Incidencia @relation(fields: [incidenciaId], references: [id], onDelete: Cascade)
+  autorId      String     @db.Uuid // core.users.id de coordinación
+  texto        String     @db.Text
+  createdAt    DateTime   @default(now())
+
+  @@index([incidenciaId])
+  @@map("incidencia_seguimientos")
+  @@schema("incidencias")
 }

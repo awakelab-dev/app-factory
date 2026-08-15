@@ -5,6 +5,7 @@ import { UsersModule } from './core/users/users.module';
 import { HelloModule } from './hello/hello.module';
 import { FocusFlowModule } from './modules/focus-flow/focus-flow.module';
 import { GestorProyectosModule } from './modules/gestor-proyectos/gestor-proyectos.module';
+import { IncidenciasAulaModule } from './modules/incidencias-aula/incidencias-aula.module';
 import { MoodleInsightsModule } from './modules/moodle-insights/moodle-insights.module';
 import { OrientadorIaModule } from './modules/orientador-ia/orientador-ia.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -26,7 +27,8 @@ import { PrismaModule } from './prisma/prisma.module';
     MoodleInsightsModule,
     OrientadorIaModule,
     GestorProyectosModule,
-    FocusFlowModule
+    FocusFlowModule,
+    IncidenciasAulaModule
   ]
 })
 export class AppModule {}

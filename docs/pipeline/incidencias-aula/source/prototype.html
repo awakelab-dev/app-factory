@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Registro de Incidencias de Aula — Awakelab</title>
+<link rel="icon" href="https://media.awakelab.world/MARCA_AWK26/awakelab_isotipo_fondo-oscuro_transparente.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --awk-bg-dark:#011932; --awk-bg:#01264C; --awk-surface:#003260;
+  --awk-surface-light:#F0F3FC; --awk-surface-light-2:#E2E6F2;
+  --awk-border:#27334F; --awk-accent:#19F7F1; --awk-accent-strong:#0ABCC9;
+  --awk-accent-deep:#0B93AA; --awk-text-on-dark:#F0F3FC; --awk-text-on-light:#01264C;
+  --awk-muted:#72A3C4; --awk-mid:#34547A; --awk-mid-2:#3B6996;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Poppins',sans-serif;background:var(--awk-bg-dark);color:var(--awk-text-on-dark);font-weight:400;-webkit-font-smoothing:antialiased}
+header.top{background:linear-gradient(90deg,var(--awk-bg-dark) 0%,var(--awk-bg) 60%,var(--awk-surface) 100%);border-bottom:1px solid var(--awk-border);padding:18px 28px;display:flex;align-items:center;gap:28px;flex-wrap:wrap}
+header.top img.logo{height:34px;display:block}
+.brandsep{width:1px;height:34px;background:var(--awk-border)}
+header.top h1{font-size:1.05rem;font-weight:600;letter-spacing:.2px}
+header.top h1 span{display:block;font-size:.72rem;font-weight:300;color:var(--awk-muted);letter-spacing:.4px}
+.rolebar{margin-left:auto;display:flex;align-items:center;gap:10px}
+.rolebar .lbl{font-size:.7rem;text-transform:uppercase;letter-spacing:1px;color:var(--awk-muted)}
+.roleswitch{display:flex;background:rgba(1,25,50,.6);border:1px solid var(--awk-border);border-radius:999px;padding:4px}
+.roleswitch button{font-family:inherit;font-size:.8rem;font-weight:500;color:var(--awk-muted);background:transparent;border:0;padding:7px 16px;border-radius:999px;cursor:pointer;transition:.18s}
+.roleswitch button:hover{color:var(--awk-accent)}
+.roleswitch button.active{background:var(--awk-accent);color:#011932;font-weight:600}
+main{max-width:1180px;margin:0 auto;padding:28px 24px 64px}
+.viewhead{display:flex;align-items:flex-end;gap:16px;margin-bottom:20px;flex-wrap:wrap}
+.viewhead h2{font-size:1.5rem;font-weight:600}
+.viewhead p{font-size:.86rem;color:var(--awk-muted);font-weight:300;max-width:640px}
+.pill{font-size:.68rem;text-transform:uppercase;letter-spacing:1px;color:var(--awk-accent);border:1px solid var(--awk-accent-deep);border-radius:999px;padding:4px 12px;font-weight:500}
+.grid{display:grid;gap:18px}
+.g2{grid-template-columns:minmax(320px,380px) 1fr}
+.g4{grid-template-columns:repeat(4,1fr)}
+.g3{grid-template-columns:repeat(3,1fr)}
+@media(max-width:900px){.g2,.g3,.g4{grid-template-columns:1fr}}
+.card{background:var(--awk-bg);border:1px solid var(--awk-border);border-radius:14px;padding:20px}
+.card.light{background:var(--awk-surface-light);color:var(--awk-text-on-light);border-color:var(--awk-surface-light-2)}
+.card h3{font-size:.95rem;font-weight:600;margin-bottom:4px}
+.card .sub{font-size:.76rem;color:var(--awk-muted);font-weight:300;margin-bottom:16px}
+.card.light .sub{color:var(--awk-mid)}
+label{display:block;font-size:.72rem;text-transform:uppercase;letter-spacing:.8px;color:var(--awk-muted);margin:14px 0 6px;font-weight:500}
+input,select,textarea{width:100%;font-family:inherit;font-size:.88rem;background:rgba(1,25,50,.75);border:1px solid var(--awk-border);color:var(--awk-text-on-dark);border-radius:9px;padding:10px 12px;transition:.15s}
+input:focus,select:focus,textarea:focus{outline:0;border-color:var(--awk-accent-strong);box-shadow:0 0 0 3px rgba(25,247,241,.12)}
+textarea{resize:vertical;min-height:88px;line-height:1.5}
+select option{background:#01264C}
+.btn{font-family:inherit;font-size:.86rem;font-weight:600;border:0;border-radius:9px;padding:11px 20px;cursor:pointer;transition:.18s;background:var(--awk-accent);color:#011932}
+.btn:hover{background:var(--awk-accent-strong)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn.ghost{background:transparent;color:var(--awk-accent);border:1px solid var(--awk-accent-deep)}
+.btn.ghost:hover{background:rgba(25,247,241,.1)}
+.btn.sm{font-size:.76rem;padding:7px 13px}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.rgpd{margin-top:16px;background:rgba(11,147,170,.12);border:1px solid var(--awk-accent-deep);border-radius:9px;padding:11px 13px;font-size:.74rem;line-height:1.5;color:#D9FBFF;font-weight:300}
+.rgpd b{font-weight:600}
+table{width:100%;border-collapse:collapse;font-size:.83rem}
+th{text-align:left;font-size:.68rem;text-transform:uppercase;letter-spacing:.9px;color:var(--awk-muted);font-weight:600;padding:0 12px 10px;border-bottom:1px solid var(--awk-border)}
+td{padding:12px;border-bottom:1px solid rgba(39,51,79,.6);vertical-align:top}
+tr.clickable{cursor:pointer;transition:.14s}
+tr.clickable:hover{background:rgba(25,247,241,.05)}
+.badge{display:inline-block;font-size:.68rem;font-weight:600;letter-spacing:.4px;padding:4px 10px;border-radius:999px;white-space:nowrap}
+.b-abierta{background:rgba(25,247,241,.16);color:var(--awk-accent)}
+.b-curso{background:rgba(114,163,196,.2);color:#B9D4E6}
+.b-cerrada{background:rgba(240,243,252,.12);color:var(--awk-muted)}
+.b-alta{background:rgba(255,138,138,.16);color:#FFB4B4}
+.b-media{background:rgba(255,205,138,.14);color:#FFDCA8}
+.b-baja{background:rgba(25,247,241,.12);color:#9FEFEC}
+.kpi{background:var(--awk-bg);border:1px solid var(--awk-border);border-radius:14px;padding:18px 20px}
+.kpi .n{font-size:2rem;font-weight:700;color:var(--awk-accent);line-height:1.1}
+.kpi .l{font-size:.72rem;text-transform:uppercase;letter-spacing:.9px;color:var(--awk-muted);margin-top:4px;font-weight:500}
+.kpi .h{font-size:.7rem;color:var(--awk-mid-2);margin-top:8px;font-weight:300}
+.bar{height:10px;border-radius:999px;background:rgba(39,51,79,.8);overflow:hidden;margin-top:7px}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--awk-accent-deep),var(--awk-accent))}
+.brow{margin-bottom:14px}
+.brow .t{display:flex;justify-content:space-between;font-size:.8rem}
+.brow .t span:last-child{color:var(--awk-muted);font-weight:300}
+.empty{padding:26px;text-align:center;color:var(--awk-muted);font-size:.83rem;font-weight:300}
+.modalwrap{position:fixed;inset:0;background:rgba(1,19,32,.78);display:none;align-items:flex-start;justify-content:center;padding:40px 20px;overflow-y:auto;z-index:50}
+.modalwrap.open{display:flex}
+.modal{background:var(--awk-bg);border:1px solid var(--awk-border);border-radius:16px;max-width:720px;width:100%;padding:26px}
+.modal h3{font-size:1.15rem;font-weight:600;margin-bottom:2px}
+.modal .meta{font-size:.78rem;color:var(--awk-muted);font-weight:300;margin-bottom:18px}
+.kv{display:grid;grid-template-columns:150px 1fr;gap:8px 16px;font-size:.85rem;margin-bottom:18px}
+.kv dt{color:var(--awk-muted);font-size:.74rem;text-transform:uppercase;letter-spacing:.7px;padding-top:2px}
+.tl{border-left:2px solid var(--awk-border);padding-left:16px;margin:6px 0 18px}
+.tl .it{margin-bottom:14px;position:relative}
+.tl .it:before{content:'';position:absolute;left:-21px;top:5px;width:8px;height:8px;border-radius:50%;background:var(--awk-accent-deep)}
+.tl .it .who{font-size:.76rem;color:var(--awk-accent);font-weight:500}
+.tl .it .when{font-size:.7rem;color:var(--awk-mid-2);font-weight:300}
+.tl .it .txt{font-size:.85rem;line-height:1.5;margin-top:3px;font-weight:300}
+.filters{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap}
+.filters select{width:auto;min-width:150px;font-size:.8rem;padding:8px 10px}
+.toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--awk-accent);color:#011932;font-weight:600;font-size:.85rem;padding:13px 24px;border-radius:999px;opacity:0;transition:.25s;pointer-events:none;z-index:80}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+footer{border-top:1px solid var(--awk-border);padding:20px 28px;display:flex;align-items:center;gap:14px;color:var(--awk-mid-2);font-size:.72rem;font-weight:300}
+footer img{height:20px;opacity:.75}
+.demo{margin-left:auto;color:var(--awk-muted)}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <img class="logo" src="https://media.awakelab.world/MARCA_AWK26/awakelab_logo_fondo-oscuro_transparente.png" alt="Awakelab">
+  <div class="brandsep"></div>
+  <h1>Registro de Incidencias de Aula<span>Prototipo · Awakelab 2026</span></h1>
+  <div class="rolebar">
+    <span class="lbl">Ver como</span>
+    <div class="roleswitch" id="roleswitch">
+      <button data-role="docente" class="active">Docente</button>
+      <button data-role="coordinacion">Coordinación</button>
+      <button data-role="direccion">Dirección</button>
+    </div>
+  </div>
+</header>
+
+<main id="main"></main>
+
+<div class="modalwrap" id="modalwrap"><div class="modal" id="modal"></div></div>
+<div class="toast" id="toast"></div>
+
+<footer>
+  <img src="https://media.awakelab.world/MARCA_AWK26/awakelab_isotipo_fondo-oscuro_transparente.png" alt="">
+  <span>Prototipo sin backend — los datos viven en memoria y se pierden al recargar.</span>
+  <span class="demo">Datos de demostración inventados · ningún dato real de personas</span>
+</footer>
+
+<script>
+/* ---------- Datos demo (en memoria, inventados) ---------- */
+const TIPOS = ['Convivencia','Retraso reiterado','Material dañado','Ausencia sin justificar','Uso indebido de dispositivos','Otro'];
+const AULAS = ['1º DAM - A','1º DAM - B','2º DAW','1º SMR','2º ASIR','1º Marketing'];
+const GRAVEDAD = ['baja','media','alta'];
+let SEQ = 100;
+const nid = () => 'INC-' + (++SEQ);
+
+let DB = {
+  incidencias: [
+    { id:'INC-091', alumno:'Marina Ortuño Vera', aula:'1º DAM - A', tipo:'Convivencia', gravedad:'alta',
+      fecha:'2026-08-04', relato:'Discusión subida de tono con un compañero durante la clase de bases de datos; hubo que interrumpir la sesión. Sin agresión física.',
+      docente:'Javier Peña (Docente)', estado:'cerrada', creada:'2026-08-04 11:20',
+      seguimiento:[
+        {who:'Coordinación · Ana Ruiz', when:'2026-08-04 13:05', txt:'Tomo el caso. Cito a los dos alumnos por separado esta tarde.'},
+        {who:'Coordinación · Ana Ruiz', when:'2026-08-05 09:40', txt:'Reunión hecha. Ambos reconocen el incidente y se disculpan. Se informa a las familias por teléfono.'}
+      ],
+      resolucion:'Mediación entre ambos alumnos y comunicación a las familias. Sin sanción; seguimiento durante dos semanas.', cerrada:'2026-08-05 09:45' },
+    { id:'INC-093', alumno:'Diego Salcedo Marín', aula:'2º DAW', tipo:'Uso indebido de dispositivos', gravedad:'media',
+      fecha:'2026-08-06', relato:'Usa el móvil para grabar la clase sin permiso pese a habérsele advertido dos veces.',
+      docente:'Lucía Benavides (Docente)', estado:'en_curso', creada:'2026-08-06 10:05',
+      seguimiento:[
+        {who:'Coordinación · Ana Ruiz', when:'2026-08-06 12:30', txt:'Hablado con el alumno. Borra la grabación delante de mí. Pendiente avisar a la familia.'}
+      ], resolucion:'', cerrada:'' },
+    { id:'INC-095', alumno:'Nerea Quintanilla Ferrer', aula:'1º SMR', tipo:'Retraso reiterado', gravedad:'baja',
+      fecha:'2026-08-10', relato:'Cuarto retraso de más de 20 minutos en dos semanas. Alega problemas de transporte.',
+      docente:'Javier Peña (Docente)', estado:'abierta', creada:'2026-08-10 09:15',
+      seguimiento:[], resolucion:'', cerrada:'' },
+    { id:'INC-096', alumno:'Tomás Iriarte Lobo', aula:'1º DAM - B', tipo:'Material dañado', gravedad:'media',
+      fecha:'2026-08-11', relato:'Rompe el soporte de un monitor del aula 12 al moverlo sin permiso. No hay intención aparente.',
+      docente:'Marta Cifuentes (Docente)', estado:'abierta', creada:'2026-08-11 16:40',
+      seguimiento:[], resolucion:'', cerrada:'' },
+    { id:'INC-088', alumno:'Álvaro Mendieta Ruz', aula:'2º ASIR', tipo:'Ausencia sin justificar', gravedad:'media',
+      fecha:'2026-07-28', relato:'Tres sesiones consecutivas sin asistir y sin justificación de la familia.',
+      docente:'Lucía Benavides (Docente)', estado:'cerrada', creada:'2026-07-28 14:00',
+      seguimiento:[{who:'Coordinación · Ana Ruiz', when:'2026-07-29 11:00', txt:'Contacto con la familia: el alumno estaba enfermo sin parte médico.'}],
+      resolucion:'Ausencias justificadas a posteriori por la familia. Se recuerda el procedimiento de justificación.', cerrada:'2026-07-29 11:15' },
+    { id:'INC-090', alumno:'Sofía Calatayud Ibarra', aula:'1º Marketing', tipo:'Convivencia', gravedad:'baja',
+      fecha:'2026-08-03', relato:'Comentarios despectivos hacia una compañera en el grupo de clase. Primera vez.',
+      docente:'Marta Cifuentes (Docente)', estado:'cerrada', creada:'2026-08-03 12:10',
+      seguimiento:[{who:'Coordinación · Ana Ruiz', when:'2026-08-03 17:20', txt:'Conversación con la alumna, entiende el impacto. Se cierra sin medida disciplinaria.'}],
+      resolucion:'Aviso verbal y compromiso de la alumna. Sin sanción.', cerrada:'2026-08-03 17:25' }
+  ]
+};
+
+const YO = { docente:'Javier Peña (Docente)', coordinacion:'Coordinación · Ana Ruiz', direccion:'Dirección · Carmen Bravo' };
+let rol = 'docente';
+let openId = null;
+
+/* ---------- Utilidades ---------- */
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ESTADO_LBL = { abierta:'Abierta', en_curso:'En curso', cerrada:'Cerrada' };
+const ESTADO_CLS = { abierta:'b-abierta', en_curso:'b-curso', cerrada:'b-cerrada' };
+const badgeEstado = e => `<span class="badge ${ESTADO_CLS[e]}">${ESTADO_LBL[e]}</span>`;
+const badgeGrav = g => `<span class="badge b-${g}">${g}</span>`;
+const ahora = () => { const d = new Date(); const p = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600); }
+const byFechaDesc = (a,b) => (b.fecha+b.creada).localeCompare(a.fecha+a.creada);
+
+/* ---------- Vista: Docente ---------- */
+function viewDocente(){
+  const mias = DB.incidencias.filter(i => i.docente === YO.docente).sort(byFechaDesc);
+  return `
+  <div class="viewhead">
+    <h2>Registrar una incidencia</h2>
+    <span class="pill">Docente</span>
+    <p>Abre el parte y coordinación se encarga del seguimiento. Solo verás las incidencias que tú has registrado.</p>
+  </div>
+  <div class="grid g2">
+    <div class="card">
+      <h3>Nueva incidencia</h3>
+      <div class="sub">Los campos marcados son necesarios para que coordinación pueda actuar.</div>
+      <form id="frm">
+        <label>Alumno afectado *</label>
+        <input name="alumno" required placeholder="Nombre y apellidos">
+        <label>Aula / grupo *</label>
+        <select name="aula" required>${AULAS.map(a=>`<option>${a}</option>`).join('')}</select>
+        <label>Tipo de incidencia *</label>
+        <select name="tipo" required>${TIPOS.map(t=>`<option>${t}</option>`).join('')}</select>
+        <label>Gravedad *</label>
+        <select name="gravedad" required>${GRAVEDAD.map(g=>`<option value="${g}"${g==='media'?' selected':''}>${g}</option>`).join('')}</select>
+        <label>Fecha del hecho *</label>
+        <input type="date" name="fecha" required value="2026-08-12">
+        <label>Qué ocurrió *</label>
+        <textarea name="relato" required placeholder="Describe los hechos de forma objetiva, sin valoraciones."></textarea>
+        <div class="rgpd"><b>Dato personal.</b> El parte identifica a un alumno: se registra solo lo necesario, se guarda con acceso restringido a coordinación y dirección, y no se comparte por correo.</div>
+        <div class="row" style="margin-top:18px">
+          <button class="btn" type="submit">Registrar incidencia</button>
+        </div>
+      </form>
+    </div>
+    <div class="card">
+      <h3>Mis incidencias registradas</h3>
+      <div class="sub">${mias.length} parte(s). Pulsa uno para ver el seguimiento de coordinación.</div>
+      ${mias.length ? `<table><thead><tr><th>Ref.</th><th>Alumno</th><th>Tipo</th><th>Fecha</th><th>Estado</th></tr></thead><tbody>
+        ${mias.map(i=>`<tr class="clickable" data-id="${i.id}">
+          <td>${i.id}</td><td>${esc(i.alumno)}<br><span style="color:var(--awk-mid-2);font-size:.76rem">${i.aula}</span></td>
+          <td>${i.tipo}<br>${badgeGrav(i.gravedad)}</td><td>${i.fecha}</td><td>${badgeEstado(i.estado)}</td>
+        </tr>`).join('')}</tbody></table>` : `<div class="empty">Aún no has registrado ninguna incidencia.</div>`}
+    </div>
+  </div>`;
+}
+
+/* ---------- Vista: Coordinación ---------- */
+let fEstado='todas', fAula='todas';
+function viewCoordinacion(){
+  let l = DB.incidencias.slice().sort(byFechaDesc);
+  if(fEstado!=='todas') l = l.filter(i=>i.estado===fEstado);
+  if(fAula!=='todas') l = l.filter(i=>i.aula===fAula);
+  const ab = DB.incidencias.filter(i=>i.estado==='abierta').length;
+  const ec = DB.incidencias.filter(i=>i.estado==='en_curso').length;
+  return `
+  <div class="viewhead">
+    <h2>Bandeja de incidencias</h2>
+    <span class="pill">Coordinación</span>
+    <p>Todas las incidencias del centro. Tómalas, deja seguimiento y ciérralas con una resolución.</p>
+  </div>
+  <div class="grid g4" style="margin-bottom:20px">
+    <div class="kpi"><div class="n">${ab}</div><div class="l">Sin tomar</div><div class="h">Esperan tu primera acción</div></div>
+    <div class="kpi"><div class="n">${ec}</div><div class="l">En curso</div><div class="h">Con seguimiento abierto</div></div>
+    <div class="kpi"><div class="n">${DB.incidencias.filter(i=>i.gravedad==='alta').length}</div><div class="l">Gravedad alta</div><div class="h">Histórico completo</div></div>
+    <div class="kpi"><div class="n">${DB.incidencias.filter(i=>i.estado==='cerrada').length}</div><div class="l">Cerradas</div><div class="h">Con resolución registrada</div></div>
+  </div>
+  <div class="card">
+    <div class="filters">
+      <select id="fEstado">
+        <option value="todas"${fEstado==='todas'?' selected':''}>Todos los estados</option>
+        ${Object.keys(ESTADO_LBL).map(k=>`<option value="${k}"${fEstado===k?' selected':''}>${ESTADO_LBL[k]}</option>`).join('')}
+      </select>
+      <select id="fAula">
+        <option value="todas"${fAula==='todas'?' selected':''}>Todas las aulas</option>
+        ${AULAS.map(a=>`<option value="${a}"${fAula===a?' selected':''}>${a}</option>`).join('')}
+      </select>
+    </div>
+    ${l.length ? `<table><thead><tr><th>Ref.</th><th>Alumno / aula</th><th>Tipo</th><th>Grav.</th><th>Registrada por</th><th>Fecha</th><th>Estado</th></tr></thead><tbody>
+      ${l.map(i=>`<tr class="clickable" data-id="${i.id}">
+        <td>${i.id}</td><td>${esc(i.alumno)}<br><span style="color:var(--awk-mid-2);font-size:.76rem">${i.aula}</span></td>
+        <td>${i.tipo}</td><td>${badgeGrav(i.gravedad)}</td>
+        <td style="font-size:.78rem;color:var(--awk-muted)">${i.docente}</td><td>${i.fecha}</td><td>${badgeEstado(i.estado)}</td>
+      </tr>`).join('')}</tbody></table>` : `<div class="empty">Ninguna incidencia con esos filtros.</div>`}
+  </div>`;
+}
+
+/* ---------- Vista: Dirección ---------- */
+function viewDireccion(){
+  const mes = '2026-08';
+  const delMes = DB.incidencias.filter(i=>i.fecha.startsWith(mes));
+  const cerradas = delMes.filter(i=>i.estado==='cerrada');
+  const dias = cerradas.map(i=>{
+    const d1=new Date(i.creada.replace(' ','T')), d2=new Date(i.cerrada.replace(' ','T'));
+    return (d2-d1)/86400000;
+  });
+  const medio = dias.length ? (dias.reduce((a,b)=>a+b,0)/dias.length) : 0;
+  const porTipo = {}; delMes.forEach(i=>porTipo[i.tipo]=(porTipo[i.tipo]||0)+1);
+  const porAula = {}; delMes.forEach(i=>porAula[i.aula]=(porAula[i.aula]||0)+1);
+  const maxT = Math.max(1,...Object.values(porTipo)), maxA = Math.max(1,...Object.values(porAula));
+  const bars = (obj,max) => Object.entries(obj).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`
+    <div class="brow"><div class="t"><span>${k}</span><span>${v}</span></div><div class="bar"><i style="width:${v/max*100}%"></i></div></div>`).join('') || `<div class="empty">Sin datos este mes.</div>`;
+  return `
+  <div class="viewhead">
+    <h2>Resumen mensual · agosto 2026</h2>
+    <span class="pill">Dirección · solo lectura</span>
+    <p>Vista agregada para seguimiento del centro. No incluye el nombre de los alumnos ni el relato de los hechos.</p>
+  </div>
+  <div class="grid g4" style="margin-bottom:20px">
+    <div class="kpi"><div class="n">${delMes.length}</div><div class="l">Incidencias del mes</div><div class="h">Registradas por el equipo docente</div></div>
+    <div class="kpi"><div class="n">${delMes.filter(i=>i.estado!=='cerrada').length}</div><div class="l">Abiertas hoy</div><div class="h">Pendientes de resolución</div></div>
+    <div class="kpi"><div class="n">${medio.toFixed(1)}<span style="font-size:1rem"> d</span></div><div class="l">Cierre medio</div><div class="h">Sobre ${cerradas.length} incidencia(s) cerrada(s)</div></div>
+    <div class="kpi"><div class="n">${delMes.filter(i=>i.gravedad==='alta').length}</div><div class="l">Gravedad alta</div><div class="h">Requieren atención de dirección</div></div>
+  </div>
+  <div class="grid g2">
+    <div class="card"><h3>Por tipo de incidencia</h3><div class="sub">Distribución del mes en curso</div>${bars(porTipo,maxT)}</div>
+    <div class="card"><h3>Por aula</h3><div class="sub">Dónde se concentran las incidencias</div>${bars(porAula,maxA)}</div>
+  </div>
+  <div class="card" style="margin-top:18px">
+    <h3>Detalle agregado del mes</h3>
+    <div class="sub">Sin datos identificativos: dirección hace seguimiento del proceso, no de los alumnos.</div>
+    <table><thead><tr><th>Ref.</th><th>Aula</th><th>Tipo</th><th>Grav.</th><th>Fecha</th><th>Estado</th><th>Días hasta cierre</th></tr></thead><tbody>
+    ${delMes.sort(byFechaDesc).map(i=>{
+      let d='—';
+      if(i.estado==='cerrada'){ const a=new Date(i.creada.replace(' ','T')), b=new Date(i.cerrada.replace(' ','T')); d=((b-a)/86400000).toFixed(1); }
+      return `<tr><td>${i.id}</td><td>${i.aula}</td><td>${i.tipo}</td><td>${badgeGrav(i.gravedad)}</td><td>${i.fecha}</td><td>${badgeEstado(i.estado)}</td><td>${d}</td></tr>`;
+    }).join('')}</tbody></table>
+  </div>`;
+}
+
+/* ---------- Modal de detalle ---------- */
+function modalHTML(i){
+  const puedeActuar = rol === 'coordinacion' && i.estado !== 'cerrada';
+  const verRelato = rol !== 'direccion';
+  return `
+    <h3>${i.id} · ${i.tipo}</h3>
+    <div class="meta">Registrada por ${i.docente} · ${i.creada} ${badgeEstado(i.estado)}</div>
+    <dl class="kv">
+      <dt>Alumno</dt><dd>${verRelato ? esc(i.alumno) : '<span style="color:var(--awk-mid-2)">oculto para dirección</span>'}</dd>
+      <dt>Aula</dt><dd>${i.aula}</dd>
+      <dt>Gravedad</dt><dd>${badgeGrav(i.gravedad)}</dd>
+      <dt>Fecha del hecho</dt><dd>${i.fecha}</dd>
+      ${verRelato ? `<dt>Qué ocurrió</dt><dd>${esc(i.relato)}</dd>` : ''}
+    </dl>
+    <h3 style="font-size:.85rem">Seguimiento</h3>
+    <div class="tl">${i.seguimiento.length ? i.seguimiento.map(s=>`
+      <div class="it"><div class="who">${s.who}</div><div class="when">${s.when}</div><div class="txt">${esc(s.txt)}</div></div>`).join('')
+      : `<div class="it"><div class="txt" style="color:var(--awk-muted)">Sin seguimiento todavía.</div></div>`}</div>
+    ${i.estado==='cerrada' ? `
+      <div class="card light" style="padding:16px"><h3 style="font-size:.85rem">Resolución</h3>
+      <div style="font-size:.85rem;line-height:1.55;margin-top:6px">${esc(i.resolucion)}</div>
+      <div style="font-size:.72rem;color:var(--awk-mid);margin-top:8px">Cerrada el ${i.cerrada}</div></div>` : ''}
+    ${puedeActuar ? `
+      <label>Añadir seguimiento</label>
+      <textarea id="mComent" placeholder="Qué has hecho o qué falta por hacer"></textarea>
+      <div class="row" style="margin-top:12px">
+        <button class="btn sm" id="mAdd">Guardar seguimiento</button>
+        ${i.estado==='abierta' ? `<button class="btn sm ghost" id="mTake">Tomar el caso</button>`:''}
+      </div>
+      <label style="margin-top:22px">Cerrar con resolución</label>
+      <textarea id="mRes" placeholder="Medida adoptada y comunicación a la familia"></textarea>
+      <div class="row" style="margin-top:12px"><button class="btn sm" id="mClose">Cerrar incidencia</button></div>` : ''}
+    <div class="row" style="margin-top:24px"><button class="btn sm ghost" id="mDismiss">Cerrar ventana</button></div>`;
+}
+
+function openModal(id){
+  openId = id;
+  const i = DB.incidencias.find(x=>x.id===id);
+  document.getElementById('modal').innerHTML = modalHTML(i);
+  document.getElementById('modalwrap').classList.add('open');
+  document.getElementById('mDismiss').onclick = closeModal;
+  const add = document.getElementById('mAdd');
+  if(add) add.onclick = () => {
+    const t = document.getElementById('mComent').value.trim();
+    if(!t) return toast('Escribe el seguimiento antes de guardar');
+    i.seguimiento.push({who:YO.coordinacion, when:ahora(), txt:t});
+    if(i.estado==='abierta') i.estado='en_curso';
+    render(); openModal(id); toast('Seguimiento guardado');
+  };
+  const take = document.getElementById('mTake');
+  if(take) take.onclick = () => {
+    i.estado='en_curso';
+    i.seguimiento.push({who:YO.coordinacion, when:ahora(), txt:'Caso tomado por coordinación.'});
+    render(); openModal(id); toast('Caso tomado');
+  };
+  const cl = document.getElementById('mClose');
+  if(cl) cl.onclick = () => {
+    const r = document.getElementById('mRes').value.trim();
+    if(!r) return toast('La resolución es obligatoria para cerrar');
+    i.resolucion=r; i.estado='cerrada'; i.cerrada=ahora();
+    render(); closeModal(); toast(i.id+' cerrada');
+  };
+}
+function closeModal(){ openId=null; document.getElementById('modalwrap').classList.remove('open'); }
+document.getElementById('modalwrap').addEventListener('click', e => { if(e.target.id==='modalwrap') closeModal(); });
+
+/* ---------- Render ---------- */
+function render(){
+  const m = document.getElementById('main');
+  m.innerHTML = rol==='docente' ? viewDocente() : rol==='coordinacion' ? viewCoordinacion() : viewDireccion();
+
+  const frm = document.getElementById('frm');
+  if(frm) frm.onsubmit = e => {
+    e.preventDefault();
+    const f = new FormData(frm);
+    DB.incidencias.push({
+      id:nid(), alumno:f.get('alumno').trim(), aula:f.get('aula'), tipo:f.get('tipo'),
+      gravedad:f.get('gravedad'), fecha:f.get('fecha'), relato:f.get('relato').trim(),
+      docente:YO.docente, estado:'abierta', creada:ahora(), seguimiento:[], resolucion:'', cerrada:''
+    });
+    render(); toast('Incidencia registrada — coordinación la verá en su bandeja');
+  };
+
+  m.querySelectorAll('tr.clickable').forEach(tr => tr.onclick = () => openModal(tr.dataset.id));
+  const fe = document.getElementById('fEstado'); if(fe) fe.onchange = e => { fEstado=e.target.value; render(); };
+  const fa = document.getElementById('fAula');   if(fa) fa.onchange = e => { fAula=e.target.value; render(); };
+}
+
+document.getElementById('roleswitch').addEventListener('click', e => {
+  const b = e.target.closest('button[data-role]'); if(!b) return;
+  rol = b.dataset.role;
+  document.querySelectorAll('#roleswitch button').forEach(x=>x.classList.toggle('active', x===b));
+  closeModal(); render();
+});
+
+render();
+</script>
+</body>
+</html>
