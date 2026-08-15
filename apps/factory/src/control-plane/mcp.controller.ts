@@ -124,7 +124,8 @@ export class McpController {
         title: 'Enviar un prototipo a la Fábrica',
         description:
           'Envía el HTML autocontenido del prototipo + su prototype.manifest.json (nombre, propósito, actores, entidades con sensibilidad declarada). ' +
-          'Crea el proyecto en la Fábrica y lo deja "recibido, pendiente de análisis" — el análisis y los gates humanos vienen después (consulta con get_project_status).',
+          'Crea el proyecto en la Fábrica y ENCOLA su análisis automáticamente (tarda unos minutos): al terminar quedan abiertos los gates funcional y técnico. ' +
+          'Consulta el avance con get_project_status.',
         inputSchema: factorySubmissionRequestSchema.shape
       },
       async (args) =>
@@ -132,7 +133,7 @@ export class McpController {
           // Re-parse defensivo: aplica defaults del schema (p. ej.
           // relatedProcesses) por si el transporte no los materializó.
           const input = factorySubmissionRequestSchema.parse(args);
-          const { project, submission } = await this.submissions.create({
+          const { project, submission, analysisJob } = await this.submissions.create({
             moduleSlug: input.moduleSlug,
             displayName: input.displayName,
             sourceHtml: input.sourceHtml,
@@ -142,10 +143,13 @@ export class McpController {
           return {
             projectId: project.id,
             submissionId: submission.id,
+            analysisJobId: analysisJob.id,
             moduleSlug: project.moduleSlug,
             status: project.status as ProjectStatus,
             message:
-              'Prototipo recibido — pendiente de análisis. La Fábrica correrá el análisis y abrirá los gates; consulta el avance con get_project_status.'
+              'Prototipo recibido y análisis ENCOLADO — arranca solo, sin que nadie lance nada a mano (D-047). ' +
+              'Suele tardar unos minutos; cuando termina, el proyecto pasa a "pendiente de aprobación" con los gates funcional y técnico abiertos. ' +
+              'Consulta el avance con get_project_status.'
           };
         })
     );
@@ -171,8 +175,8 @@ export class McpController {
       {
         title: 'Pedir un cambio sobre un módulo vivo',
         description:
-          'Registra una petición de cambio/mantenimiento sobre un módulo ya generado o desplegado (del propio gerente). ' +
-          'La Fábrica correrá el análisis del cambio y abrirá gates frescos; consulta el avance con get_project_status.',
+          'Registra una petición de cambio/mantenimiento sobre un módulo ya generado o desplegado (del propio gerente) y ENCOLA su análisis automáticamente. ' +
+          'Al terminar quedan abiertos gates frescos sobre la mini-spec del cambio; consulta el avance con get_project_status.',
         inputSchema: {
           projectId: z.string().describe('UUID del proyecto del módulo a modificar'),
           requestText: z
@@ -190,9 +194,18 @@ export class McpController {
             requestedBy: actor.email,
             actor
           });
+          // Modelo ligero (2026-07-19): una iteración activa por módulo. Si ya
+          // hay un análisis en curso, la petición queda registrada igual —
+          // nunca se pierde lo que escribió el gerente— pero no se analiza
+          // ahora, y hay que decirlo sin rodeos.
+          const alreadyQueued = 'analysisAlreadyQueued' in changeRequest && changeRequest.analysisAlreadyQueued === true;
           return {
             ...toChangeRequestDto(changeRequest),
-            message: 'Petición de cambio registrada — la Fábrica la analizará y abrirá los gates del cambio.'
+            message: alreadyQueued
+              ? 'Petición de cambio registrada, PERO el módulo ya tiene una iteración en curso en la Fábrica: solo se trabaja una a la vez. ' +
+                'Cuando esa termine (get_project_status lo muestra), vuelve a pedir este cambio para que entre al análisis.'
+              : 'Petición de cambio registrada y análisis ENCOLADO — arranca solo. ' +
+                'Suele tardar unos minutos; al terminar quedan abiertos los gates de la mini-spec del cambio. Consulta con get_project_status.'
           };
         })
     );

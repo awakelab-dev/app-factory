@@ -12,11 +12,10 @@ import { ZodValidationPipe } from './zod-validation.pipe';
 
 /**
  * Alta de peticiones de cambio (request_change → POST /change-requests,
- * D-036) sobre ChangeRequestsService (D-034) tal cual. Solo REGISTRA la
- * petición: el análisis de cambio sigue lanzado por dev vía CLI
- * `request-change`/analyze (D-030 — sin cola, sin runs largos por HTTP).
- * Un gerente solo pide cambios sobre SUS proyectos (scope en el servicio);
- * `requestedBy` sale del actor autenticado.
+ * D-036) sobre ChangeRequestsService (D-034). Registra la petición y **encola
+ * su análisis** (D-047): el agente lo corre el worker, no esta request — D-030
+ * intacto. Un gerente solo pide cambios sobre SUS proyectos (scope en el
+ * servicio); `requestedBy` sale del actor autenticado.
  */
 @Controller('change-requests')
 export class ChangeRequestsController {

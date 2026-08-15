@@ -2,12 +2,22 @@ import { Injectable, Logger } from '@nestjs/common';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { PrismaService } from '../prisma/prisma.service';
-import { runAgent, type AgentRunResult } from './agent-sdk.client';
+import { runAgent, toUsageFields, type AgentRunResult, type AgentUsage } from './agent-sdk.client';
 import { GatesService } from './gates.service';
 import { ProjectsService } from './projects.service';
+import { assertRunnerEnv } from './runner-env';
 import { SubmissionsService } from './submissions.service';
 
 const DEFAULT_MODEL = 'claude-sonnet-5';
+
+/**
+ * Ganchos opcionales del runner. `onRunStarted` deja que el worker de la cola
+ * (D-047) enlace el `Run` con su trabajo en cuanto existe: si el proceso muere
+ * después, el barrido sabe exactamente qué run cerrar.
+ */
+export interface RunnerHooks {
+  onRunStarted?: (runId: string) => void | Promise<void>;
+}
 
 const ANALYSIS_SYSTEM_PROMPT = `Eres el paso de ANÁLISIS del pipeline de AwkFactory (docs/04-integracion-cowork.md, paso 2).
 Tu única tarea es producir la spec intermedia de un prototipo/encargo, en el mismo
@@ -87,17 +97,21 @@ export class AnalysisRunnerService {
     private readonly submissions: SubmissionsService
   ) {}
 
+  /**
+   * Solo válido DESPUÉS de `assertRunnerEnv()` (que corre en la primera línea
+   * de cada runner). Se conserva como getter porque lo usan los helpers de
+   * abajo, pero ya no es el punto donde se descubre que falta la variable —
+   * ese era el bug 1 de D-046.
+   */
   private get repoPath(): string {
-    const repoPath = process.env.PLATFORM_REPO_PATH;
-    if (!repoPath) {
-      throw new Error(
-        'PLATFORM_REPO_PATH no está configurado — debe apuntar a un checkout local del monorepo app-factory (ver apps/factory/.env.example).'
-      );
-    }
-    return repoPath;
+    return assertRunnerEnv().repoPath;
   }
 
-  async runAnalysis(projectId: string, agentRunner: typeof runAgent = runAgent) {
+  async runAnalysis(projectId: string, agentRunner: typeof runAgent = runAgent, hooks: RunnerHooks = {}) {
+    // PRIMERA línea: entorno completo ANTES de tocar estado (D-046 bug 1). Un
+    // .env incompleto ya no deja el proyecto atascado en `analyzing` con un
+    // Run huérfano — falla aquí y el proyecto se queda como estaba.
+    assertRunnerEnv();
     const project = await this.projects.findById(projectId);
     // D-036: la fuente de un proyecto cowork_prototype vive en BD
     // (prototype_submissions, la dejó submit_prototype) — se busca ANTES de
@@ -113,6 +127,7 @@ export class AnalysisRunnerService {
     const run = await this.prisma.run.create({
       data: { projectId, runType: 'analysis', status: 'running', startedAt: new Date() }
     });
+    await hooks.onRunStarted?.(run.id);
 
     const specDir = `docs/pipeline/${project.moduleSlug}`;
 
@@ -167,7 +182,7 @@ export class AnalysisRunnerService {
     }
 
     if (!result.success) {
-      return this.fail(run.id, projectId, result.errorMessage ?? 'El run de análisis no tuvo éxito.');
+      return this.fail(run.id, projectId, result.errorMessage ?? 'El run de análisis no tuvo éxito.', result);
     }
 
     const spec = await this.finalizeSpec({ projectId, runId: run.id, specDir, result });
@@ -184,7 +199,9 @@ export class AnalysisRunnerService {
    * vivo + la petición, y crea una MINI-spec (nueva versión de Spec, con
    * `changeRequestId`) con gates funcional+técnico frescos.
    */
-  async runChangeAnalysis(changeRequestId: string, agentRunner: typeof runAgent = runAgent) {
+  async runChangeAnalysis(changeRequestId: string, agentRunner: typeof runAgent = runAgent, hooks: RunnerHooks = {}) {
+    // Misma regla que runAnalysis: entorno primero (D-046 bug 1).
+    assertRunnerEnv();
     const changeRequest = await this.prisma.changeRequest.findUniqueOrThrow({
       where: { id: changeRequestId },
       include: { project: true }
@@ -195,6 +212,7 @@ export class AnalysisRunnerService {
     const run = await this.prisma.run.create({
       data: { projectId: project.id, runType: 'analysis', status: 'running', startedAt: new Date() }
     });
+    await hooks.onRunStarted?.(run.id);
 
     // El directorio del cambio se numera con la versión que tendrá la mini-spec
     // (docs/pipeline/<slug>/change-<n>/). Ningún Spec se crea entre este count
@@ -239,7 +257,7 @@ export class AnalysisRunnerService {
     }
 
     if (!result.success) {
-      return this.fail(run.id, project.id, result.errorMessage ?? 'El run de análisis de cambio no tuvo éxito.');
+      return this.fail(run.id, project.id, result.errorMessage ?? 'El run de análisis de cambio no tuvo éxito.', result);
     }
 
     const spec = await this.finalizeSpec({
@@ -286,7 +304,10 @@ export class AnalysisRunnerService {
         projectId,
         `El agente terminó pero no dejó los archivos de spec esperados en ${specDir}/: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
+        // El agente corrió y GASTÓ, aunque el resultado no sirva: el coste se
+        // registra igual (hueco de instrumentación (a) de D-046).
+        result
       );
     }
 
@@ -326,10 +347,22 @@ export class AnalysisRunnerService {
     return spec;
   }
 
-  private async fail(runId: string, projectId: string, message: string): Promise<never> {
+  /**
+   * Cierra el run en error. `usage` es el consumo del agente cuando lo hubo:
+   * un run fallido gastó dinero igual y hasta D-047 se guardaba con
+   * `costUsd: null`, lo que dejaba el coste por proyecto sistemáticamente
+   * subestimado (hueco de instrumentación (a) de D-046: 23 minutos de
+   * generación perdidos por un corte de red no aparecían en ninguna métrica).
+   */
+  private async fail(runId: string, projectId: string, message: string, usage?: AgentUsage): Promise<never> {
     await this.prisma.run.update({
       where: { id: runId },
-      data: { status: 'error', finishedAt: new Date(), errorMessage: message }
+      data: {
+        status: 'error',
+        finishedAt: new Date(),
+        errorMessage: message,
+        ...toUsageFields(usage)
+      }
     });
     await this.projects.transition(projectId, 'error');
     this.logger.error(`Run de análisis falló: ${message}`);

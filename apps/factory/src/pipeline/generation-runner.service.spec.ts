@@ -1,4 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { AgentRunResult } from './agent-sdk.client';
@@ -21,6 +24,16 @@ const successResult: AgentRunResult = {
 };
 
 const okGit: GitCommandResult = { stdout: '', stderr: '' };
+
+/** Checkout de mentira REAL: `assertRunnerEnv` (D-047) comprueba que exista. */
+function fakeCheckout(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'awkf-repo-'));
+  writeFileSync(join(dir, 'pnpm-workspace.yaml'), 'packages: []\n');
+  mkdirSync(join(dir, 'apps/factory'), { recursive: true });
+  return dir;
+}
+
+let repo = '';
 
 function buildService(
   overrides: {
@@ -60,7 +73,9 @@ function buildService(
 
 describe('GenerationRunnerService.runGeneration', () => {
   beforeEach(() => {
-    process.env.PLATFORM_REPO_PATH = '/repo';
+    repo = fakeCheckout();
+    process.env.PLATFORM_REPO_PATH = repo;
+    process.env.ANTHROPIC_API_KEY = 'test-key';
   });
 
   it('rechaza generar si faltan gates por aprobar, sin crear ningún run', async () => {
@@ -105,18 +120,18 @@ describe('GenerationRunnerService.runGeneration', () => {
 
     const run = await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh });
 
-    expect(runGit).toHaveBeenCalledWith(['checkout', '-b', 'factory/demo-modulo'], '/repo');
+    expect(runGit).toHaveBeenCalledWith(['checkout', '-b', 'factory/demo-modulo'], repo);
     expect(agentRunner).toHaveBeenCalledWith(
       expect.objectContaining({
-        cwd: '/repo',
+        cwd: repo,
         writableRoots: [
-          '/repo/apps/api/src/modules/demo-modulo',
-          '/repo/apps/web/src/modules/demo-modulo',
-          '/repo/apps/api/prisma/schema.prisma'
+          `${repo}/apps/api/src/modules/demo-modulo`,
+          `${repo}/apps/web/src/modules/demo-modulo`,
+          `${repo}/apps/api/prisma/schema.prisma`
         ]
       })
     );
-    expect(runGit).toHaveBeenCalledWith(['push', '-u', 'origin', 'factory/demo-modulo'], '/repo');
+    expect(runGit).toHaveBeenCalledWith(['push', '-u', 'origin', 'factory/demo-modulo'], repo);
     expect(prisma.run.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ status: 'success', prUrl: 'https://github.com/awakelab-dev/app-factory/pull/42' })
@@ -156,8 +171,8 @@ describe('GenerationRunnerService.runGeneration', () => {
 
     await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh });
 
-    expect(runGh).toHaveBeenCalledWith(['pr', 'view', 'factory/demo-modulo', '--json', 'url,state'], '/repo');
-    expect(runGh).not.toHaveBeenCalledWith(expect.arrayContaining(['pr', 'create']), '/repo');
+    expect(runGh).toHaveBeenCalledWith(['pr', 'view', 'factory/demo-modulo', '--json', 'url,state'], repo);
+    expect(runGh).not.toHaveBeenCalledWith(expect.arrayContaining(['pr', 'create']), repo);
     expect(prisma.run.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ prUrl: 'https://github.com/awakelab-dev/app-factory/pull/7' })
@@ -180,7 +195,7 @@ describe('GenerationRunnerService.runGeneration', () => {
 
     await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh });
 
-    expect(runGh).toHaveBeenCalledWith(expect.arrayContaining(['pr', 'create']), '/repo');
+    expect(runGh).toHaveBeenCalledWith(expect.arrayContaining(['pr', 'create']), repo);
     expect(prisma.run.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ prUrl: 'https://github.com/awakelab-dev/app-factory/pull/3' })
@@ -271,5 +286,38 @@ describe('GenerationRunnerService.runGeneration', () => {
       expect.objectContaining({ data: expect.objectContaining({ status: 'error', errorMessage: 'build roto' }) })
     );
     expect(projects.transition).toHaveBeenCalledWith('proj-1', 'error');
+  });
+
+  // Hueco de instrumentación (a) de D-046: la generación que se cayó a los 23
+  // minutos por un corte de red no dejó rastro de coste en ninguna métrica.
+  it('un run de generación fallido registra el coste y los tokens consumidos (D-046)', async () => {
+    const { service, prisma } = buildService();
+    const agentRunner = vi.fn().mockResolvedValue({
+      ...successResult,
+      success: false,
+      errorMessage: 'Connection closed mid-response',
+      partial: true
+    });
+    const runGit = vi.fn().mockResolvedValue(okGit);
+    const runGh = vi.fn().mockResolvedValue(okGit);
+
+    await expect(service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh })).rejects.toThrow(
+      'Connection closed mid-response'
+    );
+
+    expect(prisma.run.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'error', costUsd: 0.02, inputTokens: 500, outputTokens: 800 })
+      })
+    );
+  });
+
+  it('sin PLATFORM_REPO_PATH falla ANTES de transicionar y sin crear Run (D-046 bug 1)', async () => {
+    delete process.env.PLATFORM_REPO_PATH;
+    const { service, prisma, projects } = buildService();
+
+    await expect(service.runGeneration('spec-1')).rejects.toThrow(/PLATFORM_REPO_PATH/);
+    expect(projects.transition).not.toHaveBeenCalled();
+    expect(prisma.run.create).not.toHaveBeenCalled();
   });
 });

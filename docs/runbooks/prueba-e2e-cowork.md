@@ -28,30 +28,46 @@ La skill `awk-prototipo` debe: (a) llamar **`list_modules` ANTES** de construir 
 
 **Verificación**: `list_projects` (o la vista `estado-fabrica`, recargada) muestra el proyecto nuevo en fase "Recibido".
 
-## 3. Análisis — HOY LO DISPARA SISTEMAS (brecha conocida)
+## 3. Análisis — AUTOMÁTICO desde D-047 (incremento C)
 
-`submit_prototype` NO corre el análisis (D-030/D-036): el proyecto queda en `received` hasta que Sistemas lo lanza por CLI. **Es el bloqueante del self-service** y el objeto del **incremento C**.
+`submit_prototype` **encola** el análisis en la misma transacción que crea el
+proyecto, y el worker (`factory-runner`) lo toma en segundos. Ya no hay ningún
+comando que lanzar: el paso manual que esta prueba identificó como el bloqueante
+del self-service (D-046) desapareció.
+
+El worker materializa la fuente desde BD a `docs/pipeline/<slug>/source/`, corre
+el Agent SDK, escribe las specs, crea la `Spec` v1 y abre los gates funcional +
+técnico → estado `pending_approval`. Tarda unos minutos (1,37 USD y 5m46s en el
+caso `incidencias-aula`).
+
+**Verificación desde el chat**: `get_project_status` pasa de `received` →
+`analyzing` → `pending_approval` sin que nadie toque nada.
+
+**Si algo va mal** (diagnóstico de Sistemas, ya no del usuario):
 
 ```bash
-# Terminal A: túnel a la managed PG (PUERTO 15432, el que espera apps/factory/.env
-# del runner — los otros runbooks dicen 5433 y están equivocados, D-046):
-ssh -N -L 15432:<ENDPOINT>:5432 AWK-Dev
+# Logs del worker en el server:
+docker compose --env-file .env -p awk-staging logs -f factory-runner
 
-# Terminal B: desde el CHECKOUT DEL RUNNER (~/projects/app-factory-runner), que
-# necesita su PROPIO apps/factory/.env (ANTHROPIC_API_KEY + PLATFORM_REPO_PATH +
-# FACTORY_DATABASE_URL); el del working copy NO se hereda y nada lo avisa hasta
-# que el comando falla (D-046):
+# Estado de la cola (por el túnel a la managed PG, PUERTO 15432 — los otros
+# runbooks dicen 5433 y están equivocados, D-046):
+ssh -N -L 15432:<ENDPOINT>:5432 AWK-Dev
+psql ... -c "SELECT id, kind, status, attempts, \"errorMessage\" FROM analysis_jobs ORDER BY \"createdAt\" DESC LIMIT 5;"
+
+# Reencolar un trabajo que quedó en error:
+pnpm --filter=@awk/factory run cli -- enqueue-analysis --project <projectId>
+
+# O analizarlo aquí y ahora, sin esperar al worker (escotilla):
 pnpm --filter=@awk/factory run cli -- analyze <projectId>
 ```
 
-> Si el comando muere por configuración, el proyecto puede quedar atascado en
-> `analyzing` con un `Run` huérfano en `running` (bug pendiente, D-046): sanear
-> con un `UPDATE runs SET status='error'` y `cli -- advance <id> error` antes de
-> reintentar.
+> Un entorno incompleto ya NO deja el proyecto atascado en `analyzing` con un
+> `Run` huérfano (bug 1 de D-046, corregido en D-047): el runner valida su
+> configuración antes de tocar estado. Y si el proceso muere a mitad, el barrido
+> del worker cierra el run y saca al proyecto de `analyzing` solo.
 
-El runner materializa la fuente desde BD a `docs/pipeline/<slug>/source/`, corre el Agent SDK, escribe las specs, crea la `Spec` v1 y abre los gates funcional + técnico → estado `pending_approval`.
-
-**Qué observar**: si la spec funcional refleja el prototipo sin alucinaciones (compararla línea a línea) y el costo del run.
+**Qué observar**: si la spec funcional refleja el prototipo sin alucinaciones
+(compararla línea a línea) y el costo del run.
 
 ## 4. Aprobar los gates de negocio (usuario, en Cowork)
 
@@ -85,15 +101,19 @@ El usuario prueba el módulo en `https://staging.apps.awakelab.world` y, si est�
 
 > "Al módulo <X> agrégale <Y>"
 
-→ `request_change` (solo REGISTRA la petición) → Sistemas la analiza con
-`cli -- analyze-change <changeRequestId>` (comando añadido en D-046: antes no
-existía ninguno para una petición ya creada y el cambio se quedaba muerto en la
-base) → gates frescos, decidibles desde el chat → generación incremental sobre
-el módulo vivo.
+→ `request_change` registra la petición **y encola su análisis** (D-047; hasta
+entonces solo registraba y el cambio se quedaba muerto en la base porque ningún
+comando podía retomarlo — bug 2 de D-046) → gates frescos, decidibles desde el
+chat → generación incremental sobre el módulo vivo.
+
+> Solo se trabaja **una iteración por módulo a la vez**: si pides un cambio
+> mientras el módulo tiene un análisis en curso, la petición queda registrada y
+> la tool lo dice — hay que volver a pedirla cuando la iteración termine (o
+> Sistemas la encola con `cli -- enqueue-analysis --project <id> --change-request <id>`).
 
 ## Qué anotar durante la prueba
 
-1. **Cada punto donde el usuario necesitó ayuda de Sistemas** (candidatos a automatizar; el análisis del paso 3 ya está identificado).
+1. **Cada punto donde el usuario necesitó ayuda de Sistemas** (candidatos a automatizar; el análisis del paso 3 ya se automatizó en D-047, queda `generate`).
 2. Calidad de la spec generada (alucinaciones, alcance).
 3. Costos de API por run (analyze/generate).
 4. Si la vista de estado alcanza para "monitorear en cualquier momento" o falta algo (ej.: enlace directo al módulo en staging, historial de cambios).
@@ -102,7 +122,8 @@ el módulo vivo.
 
 | Brecha | Impacto | Estado |
 |---|---|---|
-| Análisis manual por CLI tras `submit_prototype` | El usuario espera a Sistemas en cada envío | **Incremento C**, siguiente build |
+| ~~Análisis manual por CLI tras `submit_prototype`~~ | ~~El usuario espera a Sistemas en cada envío~~ | **CERRADA** por D-047 (incremento C): se encola y corre sola |
+| `generate` sigue siendo manual | Tras aprobar los gates, el usuario espera a Sistemas para que el código se escriba | Fuera del alcance de C (necesita toolchain de build y credenciales de git en el runner) |
 | AS OAuth solo en staging | El conector de producción no existe aún | Replicar deploy a producción |
 | `FACTORY_OAUTH_JWKS` sin clave RSA persistente | Se genera una RSA efímera en cada reinicio (warning en el log) | Regenerar con `cli oauth-genkeys` y actualizar `.env` |
 | Sin A2F ni rate limiting en el login del AS | Riesgo de fuerza bruta | **Fase 3** de docs/08 |

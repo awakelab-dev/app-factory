@@ -12,9 +12,10 @@ import { ZodValidationPipe } from './zod-validation.pipe';
 /**
  * Intake de prototipos desde Cowork (submit_prototype → POST /submissions,
  * D-036): valida el prototype.manifest.json con el MISMO schema Zod que usa
- * el conector (@awk/types) y deja el proyecto en `received` — el análisis NO
- * se dispara aquí (incremento A: control de costo + D-030, sin cola de
- * trabajos). `submittedBy` sale del actor autenticado, nunca del body.
+ * el conector (@awk/types), deja el proyecto en `received` y **encola su
+ * análisis** (D-047). Aquí no corre ningún agente — eso es del worker
+ * `factory-runner`, así que D-030 (nada largo dentro de una request HTTP)
+ * se sigue cumpliendo. `submittedBy` sale del actor autenticado, nunca del body.
  */
 @Controller('submissions')
 export class SubmissionsController {
@@ -39,7 +40,7 @@ export class SubmissionsController {
       moduleSlug: project.moduleSlug,
       status: project.status as ProjectStatus,
       message:
-        'Prototipo recibido — pendiente de análisis. La Fábrica correrá el análisis y abrirá los gates; consulta el avance con get_project_status.'
+        'Prototipo recibido y análisis encolado — la Fábrica lo corre sola y abrirá los gates; consulta el avance con get_project_status.'
     };
   }
 }

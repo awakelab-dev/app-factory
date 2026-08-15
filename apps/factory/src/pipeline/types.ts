@@ -36,6 +36,35 @@ export type RunStatus = 'pending' | 'running' | 'success' | 'error';
 
 export type FactoryActorRole = 'gerente' | 'admin';
 
+/** Tipo de trabajo encolado (D-047). Ver `AnalysisJob` en schema.prisma. */
+export type AnalysisJobKind = 'analysis' | 'change_analysis';
+
+export type AnalysisJobStatus = 'queued' | 'running' | 'success' | 'error';
+
+/**
+ * Fila de `analysis_jobs`. Se declara a mano (no se importa del cliente
+ * generado) por el mismo criterio que el resto de este archivo, y además
+ * porque `claimNext`/`reapStale` usan `$queryRaw` y necesitan tipar el
+ * RETURNING sin depender de la forma exacta del cliente.
+ */
+export interface AnalysisJobRow {
+  id: string;
+  createdAt: Date;
+  updatedAt: Date;
+  kind: AnalysisJobKind;
+  projectId: string;
+  changeRequestId: string | null;
+  status: AnalysisJobStatus;
+  attempts: number;
+  requestedBy: string;
+  workerId: string | null;
+  claimedAt: Date | null;
+  heartbeatAt: Date | null;
+  finishedAt: Date | null;
+  runId: string | null;
+  errorMessage: string | null;
+}
+
 /**
  * Actor autenticado que ejecuta una operación de la Fábrica (D-036): sale
  * del PAT (tabla factory_actors) o del JWT de plataforma con rol admin.

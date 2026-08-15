@@ -35,7 +35,8 @@ Dos sistemas separados que conviene no mezclar:
 Evolución del backend actual de este repo, migrado al stack estándar:
 
 - **API de la fábrica**: recibe prototipos (desde el conector MCP de Cowork), gestiona proyectos, estados, specs, aprobaciones. Expone el dashboard de seguimiento (evolución del frontend actual).
-- **Runner de generación**: workers en contenedor que ejecutan **Claude Agent SDK headless** con el monorepo de la plataforma clonado: leen la spec aprobada, rellenan la plantilla de módulo, ejecutan build/tests localmente y abren PR. Cola de trabajos (BullMQ + Redis) para procesar en serie/paralelo controlado.
+- **Runner de análisis** (`factory-runner`, D-047): contenedor aparte del HTTP que consume la cola `analysis_jobs` y ejecuta **Claude Agent SDK headless** sobre un checkout dedicado del monorepo. Concurrencia 1, toma atómica del trabajo en Postgres (`FOR UPDATE SKIP LOCKED`) — **sin BullMQ ni Redis**: con este volumen, una tabla y un bucle bastan, y se ahorra una pieza de infraestructura. Es el único contenedor con `PLATFORM_REPO_PATH` y `ANTHROPIC_API_KEY`.
+- **Runner de generación**: mismo Agent SDK headless (lee la spec aprobada, rellena la plantilla de módulo, ejecuta build/tests y abre PR), todavía lanzado por CLI desde una máquina de Sistemas: necesita toolchain de build y credenciales de git. Cuando se mueva al servidor, entra en la misma cola con un `kind` nuevo.
 - **Estados del proyecto** (sustituye al enum actual): `Recibido → Analizando → Spec lista → Aprobación pendiente → Generando → Verificando → PR en revisión → Staging (preview) → Aceptación del gerente → Desplegado` + `Rechazado / Cambios solicitados / Error`.
 
 ## Infraestructura y deploy (AWS Lightsail — infraestructura existente del grupo)

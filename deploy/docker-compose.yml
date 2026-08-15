@@ -45,9 +45,11 @@ services:
       timeout: 5s
       retries: 5
 
-  # Control plane de la Fábrica (apps/factory, D-030): solo HTTP de lectura +
-  # decisión de gates. Los runners de análisis/generación NO corren aquí (van
-  # por CLI con PLATFORM_REPO_PATH, D-029) — por eso no recibe ANTHROPIC_*.
+  # Control plane de la Fábrica (apps/factory, D-030): HTTP de lectura,
+  # decisión de gates, conector MCP y Authorization Server. Los runners del
+  # Agent SDK NO corren aquí — por eso NO recibe ANTHROPIC_* ni monta el repo.
+  # Desde D-047 lo que hace con un envío de Cowork es ENCOLARLO; quien ejecuta
+  # es el servicio `factory-runner` de más abajo.
   # JWT_SECRET es el MISMO de la Plataforma: la Fábrica valida los tokens que
   # emite apps/api, no emite propios (D-030).
   factory:
@@ -77,6 +79,43 @@ services:
       interval: 15s
       timeout: 5s
       retries: 5
+
+  # Worker de análisis de la Fábrica (apps/factory, D-047 — incremento C):
+  # consume la cola `analysis_jobs` que llenan `submit_prototype` y
+  # `request_change` desde Cowork, y corre el Agent SDK. Es el ÚNICO servicio
+  # con checkout del monorepo y ANTHROPIC_API_KEY. No expone puertos ni tiene
+  # healthcheck HTTP: no escucha nada (se vigila por logs y por el estado de
+  # los trabajos en /factory).
+  factory-runner:
+    image: ghcr.io/awakelab-dev/awkplatform-factory-runner:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV}
+      FACTORY_DATABASE_URL: ${FACTORY_DATABASE_URL}
+      # Credenciales del Agent SDK. Sin ellas el worker NO arranca (sale con
+      # código 1 y lo grita en los logs) en vez de ir marcando en error los
+      # trabajos de la cola de uno en uno.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
+      # Checkout dedicado, montado desde el host (ver runbook lightsail-deploy).
+      PLATFORM_REPO_PATH: /platform-repo
+      PLATFORM_REPO_REF: ${PLATFORM_REPO_REF:-origin/main}
+      # Checkout efímero: fetch + reset --hard + clean de docs/pipeline antes de
+      # cada análisis (así el agente lee el código vivo al día). La spec
+      # canónica vive en la BD; lo que escribe en disco es subproducto. Se
+      # activa SOLO aquí: en el checkout de un humano un reset --hard le
+      # borraría el trabajo, por eso el código lo trae apagado por defecto.
+      FACTORY_WORKER_GIT_SYNC: ${FACTORY_WORKER_GIT_SYNC:-1}
+      FACTORY_WORKER_POLL_MS: ${FACTORY_WORKER_POLL_MS:-10000}
+    volumes:
+      - ${PLATFORM_REPO_HOST_PATH}:/platform-repo
+    healthcheck:
+      # El proceso está vivo si Node sigue corriendo; basta con comprobar que
+      # el ejecutable responde (no hay puerto que sondear).
+      test: ['CMD-SHELL', 'node -e "process.exit(0)"']
+      interval: 60s
+      timeout: 5s
+      retries: 3
 
   web:
     image: ghcr.io/awakelab-dev/awkplatform-web:${IMAGE_TAG:-latest}

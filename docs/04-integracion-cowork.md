@@ -34,7 +34,8 @@ La skill traduce la conversación a las 5 tools del conector; el usuario no escr
 
 ### Brechas conocidas para el self-service pleno
 
-- **Análisis server-side automático (incremento C)**: hoy `submit_prototype` deja el proyecto en `received` y el análisis lo dispara Sistemas por CLI (D-030/D-036). Hasta cerrarlo, hay un paso humano por envío — aceptable con el volumen de 4 cuentas, pero es EL bloqueante del "envío y avanza solo".
+- ~~**Análisis server-side automático (incremento C)**~~ — **CERRADA (D-047)**: `submit_prototype` y `request_change` encolan el análisis y lo corre el worker `factory-runner`. Sin comandos, sin Sistemas.
+- **Generación automática**: aprobados los gates, `generate` sigue siendo un comando de Sistemas. Es el único paso del ciclo que aún depende de un humano técnico; necesita toolchain de build y credenciales de git en el runner, así que va como incremento propio.
 - **Vista de status en Cowork**: `get_project_status` cubre la consulta puntual; falta un artefacto de seguimiento que el usuario deje abierto y se refresque. Requisito explícito de Gerencia ("monitorear en cualquier momento").
 
 ## Tipo de integración: plugin de organización (skill + conector MCP)
@@ -73,8 +74,10 @@ Tu frontend actual va en la dirección correcta. Evolución sugerida — añadir
 La clave del diseño: **no se convierte el prototipo directamente en código**. Se genera una **spec intermedia** que es donde ocurre el control de calidad y la gobernanza.
 
 ```
-1. INTAKE      submit_prototype → proyecto creado, URL de seguimiento
-2. ANÁLISIS    Claude (Agent SDK) analiza HTML + manifest + módulos existentes:
+1. INTAKE      submit_prototype → proyecto creado + análisis ENCOLADO (D-047),
+               URL de seguimiento
+2. ANÁLISIS    El worker toma el trabajo de la cola (sin intervención humana) y
+               Claude (Agent SDK) analiza HTML + manifest + módulos existentes:
                ├─ spec funcional (lenguaje de negocio, para el gerente)
                ├─ spec técnica: modelos Prisma, endpoints, pantallas, roles
                ├─ reutilización: qué resuelve el core o módulos existentes
@@ -93,7 +96,9 @@ La clave del diseño: **no se convierte el prototipo directamente en código**. 
 8. PRODUCCIÓN  Aceptación del gerente → promoción. Estado: Desplegado.
 ```
 
-Los pasos 2 y 4 corren en vuestros VPS con **Claude Agent SDK** (headless, cuenta API corporativa). El mismo flujo con `request_change` opera sobre módulos existentes: analiza el módulo actual + la petición → mini-spec → gates → PR incremental.
+Los pasos 2 y 4 corren en vuestros VPS con **Claude Agent SDK** (headless, cuenta API corporativa). El mismo flujo con `request_change` opera sobre módulos existentes: analiza el módulo actual + la petición → mini-spec → gates → PR incremental — y desde D-047 ese análisis también se encola solo.
+
+**Quién ejecuta qué (D-047)**: el paso 2 corre en el contenedor `factory-runner` del Lightsail, que es el único con checkout del monorepo y `ANTHROPIC_API_KEY`; el contenedor `factory` (HTTP/OAuth/MCP) solo ENCOLA y nunca ejecuta agentes. El paso 4 sigue lanzándose por CLI desde una máquina de Sistemas.
 
 ## Por qué la spec intermedia importa
 

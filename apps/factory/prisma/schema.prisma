@@ -72,6 +72,7 @@ model Project {
   runs           Run[]
   changeRequests ChangeRequest[]
   submissions    PrototypeSubmission[]
+  analysisJobs   AnalysisJob[]
 
   @@map("projects")
 }
@@ -175,9 +176,87 @@ model ChangeRequest {
   /// tipado por el MCP `request_change` (docs/04); en Fase 1 es texto plano.
   requestText String   @db.Text
 
-  specs Spec[]
+  specs        Spec[]
+  analysisJobs AnalysisJob[]
 
   @@map("change_requests")
+}
+
+/// Tipo de trabajo encolado (D-047, incremento C). Los dos caminos por los que
+/// un gerente entra al pipeline desde Cowork: `analysis` = spec de intake de un
+/// prototipo nuevo (submit_prototype), `change_analysis` = mini-spec del delta
+/// de una petición de cambio (request_change). La generación NO se encola
+/// todavía (sigue por CLI: necesita toolchain de build y credenciales de git),
+/// pero el enum admite ampliarlo sin rediseñar la cola.
+enum AnalysisJobKind {
+  analysis
+  change_analysis
+
+  @@map("analysis_job_kind")
+}
+
+enum AnalysisJobStatus {
+  queued // esperando a que un worker lo tome
+  running // tomado por un worker (ver workerId/heartbeatAt)
+  success
+  error
+
+  @@map("analysis_job_status")
+}
+
+/// Un trabajo de análisis pendiente (D-047). Existe para que `submit_prototype`
+/// y `request_change` NO tengan que esperar ~5 minutos dentro de una request
+/// HTTP: la tool encola y devuelve al instante; un worker aparte
+/// (`src/worker.ts`, servicio `factory-runner`) lo toma y corre el Agent SDK.
+///
+/// Separado de `Run` a propósito: `Run` es el registro de auditoría de UNA
+/// ejecución del agente (coste, tokens, sesión) y debe seguir siéndolo. Un
+/// trabajo puede morir antes de ejecutar nada, o reintentarse — mezclarlo con
+/// la auditoría fue justo lo que produjo los "runs huérfanos" de D-030/D-046.
+///
+/// Toma atómica: `UPDATE ... WHERE id = (SELECT ... FOR UPDATE SKIP LOCKED
+/// LIMIT 1)` — sin Redis ni broker externo. Un trabajo activo (queued|running)
+/// por proyecto como mucho: la unicidad NO es un índice (Postgres la exigiría
+/// parcial y Prisma no sabe declararlos, lo que dejaría drift en el schema),
+/// se garantiza en `AnalysisJobsService.enqueue` con un lock de fila sobre el
+/// proyecto (`SELECT ... FOR UPDATE`) dentro de la misma transacción.
+model AnalysisJob {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  kind      AnalysisJobKind
+  projectId String          @db.Uuid
+  project   Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Obligatorio cuando kind = change_analysis; null en un análisis de intake.
+  changeRequestId String?        @db.Uuid
+  changeRequest   ChangeRequest? @relation(fields: [changeRequestId], references: [id], onDelete: Cascade)
+
+  status   AnalysisJobStatus @default(queued)
+  /// Veces que un worker lo ha tomado. Sin reintento automático en D-047 (se
+  /// evaluó y quedó fuera de alcance): sirve para ver de un vistazo si algo se
+  /// reencoló a mano.
+  attempts Int               @default(0)
+
+  /// Quién lo pidió (email del actor de Cowork) — auditoría y mensajes.
+  requestedBy String
+  /// Identidad del proceso que lo tomó (host:pid), para diagnosticar.
+  workerId    String?
+  claimedAt   DateTime?
+  /// Latido del worker mientras corre. Si se queda atrás, el barrido lo da por
+  /// muerto: es lo que evita el "proyecto atascado en analyzing con un run
+  /// huérfano" que hubo que sanear a mano por SQL en D-046.
+  heartbeatAt DateTime?
+  finishedAt  DateTime?
+
+  /// Run que produjo la ejecución (se enlaza en cuanto el runner lo crea, para
+  /// que el barrido sepa qué run cerrar si el proceso muere).
+  runId        String? @db.Uuid
+  errorMessage String? @db.Text
+
+  @@index([status, createdAt])
+  @@index([projectId])
+  @@map("analysis_jobs")
 }
 
 /// Una versión de la spec intermedia (docs/04, paso 2). Nueva versión cada

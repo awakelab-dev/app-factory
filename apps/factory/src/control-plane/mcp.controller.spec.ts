@@ -33,7 +33,9 @@ function buildServices() {
   const submissions = {
     create: vi.fn().mockResolvedValue({
       project: { id: 'proj-2', moduleSlug: 'gestor-vacaciones', status: 'received' },
-      submission: { id: 'sub-1' }
+      submission: { id: 'sub-1' },
+      // D-047: submit_prototype encola el análisis y devuelve su id.
+      analysisJob: { id: 'job-1', status: 'queued' }
     })
   } as unknown as SubmissionsService;
 
@@ -146,7 +148,7 @@ describe('McpController (conector awkfactory, D-036)', () => {
     ]);
   });
 
-  it('submit_prototype liga submittedBy al actor autenticado y responde "recibido, pendiente de análisis"', async () => {
+  it('submit_prototype liga submittedBy al actor autenticado y responde con el análisis ya encolado (D-047)', async () => {
     const { projects, submissions, changeRequests, gates } = buildServices();
     const controller = new McpController(projects, submissions, changeRequests, gates);
     const client = await connectClient(controller, gerente);
@@ -168,7 +170,14 @@ describe('McpController (conector awkfactory, D-036)', () => {
 
     expect(submissions.create).toHaveBeenCalledWith(expect.objectContaining({ submittedBy: gerente.email }));
     const text = (result.content as { type: string; text: string }[])[0]?.text ?? '';
-    expect(JSON.parse(text)).toMatchObject({ projectId: 'proj-2', submissionId: 'sub-1', status: 'received' });
+    expect(JSON.parse(text)).toMatchObject({
+      projectId: 'proj-2',
+      submissionId: 'sub-1',
+      analysisJobId: 'job-1',
+      status: 'received'
+    });
+    // El gerente debe entender que no tiene que pedirle nada a nadie.
+    expect(text).toContain('ENCOLADO');
   });
 
   it('un 403 del servicio llega como resultado isError con el motivo, no como error de protocolo', async () => {

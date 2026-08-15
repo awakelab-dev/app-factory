@@ -2,6 +2,7 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import type { PrototypeManifest } from '@awk/types';
 import type { PrismaService } from '../prisma/prisma.service';
+import type { AnalysisJobsService } from './analysis-jobs.service';
 import { SubmissionsService } from './submissions.service';
 
 const manifest: PrototypeManifest = {
@@ -40,7 +41,11 @@ function buildService(overrides: { slugTaken?: boolean; submission?: Record<stri
       .mockImplementation((fn: (tx: unknown) => Promise<unknown>) => fn({ project: txProject, prototypeSubmission: txSubmission }))
   } as unknown as PrismaService;
 
-  return { service: new SubmissionsService(prisma), prisma, txProject, txSubmission };
+  const jobs = {
+    enqueueIn: vi.fn().mockResolvedValue({ job: { id: 'job-1', status: 'queued' }, alreadyQueued: false })
+  } as unknown as AnalysisJobsService;
+
+  return { service: new SubmissionsService(prisma, jobs), prisma, txProject, txSubmission, jobs };
 }
 
 describe('SubmissionsService.create', () => {
@@ -52,8 +57,8 @@ describe('SubmissionsService.create', () => {
     submittedBy: 'gerente@awakelab.dev'
   };
 
-  it('crea Project cowork_prototype + submission en transacción, SIN disparar análisis (queda received)', async () => {
-    const { service, txProject, txSubmission } = buildService();
+  it('crea Project cowork_prototype + submission + trabajo de análisis en la MISMA transacción (D-047)', async () => {
+    const { service, txProject, txSubmission, jobs } = buildService();
 
     const result = await service.create(input);
 
@@ -72,15 +77,26 @@ describe('SubmissionsService.create', () => {
       where: { id: 'proj-1' },
       data: { sourceRef: 'db://prototype_submissions/sub-1' }
     });
+    // D-047: el análisis se ENCOLA aquí (no se ejecuta: eso es del worker), y
+    // en la misma transacción — no puede quedar un prototipo recibido que
+    // nadie vaya a analizar, que es lo que obligaba a llamar a Sistemas.
+    expect(jobs.enqueueIn).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ kind: 'analysis', projectId: 'proj-1', requestedBy: 'gerente@awakelab.dev' })
+    );
+    // El proyecto sigue en `received` hasta que el worker lo tome: la máquina
+    // de estados no cambia.
     expect(result.project.status).toBe('received');
     expect(result.submission.id).toBe('sub-1');
+    expect(result.analysisJob.id).toBe('job-1');
   });
 
-  it('409 si el slug ya existe (sugiere request_change o list_modules), sin crear nada', async () => {
-    const { service, txProject } = buildService({ slugTaken: true });
+  it('409 si el slug ya existe (sugiere request_change o list_modules), sin crear nada ni encolar', async () => {
+    const { service, txProject, jobs } = buildService({ slugTaken: true });
 
     await expect(service.create(input)).rejects.toBeInstanceOf(ConflictException);
     expect(txProject.create).not.toHaveBeenCalled();
+    expect(jobs.enqueueIn).not.toHaveBeenCalled();
   });
 });
 

@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { PrototypeManifest } from '@awk/types';
 import { PrismaService } from '../prisma/prisma.service';
+import { AnalysisJobsService, type AnalysisJobsTx } from './analysis-jobs.service';
 
 export interface CreateSubmissionInput {
   moduleSlug: string;
@@ -15,16 +16,22 @@ export interface CreateSubmissionInput {
 
 /**
  * Alta de un prototipo enviado desde Cowork (submit_prototype → POST
- * /submissions, D-036). Crea el Project (`sourceType=cowork_prototype`) + la
- * fila de `prototype_submissions` con la fuente y el manifest en BD, y NADA
- * más: el análisis NO se dispara aquí (incremento A — control de costo y
- * D-030: sin cola de trabajos no se lanzan runs largos desde HTTP). El
- * proyecto queda en `received`; un dev corre `analyze <projectId>` por CLI,
- * que materializa la fuente desde BD (AnalysisRunnerService).
+ * /submissions, D-036). Crea el Project (`sourceType=cowork_prototype`), la
+ * fila de `prototype_submissions` con la fuente y el manifest, y —desde D-047,
+ * incremento C— **encola el análisis** en la misma transacción.
+ *
+ * La condición de D-030 ("sin cola de trabajos no se lanzan runs largos desde
+ * HTTP") sigue respetada: aquí no corre ningún agente, solo se encola. El
+ * análisis lo ejecuta el worker (`src/worker.ts`), que es el único proceso con
+ * checkout del repo y `ANTHROPIC_API_KEY`. El proyecto sigue quedando en
+ * `received` hasta que el worker lo toma — esto no toca la máquina de estados.
  */
 @Injectable()
 export class SubmissionsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly jobs: AnalysisJobsService
+  ) {}
 
   async create(input: CreateSubmissionInput) {
     const existing = await this.prisma.project.findUnique({ where: { moduleSlug: input.moduleSlug } });
@@ -60,7 +67,15 @@ export class SubmissionsService {
         where: { id: project.id },
         data: { sourceRef: `db://prototype_submissions/${submission.id}` }
       });
-      return { project: updated, submission };
+      // El trabajo de análisis entra en la MISMA transacción: no puede existir
+      // un prototipo recibido que nadie vaya a analizar (era justo el agujero
+      // que dejaba el proyecto esperando un comando de Sistemas, D-046).
+      const { job } = await this.jobs.enqueueIn(tx as unknown as AnalysisJobsTx, {
+        kind: 'analysis',
+        projectId: project.id,
+        requestedBy: input.submittedBy
+      });
+      return { project: updated, submission, analysisJob: job };
     });
   }
 

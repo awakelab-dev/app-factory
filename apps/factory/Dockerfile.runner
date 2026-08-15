@@ -1,0 +1,56 @@
+# syntax=docker/dockerfile:1
+#
+# Imagen del WORKER de la Fábrica (apps/factory, D-047 — incremento C de Fase 2).
+# Consume `analysis_jobs` y corre el Agent SDK headless: es el único proceso con
+# checkout del monorepo (`PLATFORM_REPO_PATH`) y `ANTHROPIC_API_KEY`. La imagen
+# del control plane (apps/factory/Dockerfile) sigue SIN ninguna de las dos —
+# quien sirve OAuth/HTTP no ejecuta agentes (D-030 sigue en pie).
+#
+# Por qué un Dockerfile aparte y no un stage más del otro:
+#  1. **Base distinta**. El resto del stack es node:22-alpine (musl). El Agent
+#     SDK trae binarios (ripgrep y compañía) empaquetados para glibc, así que
+#     este va sobre Debian slim. Mezclar stages entre bases distintas rompería
+#     los prebuilds nativos que `pnpm deploy` copia (p. ej. @node-rs/argon2).
+#  2. **Lección D-016**: añadir stages al final de un Dockerfile existente pisa
+#     el stage por defecto de quien no declare `target:`. Archivo aparte, cero
+#     riesgo sobre las imágenes que ya funcionan.
+#
+# Build context: raíz del monorepo (resuelve @awk/types y @awk/auth).
+
+FROM node:22-bookworm-slim AS base
+RUN corepack enable
+WORKDIR /repo
+
+FROM base AS deps
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+COPY apps/api/package.json apps/api/package.json
+COPY apps/web/package.json apps/web/package.json
+COPY apps/factory/package.json apps/factory/package.json
+COPY packages/types/package.json packages/types/package.json
+COPY packages/auth/package.json packages/auth/package.json
+COPY packages/ui/package.json packages/ui/package.json
+RUN pnpm install --frozen-lockfile
+
+FROM deps AS build
+COPY turbo.json tsconfig.base.json ./
+COPY packages/types packages/types
+COPY packages/auth packages/auth
+COPY apps/factory apps/factory
+# "pnpm exec turbo", nunca "pnpm turbo" (ver STATUS: el atajo reinstala en
+# modo --production a mitad de la corrida).
+RUN pnpm exec turbo run build --filter=...@awk/factory
+RUN pnpm --filter=@awk/factory deploy --prod --legacy /out/factory
+
+FROM node:22-bookworm-slim AS runtime
+ENV NODE_ENV=production
+# git: el worker pone al día su checkout antes de cada análisis (fetch + reset,
+# solo si FACTORY_WORKER_GIT_SYNC=1). ca-certificates: HTTPS a la API y a GitHub.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends git ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY --from=build /out/factory ./
+# El checkout del monorepo NO va dentro de la imagen: se monta como volumen
+# desde el host (/opt/awkfactory/<entorno>/platform-repo → /platform-repo).
+# Sin puerto: el worker no escucha nada, solo habla con la BD y con la API.
+CMD ["node", "dist/worker.js"]

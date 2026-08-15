@@ -63,15 +63,47 @@ export interface RunAgentOptions {
   isBashCommandAllowed?: (command: string) => boolean;
 }
 
-export interface AgentRunResult {
-  success: boolean;
-  resultText: string;
-  sessionId: string | null;
+/**
+ * Consumo de un run del agente. Se separa de `AgentRunResult` porque los
+ * runners lo persisten también cuando el run FALLA (D-047): hasta entonces un
+ * run fallido quedaba con `costUsd: null` y el coste real por proyecto salía
+ * subestimado — hueco de instrumentación (a) de D-046.
+ */
+export interface AgentUsage {
   costUsd: number;
   inputTokens: number;
   outputTokens: number;
+  /**
+   * true = la corrida se cortó ANTES del mensaje `result` del SDK (el
+   * "Connection closed mid-response" que tiró 23 minutos de generación en
+   * D-046). Los tokens son lo acumulado hasta el corte y el coste no lo
+   * reporta el SDK: distingue "no gastó" de "no lo sabemos".
+   */
+  partial?: boolean;
+}
+
+export interface AgentRunResult extends AgentUsage {
+  success: boolean;
+  resultText: string;
+  sessionId: string | null;
   turns: number;
   errorMessage?: string;
+}
+
+/**
+ * Consumo en la forma de las columnas de `Run`, listo para un
+ * `prisma.run.update`. Un run sin consumo conocido no escribe nada (deja los
+ * campos como estaban) en vez de escribir ceros, que se leerían como "corrió
+ * gratis".
+ */
+export function toUsageFields(usage?: AgentUsage): {
+  costUsd?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+} {
+  if (!usage) return {};
+  if (usage.costUsd <= 0 && usage.inputTokens <= 0 && usage.outputTokens <= 0) return {};
+  return { costUsd: usage.costUsd, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens };
 }
 
 /**
@@ -132,10 +164,24 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
   let outputTokens = 0;
   let turns = 0;
   let success = false;
+  let partial = false;
   let errorMessage: string | undefined;
+  // Acumulado mensaje a mensaje: si el stream se corta antes del `result`
+  // (caso real de D-046, "Connection closed mid-response" a los 23 minutos),
+  // esto es lo único que queda del consumo. El `result` final, cuando llega,
+  // lo reemplaza por el total autoritativo del SDK.
+  let streamedInputTokens = 0;
+  let streamedOutputTokens = 0;
 
   try {
     for await (const message of stream) {
+      if (message.type === 'assistant') {
+        const usage = (message as { message?: { usage?: { input_tokens?: number; output_tokens?: number } } }).message
+          ?.usage;
+        streamedInputTokens += usage?.input_tokens ?? 0;
+        streamedOutputTokens += usage?.output_tokens ?? 0;
+        turns += 1;
+      }
       if (message.type === 'result') {
         // SDKResultMessage es `SDKResultSuccess | SDKResultError` — solo
         // `success` trae `result`; `error` (varios subtypes: error_during_execution,
@@ -163,5 +209,13 @@ export async function runAgent(opts: RunAgentOptions): Promise<AgentRunResult> {
     errorMessage = error instanceof Error ? error.message : String(error);
   }
 
-  return { success, resultText, sessionId, costUsd, inputTokens, outputTokens, turns, errorMessage };
+  // Sin mensaje `result` (corte a mitad): se reporta lo acumulado del stream y
+  // se marca parcial, en vez de devolver ceros que se leerían como "gratis".
+  if (inputTokens === 0 && outputTokens === 0 && (streamedInputTokens > 0 || streamedOutputTokens > 0)) {
+    inputTokens = streamedInputTokens;
+    outputTokens = streamedOutputTokens;
+    partial = true;
+  }
+
+  return { success, resultText, sessionId, costUsd, inputTokens, outputTokens, turns, partial, errorMessage };
 }

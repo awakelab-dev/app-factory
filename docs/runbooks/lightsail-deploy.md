@@ -253,6 +253,65 @@ cada vez que `CI` termina en verde sobre `main`. Producción se promueve a
 mano: Actions → **Deploy** → *Run workflow* → `image_tag` = el `sha` que ya
 se validó en staging.
 
+## 8b · Worker de análisis de la Fábrica (`factory-runner`, D-047)
+
+El servicio que hace que un prototipo enviado desde Cowork **avance solo**, sin
+que Sistemas lance ningún comando. Es el único contenedor que ejecuta el Agent
+SDK, así que es el único con checkout del monorepo y `ANTHROPIC_API_KEY`.
+
+**1 · Checkout dedicado en el host** (NUNCA un working copy de una persona: el
+worker hace `git reset --hard` sobre él antes de cada análisis).
+
+```bash
+# ya en el server, como el usuario del deploy:
+sudo mkdir -p /opt/awkfactory/staging
+sudo chown "$USER" /opt/awkfactory/staging
+git clone https://github.com/awakelab-dev/app-factory.git \
+  /opt/awkfactory/staging/platform-repo
+```
+
+Para que el worker pueda hacer `git fetch` solo hacen falta credenciales de
+**lectura**. Dos opciones, por orden de preferencia:
+
+- **Deploy key de solo lectura** (SSH): genera la clave en el server
+  (`ssh-keygen -t ed25519 -f ~/.ssh/awkfactory_repo -N ""`), súbela al repo en
+  *Settings → Deploy keys* **sin** "Allow write access", y clona con el remoto
+  SSH. El contenedor no necesita ver la clave si clonas y haces `fetch` desde el
+  host por cron; si quieres que el propio contenedor haga el fetch, monta
+  `~/.ssh` en modo solo lectura.
+- **Sin credenciales**: deja `FACTORY_WORKER_GIT_SYNC=0`. El worker avisa en el
+  log y analiza con lo que haya en el checkout — sirve para arrancar, pero el
+  análisis empieza a leer un repo viejo en cuanto se mergean módulos nuevos.
+
+**2 · Variables** en `/opt/awkfactory/<entorno>/.env` (plantilla al final de
+`deploy/staging.env.example`): `ANTHROPIC_API_KEY`, `PLATFORM_REPO_HOST_PATH`,
+`PLATFORM_REPO_REF`, `FACTORY_WORKER_GIT_SYNC`, `FACTORY_WORKER_POLL_MS`.
+
+**3 · Migración y arranque**:
+
+```bash
+~/migrate-factory.sh staging latest          # aplica 20260815120000_analysis_jobs
+cd /opt/awkfactory/staging
+docker compose --env-file .env -p awk-staging pull
+docker compose --env-file .env -p awk-staging up -d factory-runner
+docker compose -p awk-staging logs -f factory-runner
+```
+
+En el arranque debe aparecer `entorno OK (checkout /platform-repo)` seguido de
+`Worker de análisis arrancado`. Si falta configuración, el contenedor **sale con
+código 1 y lo dice** — deliberado: más vale que no levante a que se vaya comiendo
+los trabajos de la cola marcándolos en error de uno en uno.
+
+**4 · Prueba de humo** (desde Cowork o por CLI):
+
+```bash
+pnpm --filter=@awk/factory run cli -- enqueue-analysis --project <projectId>
+# el worker debe tomarlo en <10 s; seguirlo por logs
+```
+
+**Coste**: cada análisis ronda 1,4 USD (D-046). El worker corre de uno en uno a
+propósito — es lo que acota el gasto y la RAM del Lightsail, que es compartido.
+
 ## 9 · Verificación final (cerrar solo cuando todo ✅)
 
 - [ ] `https://staging.apps.awakelab.world/api/hello` responde 200 por HTTPS.
@@ -260,7 +319,9 @@ se validó en staging.
 - [ ] Dev-login (`POST /api/auth/dev-login`) funciona contra staging con
       `leonardo.barreto@awakelab.dev` (admin) — confirma que apunta a la
       managed real, no a un Postgres local.
-- [ ] `docker compose -p awk-staging ps` → ambos servicios `healthy`.
+- [ ] `docker compose -p awk-staging ps` → todos los servicios `healthy`.
+- [ ] `factory-runner` arrancado con `entorno OK` en el log y un análisis de
+      prueba tomado de la cola en menos de 10 s (D-047).
 - [ ] Push a `main` dispara `Deploy` → job `staging` en verde sin intervención.
 - [ ] Producción: estructura y Nginx listos; primera promoción manual
       ejecutada y verificada igual que staging.

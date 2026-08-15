@@ -1,10 +1,11 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { join } from 'node:path';
 import { PrismaService } from '../prisma/prisma.service';
-import { runAgent, type AgentRunResult } from './agent-sdk.client';
+import { runAgent, toUsageFields, type AgentRunResult, type AgentUsage } from './agent-sdk.client';
 import { GatesService } from './gates.service';
 import { runGh, runGit } from './git-client';
 import { ProjectsService } from './projects.service';
+import { assertRunnerEnv } from './runner-env';
 import type { GateType } from './types';
 
 const DEFAULT_MODEL = 'claude-sonnet-5';
@@ -55,17 +56,15 @@ export class GenerationRunnerService {
     private readonly gates: GatesService
   ) {}
 
+  /** Solo válido tras `assertRunnerEnv()` (primera línea de runGeneration). */
   private get repoPath(): string {
-    const repoPath = process.env.PLATFORM_REPO_PATH;
-    if (!repoPath) {
-      throw new Error(
-        'PLATFORM_REPO_PATH no está configurado — debe apuntar a un checkout local del monorepo app-factory (ver apps/factory/.env.example).'
-      );
-    }
-    return repoPath;
+    return assertRunnerEnv().repoPath;
   }
 
   async runGeneration(specId: string, options: GenerationOptions = {}, deps: GenerationRunnerDeps = {}) {
+    // Entorno completo ANTES de tocar estado, igual que en el runner de
+    // análisis (D-046 bug 1 — "revisar también el runner de generación").
+    assertRunnerEnv();
     const agentRunner = deps.agentRunner ?? runAgent;
     const gitRunner = deps.runGit ?? runGit;
     const ghRunner = deps.runGh ?? runGh;
@@ -178,7 +177,8 @@ export class GenerationRunnerService {
     }
 
     if (!result.success) {
-      return this.fail(run.id, project.id, result.errorMessage ?? 'El run de generación no tuvo éxito.');
+      // Con el consumo: un run caído gastó igual (D-046, hueco (a)).
+      return this.fail(run.id, project.id, result.errorMessage ?? 'El run de generación no tuvo éxito.', result);
     }
 
     const prUrl = await this.tryOpenPullRequest(
@@ -322,10 +322,11 @@ export class GenerationRunnerService {
     }
   }
 
-  private async fail(runId: string, projectId: string, message: string): Promise<never> {
+  /** `usage` = consumo del agente cuando lo hubo (D-047, ver AnalysisRunnerService.fail). */
+  private async fail(runId: string, projectId: string, message: string, usage?: AgentUsage): Promise<never> {
     await this.prisma.run.update({
       where: { id: runId },
-      data: { status: 'error', finishedAt: new Date(), errorMessage: message }
+      data: { status: 'error', finishedAt: new Date(), errorMessage: message, ...toUsageFields(usage) }
     });
     await this.projects.transition(projectId, 'error');
     this.logger.error(`Run de generación falló: ${message}`);

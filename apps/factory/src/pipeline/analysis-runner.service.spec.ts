@@ -1,5 +1,8 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { AgentRunResult } from './agent-sdk.client';
 import { AnalysisRunnerService } from './analysis-runner.service';
@@ -15,6 +18,21 @@ vi.mock('node:fs/promises', () => ({
 
 const readFileMock = vi.mocked(readFile);
 const writeFileMock = vi.mocked(writeFile);
+
+/**
+ * `assertRunnerEnv` (D-047) comprueba que PLATFORM_REPO_PATH exista de verdad y
+ * parezca el monorepo, así que los tests trabajan sobre un checkout de mentira
+ * real en /tmp en vez de sobre la ruta inventada "/repo" de antes. Las
+ * escrituras siguen mockeadas (node:fs/promises): no se toca disco de verdad.
+ */
+function fakeCheckout(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'awkf-repo-'));
+  writeFileSync(join(dir, 'pnpm-workspace.yaml'), 'packages: []\n');
+  mkdirSync(join(dir, 'apps/factory'), { recursive: true });
+  return dir;
+}
+
+let repo = '';
 
 const project = {
   id: 'proj-1',
@@ -74,8 +92,14 @@ function buildService(overrides: { project?: Record<string, unknown>; submission
 
 describe('AnalysisRunnerService.runAnalysis', () => {
   beforeEach(() => {
-    process.env.PLATFORM_REPO_PATH = '/repo';
+    repo = fakeCheckout();
+    process.env.PLATFORM_REPO_PATH = repo;
+    process.env.ANTHROPIC_API_KEY = 'test-key';
     readFileMock.mockReset();
+  });
+
+  afterEach(() => {
+    process.env.ANTHROPIC_API_KEY = 'test-key';
   });
 
   it('crea la spec (v1), abre los gates y deja el proyecto en pending_approval', async () => {
@@ -89,7 +113,7 @@ describe('AnalysisRunnerService.runAnalysis', () => {
     const spec = await service.runAnalysis('proj-1', agentRunner);
 
     expect(agentRunner).toHaveBeenCalledWith(
-      expect.objectContaining({ cwd: '/repo', writableRoots: ['/repo/docs/pipeline/demo-modulo'] })
+      expect.objectContaining({ cwd: repo, writableRoots: [`${repo}/docs/pipeline/demo-modulo`] })
     );
     expect(prisma.spec.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -131,11 +155,64 @@ describe('AnalysisRunnerService.runAnalysis', () => {
     expect(projects.transition).toHaveBeenCalledWith('proj-1', 'error');
   });
 
-  it('lanza si PLATFORM_REPO_PATH no está configurado', async () => {
+  // Bug 1 de D-046: la validación de entorno ocurría DESPUÉS de transicionar y
+  // crear el Run, así que un .env incompleto dejaba el proyecto atascado en
+  // `analyzing` con un run huérfano que hubo que sanear a mano por SQL.
+  it('sin PLATFORM_REPO_PATH falla ANTES de transicionar y sin crear Run (D-046 bug 1)', async () => {
     delete process.env.PLATFORM_REPO_PATH;
-    const { service } = buildService();
+    const { service, projects, prisma } = buildService();
 
     await expect(service.runAnalysis('proj-1', vi.fn())).rejects.toThrow(/PLATFORM_REPO_PATH/);
+    expect(projects.transition).not.toHaveBeenCalled();
+    expect(prisma.run.create).not.toHaveBeenCalled();
+  });
+
+  it('con PLATFORM_REPO_PATH apuntando a algo que no es el monorepo, tampoco toca estado', async () => {
+    process.env.PLATFORM_REPO_PATH = mkdtempSync(join(tmpdir(), 'awkf-vacio-'));
+    const { service, projects, prisma } = buildService();
+
+    await expect(service.runAnalysis('proj-1', vi.fn())).rejects.toThrow(/no parece un checkout/);
+    expect(projects.transition).not.toHaveBeenCalled();
+    expect(prisma.run.create).not.toHaveBeenCalled();
+  });
+
+  it('sin ANTHROPIC_API_KEY falla igual de pronto (el Agent SDK no podría correr)', async () => {
+    delete process.env.ANTHROPIC_API_KEY;
+    const { service, projects, prisma } = buildService();
+
+    await expect(service.runAnalysis('proj-1', vi.fn())).rejects.toThrow(/ANTHROPIC_API_KEY/);
+    expect(projects.transition).not.toHaveBeenCalled();
+    expect(prisma.run.create).not.toHaveBeenCalled();
+  });
+
+  // Hueco de instrumentación (a) de D-046: un run fallido guardaba costUsd null
+  // y el coste real por proyecto salía subestimado.
+  it('un run fallido registra el coste y los tokens que SÍ se consumieron', async () => {
+    const { service, prisma } = buildService();
+    const agentRunner = vi
+      .fn()
+      .mockResolvedValue({ ...successResult, success: false, errorMessage: 'Connection closed mid-response' });
+
+    await expect(service.runAnalysis('proj-1', agentRunner)).rejects.toThrow('Connection closed mid-response');
+
+    expect(prisma.run.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'error', costUsd: 0.01, inputTokens: 100, outputTokens: 200 })
+      })
+    );
+  });
+
+  it('avisa al worker del Run recién creado (onRunStarted) para que pueda cerrarlo si el proceso muere', async () => {
+    const { service } = buildService();
+    readFileMock
+      .mockResolvedValueOnce('# spec funcional')
+      .mockResolvedValueOnce('# spec técnica')
+      .mockResolvedValueOnce('{}');
+    const onRunStarted = vi.fn();
+
+    await service.runAnalysis('proj-1', vi.fn().mockResolvedValue(successResult), { onRunStarted });
+
+    expect(onRunStarted).toHaveBeenCalledWith('run-1');
   });
 
   it('cowork_prototype: materializa la fuente desde prototype_submissions a disco antes de correr el agente (D-036)', async () => {
@@ -159,12 +236,12 @@ describe('AnalysisRunnerService.runAnalysis', () => {
 
     expect(submissions.getLatestForProject).toHaveBeenCalledWith('proj-1');
     expect(writeFileMock).toHaveBeenCalledWith(
-      '/repo/docs/pipeline/demo-modulo/source/prototype.html',
+      `${repo}/docs/pipeline/demo-modulo/source/prototype.html`,
       '<html>proto desde cowork</html>',
       'utf-8'
     );
     expect(writeFileMock).toHaveBeenCalledWith(
-      '/repo/docs/pipeline/demo-modulo/source/prototype.manifest.json',
+      `${repo}/docs/pipeline/demo-modulo/source/prototype.manifest.json`,
       expect.stringContaining('"name": "Demo"'),
       'utf-8'
     );
@@ -173,7 +250,7 @@ describe('AnalysisRunnerService.runAnalysis', () => {
     expect(agentCall.prompt).toContain('docs/pipeline/demo-modulo/source');
     expect(agentCall.prompt).not.toContain('db://');
     // El guardarraíl (writableRoots) no cambia.
-    expect(agentCall.writableRoots).toEqual(['/repo/docs/pipeline/demo-modulo']);
+    expect(agentCall.writableRoots).toEqual([`${repo}/docs/pipeline/demo-modulo`]);
     expect(agentCall.additionalDirectories).toBeUndefined();
   });
 
@@ -243,8 +320,14 @@ function buildChangeService() {
 
 describe('AnalysisRunnerService.runChangeAnalysis (request_change)', () => {
   beforeEach(() => {
-    process.env.PLATFORM_REPO_PATH = '/repo';
+    repo = fakeCheckout();
+    process.env.PLATFORM_REPO_PATH = repo;
+    process.env.ANTHROPIC_API_KEY = 'test-key';
     readFileMock.mockReset();
+  });
+
+  afterEach(() => {
+    process.env.ANTHROPIC_API_KEY = 'test-key';
   });
 
   it('corre el agente sobre el módulo vivo + la petición y crea una mini-spec enlazada al ChangeRequest', async () => {
@@ -261,7 +344,7 @@ describe('AnalysisRunnerService.runChangeAnalysis (request_change)', () => {
     expect(projects.transition).toHaveBeenNthCalledWith(1, 'proj-1', 'analyzing');
     // La mini-spec se escribe en el directorio del cambio, numerado por su versión (v2).
     const agentCall = agentRunner.mock.calls[0]?.[0];
-    expect(agentCall.writableRoots).toEqual(['/repo/docs/pipeline/gestor-proyectos/change-2']);
+    expect(agentCall.writableRoots).toEqual([`${repo}/docs/pipeline/gestor-proyectos/change-2`]);
     expect(agentCall.prompt).toContain('Restringir "Desempeño por persona" a admin.');
     expect(agentCall.prompt).toContain('apps/api/src/modules/gestor-proyectos/');
     // La spec queda enlazada al ChangeRequest y con la versión siguiente.
