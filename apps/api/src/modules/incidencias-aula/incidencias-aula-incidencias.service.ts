@@ -2,15 +2,21 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import type { AuthUser } from '@awk/auth';
 import { AuditService } from '../../core/audit/audit.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import { parseDateOnly } from './incidencias-aula-dates';
+import { daysBetween, parseDateOnly } from './incidencias-aula-dates';
 import { IncidenciasPermissionsService } from './incidencias-aula-permissions.service';
-import type { IncidenciaBaseRow, IncidenciaDetailRow } from './incidencias-aula.mappers';
-import { resolveUserNames, toIncidenciaDetailDto, toIncidenciaRowDto } from './incidencias-aula.mappers';
+import type { IncidenciaBandejaBaseRow, IncidenciaBaseRow, IncidenciaDetailRow } from './incidencias-aula.mappers';
+import {
+  resolveUserNames,
+  toIncidenciaBandejaRowDto,
+  toIncidenciaDetailDto,
+  toIncidenciaRowDto
+} from './incidencias-aula.mappers';
 import type {
   AddSeguimientoRequest,
   BandejaFiltros,
   CerrarIncidenciaRequest,
   CreateIncidenciaRequest,
+  IncidenciaBandejaRow,
   IncidenciaDetail,
   IncidenciaRow
 } from './incidencias-aula.types';
@@ -72,18 +78,39 @@ export class IncidenciasService {
     return this.toRowsWithAulaNames(rows);
   }
 
-  /** Bandeja completa de coordinación (gate funcional, decisión 5: sin
-   * partición — cualquier coordinación ve todo, no solo "sus" casos). */
-  async bandeja(user: AuthUser, filtros: BandejaFiltros): Promise<IncidenciaRow[]> {
+  /**
+   * Bandeja completa de coordinación (gate funcional, decisión 5: sin
+   * partición — cualquier coordinación ve todo, no solo "sus" casos).
+   *
+   * Mini-spec técnica, cambio 2 — priorización: cada fila lleva `diasAbierta`
+   * (días naturales desde `createdAt` hasta `cerradaAt` si está cerrada, o
+   * hasta `now` en caso contrario — gate técnico test exigido: una incidencia
+   * cerrada NO avanza con el reloj). `now` es inyectable con valor por
+   * defecto, mismo criterio que `currentMonth(now: Date = new Date())` en
+   * `incidencias-aula-dates.ts`, para poder testear con fecha fija.
+   *
+   * Orden: si el filtro de estado no es "cerrada" (incluye `undefined`), la
+   * bandeja se reordena EN MEMORIA por `diasAbierta` descendente — Prisma no
+   * puede ordenar por un campo calculado sin SQL crudo, y no se justifica
+   * introducirlo solo para esto. Si el filtro es "cerrada", se conserva el
+   * `orderBy: createdAt desc` de la consulta, sin tocarlo (gate funcional,
+   * confirmación 2: no tiene sentido priorizar lo ya resuelto).
+   */
+  async bandeja(user: AuthUser, filtros: BandejaFiltros, now: Date = new Date()): Promise<IncidenciaBandejaRow[]> {
     if (!this.permissions.isCoordinacion(user)) {
       throw new ForbiddenException('No puedes ver la bandeja de incidencias');
     }
 
     const rows = await this.prisma.incidencia.findMany({
-      where: { estado: filtros.estado, aulaId: filtros.aulaId },
+      where: { estado: filtros.estado, aulaId: filtros.aulaId, gravedad: filtros.gravedad },
       orderBy: { createdAt: 'desc' }
     });
-    return this.toRowsWithAulaNames(rows);
+    const bandejaRows = await this.toBandejaRowsWithAulaNames(rows, now);
+
+    if (filtros.estado !== 'cerrada') {
+      bandejaRows.sort((a, b) => b.diasAbierta - a.diasAbierta);
+    }
+    return bandejaRows;
   }
 
   /**
@@ -212,5 +239,21 @@ export class IncidenciasService {
     const aulas = await this.prisma.aula.findMany({ where: { id: { in: aulaIds } } });
     const names = new Map(aulas.map((a) => [a.id, a.nombre]));
     return rows.map((row) => toIncidenciaRowDto(row, names.get(row.aulaId) ?? '—'));
+  }
+
+  /** Variante de `toRowsWithAulaNames` para la bandeja (mini-spec técnica,
+   * cambio 2): además del nombre de aula, calcula `diasAbierta` por fila.
+   * `listMias`/`detail` siguen sin este campo — usan `toRowsWithAulaNames`
+   * tal cual, sin tocar. */
+  private async toBandejaRowsWithAulaNames(rows: IncidenciaBandejaBaseRow[], now: Date): Promise<IncidenciaBandejaRow[]> {
+    if (rows.length === 0) return [];
+    const aulaIds = [...new Set(rows.map((r) => r.aulaId))];
+    const aulas = await this.prisma.aula.findMany({ where: { id: { in: aulaIds } } });
+    const names = new Map(aulas.map((a) => [a.id, a.nombre]));
+    return rows.map((row) => {
+      const hasta = row.estado === 'cerrada' && row.cerradaAt ? row.cerradaAt : now;
+      const diasAbierta = Math.floor(daysBetween(row.createdAt, hasta));
+      return toIncidenciaBandejaRowDto(row, names.get(row.aulaId) ?? '—', diasAbierta);
+    });
   }
 }

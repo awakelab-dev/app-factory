@@ -152,12 +152,103 @@ describe('IncidenciasService.bandeja', () => {
     await expect(service.bandeja(direccion, {})).rejects.toBeInstanceOf(ForbiddenException);
   });
 
-  it('coordinación ve la bandeja completa con los filtros aplicados', async () => {
+  it('coordinación ve la bandeja completa con los filtros aplicados (estado + aula)', async () => {
     const { service, prisma } = buildService();
     await service.bandeja(coordinacion, { estado: 'abierta', aulaId: 'aula-1' });
     expect(prisma.incidencia.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { estado: 'abierta', aulaId: 'aula-1' } })
+      expect.objectContaining({ where: { estado: 'abierta', aulaId: 'aula-1', gravedad: undefined } })
     );
+  });
+
+  it('filtra por gravedad sola', async () => {
+    const { service, prisma } = buildService();
+    await service.bandeja(coordinacion, { gravedad: 'alta' });
+    expect(prisma.incidencia.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { estado: undefined, aulaId: undefined, gravedad: 'alta' } })
+    );
+  });
+
+  it('gate técnico test exigido (b): filtra por gravedad combinada con estado y aula a la vez', async () => {
+    const { service, prisma } = buildService();
+    await service.bandeja(coordinacion, { estado: 'en_curso', aulaId: 'aula-1', gravedad: 'alta' });
+    expect(prisma.incidencia.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { estado: 'en_curso', aulaId: 'aula-1', gravedad: 'alta' } })
+    );
+  });
+
+  describe('diasAbierta (mini-spec técnica, cambio 2)', () => {
+    const now = new Date('2026-07-20T00:00:00.000Z');
+
+    it('para una incidencia ABIERTA, cuenta días naturales desde createdAt hasta "now" inyectado', async () => {
+      const { service } = buildService({
+        incidencia: {
+          findMany: vi
+            .fn()
+            .mockResolvedValue([{ ...baseIncidencia, id: 'inc-a', createdAt: new Date('2026-07-01T00:00:00.000Z') }])
+        }
+      });
+      const rows = await service.bandeja(coordinacion, {}, now);
+      expect(rows[0]?.diasAbierta).toBe(19);
+    });
+
+    it('gate técnico test exigido (a): para una incidencia CERRADA, se mide contra cerradaAt y NO avanza con el reloj', async () => {
+      const cerrada = {
+        ...baseIncidencia,
+        id: 'inc-c',
+        estado: 'cerrada' as const,
+        createdAt: new Date('2026-06-01T00:00:00.000Z'),
+        cerradaAt: new Date('2026-06-05T00:00:00.000Z')
+      };
+      const { service } = buildService({ incidencia: { findMany: vi.fn().mockResolvedValue([cerrada]) } });
+
+      const rowsNow = await service.bandeja(coordinacion, {}, now);
+      expect(rowsNow[0]?.diasAbierta).toBe(4);
+
+      // "now" mucho más tarde no cambia nada: el reloj de una cerrada ya se detuvo.
+      const muchoMasTarde = new Date('2026-12-01T00:00:00.000Z');
+      const rowsLater = await service.bandeja(coordinacion, {}, muchoMasTarde);
+      expect(rowsLater[0]?.diasAbierta).toBe(4);
+    });
+  });
+
+  describe('orden de la bandeja (mini-spec técnica, cambio 2)', () => {
+    const abierta19 = { ...baseIncidencia, id: 'inc-a', estado: 'abierta' as const, createdAt: new Date('2026-07-01T00:00:00.000Z'), cerradaAt: null };
+    const enCurso10 = { ...baseIncidencia, id: 'inc-b', estado: 'en_curso' as const, createdAt: new Date('2026-07-10T00:00:00.000Z'), cerradaAt: null };
+    const cerrada4 = {
+      ...baseIncidencia,
+      id: 'inc-c',
+      estado: 'cerrada' as const,
+      createdAt: new Date('2026-06-01T00:00:00.000Z'),
+      cerradaAt: new Date('2026-06-05T00:00:00.000Z')
+    };
+    const now = new Date('2026-07-20T00:00:00.000Z');
+
+    it('con estado undefined/abierta/en_curso, ordena por diasAbierta descendente', async () => {
+      const { service } = buildService({
+        // findMany ya viene ordenado por createdAt desc (orden de Prisma) —
+        // el resultado debe quedar reordenado por diasAbierta, no por eso.
+        incidencia: { findMany: vi.fn().mockResolvedValue([enCurso10, cerrada4, abierta19]) }
+      });
+
+      const sinFiltro = await service.bandeja(coordinacion, {}, now);
+      expect(sinFiltro.map((r) => r.id)).toEqual(['inc-a', 'inc-b', 'inc-c']);
+
+      const filtroAbierta = await service.bandeja(coordinacion, { estado: 'abierta' }, now);
+      expect(filtroAbierta.map((r) => r.id)).toEqual(['inc-a', 'inc-b', 'inc-c']);
+
+      const filtroEnCurso = await service.bandeja(coordinacion, { estado: 'en_curso' }, now);
+      expect(filtroEnCurso.map((r) => r.id)).toEqual(['inc-a', 'inc-b', 'inc-c']);
+    });
+
+    it('con estado "cerrada", mantiene el orden de la consulta (createdAt desc) sin reordenar por diasAbierta', async () => {
+      // Orden de llegada deliberadamente NO descendente por diasAbierta, para
+      // detectar si el servicio reordenara por error.
+      const { service } = buildService({
+        incidencia: { findMany: vi.fn().mockResolvedValue([cerrada4, abierta19]) }
+      });
+      const rows = await service.bandeja(coordinacion, { estado: 'cerrada' }, now);
+      expect(rows.map((r) => r.id)).toEqual(['inc-c', 'inc-a']);
+    });
   });
 });
 

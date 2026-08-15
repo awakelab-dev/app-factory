@@ -1,10 +1,10 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthUser } from '@awk/types';
 import { AuthProvider } from '../../auth/auth-context';
 import { CoordinacionPage } from './CoordinacionPage';
-import type { Aula, IncidenciaDetail, IncidenciaRow } from './incidencias-aula.types';
+import type { Aula, IncidenciaBandejaRow, IncidenciaDetail, IncidenciaRow } from './incidencias-aula.types';
 
 const coordinacionFixture: AuthUser = {
   id: 'u-coord',
@@ -37,6 +37,13 @@ const cerradaRow: IncidenciaRow = {
   gravedad: 'baja'
 };
 
+// Filas de BANDEJA (mini-spec técnica, cambio 2): mismo contenido que
+// `abiertaRow`/`cerradaRow` + `diasAbierta` — es lo que responde de verdad
+// `GET .../incidencias` desde este cambio, y `incidenciasBandejaResponseSchema`
+// exige el campo (parsear sin él fallaría).
+const abiertaBandejaRow: IncidenciaBandejaRow = { ...abiertaRow, diasAbierta: 3 };
+const cerradaBandejaRow: IncidenciaBandejaRow = { ...cerradaRow, diasAbierta: 45 };
+
 const abiertaDetail: IncidenciaDetail = {
   ...abiertaRow,
   relato: 'Relato del caso abierto.',
@@ -64,8 +71,22 @@ function mockApi() {
       return ok({ ...abiertaDetail, estado: 'cerrada', canAct: false, canTomar: false, resolucion: 'Resuelto' });
     }
     if (url.endsWith('/api/incidencias-aula/incidencias/inc-1')) return ok(abiertaDetail);
-    if (url.includes('/api/incidencias-aula/incidencias?')) return ok([abiertaRow]);
-    if (url.endsWith('/api/incidencias-aula/incidencias')) return ok([abiertaRow, cerradaRow]);
+    if (url.includes('/api/incidencias-aula/incidencias?')) return ok([abiertaBandejaRow]);
+    if (url.endsWith('/api/incidencias-aula/incidencias')) return ok([abiertaBandejaRow, cerradaBandejaRow]);
+    return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) });
+  });
+}
+
+/** Mock mínimo para tests centrados en el render de la tabla de bandeja
+ * (columna "Días abierta", marca de estancamiento): las filas pasadas se
+ * devuelven tal cual para CUALQUIER variante de `GET .../incidencias`
+ * (filtrada o no) — estos tests no ejercitan el filtrado en sí. */
+function mockApiForRows(rows: IncidenciaBandejaRow[]) {
+  return vi.fn((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith('/api/auth/me')) return ok(coordinacionFixture);
+    if (url.endsWith('/api/incidencias-aula/aulas')) return ok(aulasFixture);
+    if (url.includes('/api/incidencias-aula/incidencias')) return ok(rows);
     return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) });
   });
 }
@@ -162,5 +183,124 @@ describe('CoordinacionPage', () => {
         fetchMock.mock.calls.some(([url, init]) => (String(url).includes('/cerrar') ? init?.method === 'POST' : false))
       ).toBe(true)
     );
+  });
+
+  it('el filtro de gravedad es visible y combinable con estado y aula (mini-spec técnica, cambio 2)', async () => {
+    const fetchMock = mockApi();
+    vi.stubGlobal('fetch', fetchMock);
+    render(
+      <AuthProvider>
+        <MemoryRouter initialEntries={['/incidencias-aula/bandeja']}>
+          <CoordinacionPage />
+        </MemoryRouter>
+      </AuthProvider>
+    );
+
+    await screen.findByTestId('bandeja-table');
+    fireEvent.change(screen.getByTestId('filtro-gravedad'), { target: { value: 'alta' } });
+
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([url]) => String(url).includes('gravedad=alta'))).toBe(true)
+    );
+
+    fireEvent.change(screen.getByTestId('filtro-estado'), { target: { value: 'abierta' } });
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          ([url]) => String(url).includes('estado=abierta') && String(url).includes('gravedad=alta')
+        )
+      ).toBe(true)
+    );
+  });
+});
+
+describe('CoordinacionPage — columna "Días abierta" y marca de estancamiento (mini-spec técnica, cambio 2)', () => {
+  it('la tabla muestra la columna "Días abierta" con el valor de cada fila', async () => {
+    vi.stubGlobal('fetch', mockApiForRows([abiertaBandejaRow, cerradaBandejaRow]));
+    render(
+      <AuthProvider>
+        <MemoryRouter initialEntries={['/incidencias-aula/bandeja']}>
+          <CoordinacionPage />
+        </MemoryRouter>
+      </AuthProvider>
+    );
+
+    await screen.findByTestId('bandeja-table');
+    expect(screen.getByText('Días abierta')).toBeInTheDocument();
+    expect(screen.getByText('3')).toBeInTheDocument();
+    expect(screen.getByText('45')).toBeInTheDocument();
+  });
+
+  it('gate técnico, test exigido (c): la marca NO aparece a los 7 días exactos y SÍ a los 8', async () => {
+    const limite: IncidenciaBandejaRow = {
+      ...abiertaBandejaRow,
+      id: 'inc-limite-7',
+      alumnoNombre: 'Alumno Limite Siete',
+      diasAbierta: 7
+    };
+    const pasadoElLimite: IncidenciaBandejaRow = {
+      ...abiertaBandejaRow,
+      id: 'inc-limite-8',
+      alumnoNombre: 'Alumno Limite Ocho',
+      diasAbierta: 8
+    };
+    vi.stubGlobal('fetch', mockApiForRows([limite, pasadoElLimite]));
+    render(
+      <AuthProvider>
+        <MemoryRouter initialEntries={['/incidencias-aula/bandeja']}>
+          <CoordinacionPage />
+        </MemoryRouter>
+      </AuthProvider>
+    );
+
+    await screen.findByTestId('bandeja-table');
+    const filaLimite = screen.getByText('Alumno Limite Siete').closest('tr');
+    const filaPasadoElLimite = screen.getByText('Alumno Limite Ocho').closest('tr');
+    expect(filaLimite && within(filaLimite).queryByTestId('estancada-marca')).toBeNull();
+    expect(filaPasadoElLimite && within(filaPasadoElLimite).queryByTestId('estancada-marca')).not.toBeNull();
+  });
+
+  it('gate técnico, test exigido (d): la marca nunca aparece en una incidencia cerrada, por muchos días que lleve', async () => {
+    const cerradaMuyEstancada: IncidenciaBandejaRow = {
+      ...cerradaBandejaRow,
+      id: 'inc-cerrada-vieja',
+      alumnoNombre: 'Alumno Cerrado Antiguo',
+      diasAbierta: 400
+    };
+    vi.stubGlobal('fetch', mockApiForRows([cerradaMuyEstancada]));
+    render(
+      <AuthProvider>
+        <MemoryRouter initialEntries={['/incidencias-aula/bandeja']}>
+          <CoordinacionPage />
+        </MemoryRouter>
+      </AuthProvider>
+    );
+
+    await screen.findByTestId('bandeja-table');
+    const fila = screen.getByText('Alumno Cerrado Antiguo').closest('tr');
+    expect(fila && within(fila).queryByTestId('estancada-marca')).toBeNull();
+  });
+
+  it('la marca de estancamiento es accesible: icono + texto/title, no solo color (gate funcional, condición 4)', async () => {
+    const estancada: IncidenciaBandejaRow = {
+      ...abiertaBandejaRow,
+      id: 'inc-estancada',
+      alumnoNombre: 'Alumno Muy Estancado',
+      estado: 'en_curso',
+      diasAbierta: 20
+    };
+    vi.stubGlobal('fetch', mockApiForRows([estancada]));
+    render(
+      <AuthProvider>
+        <MemoryRouter initialEntries={['/incidencias-aula/bandeja']}>
+          <CoordinacionPage />
+        </MemoryRouter>
+      </AuthProvider>
+    );
+
+    await screen.findByTestId('bandeja-table');
+    const marca = screen.getByTestId('estancada-marca');
+    expect(marca).toHaveAttribute('title');
+    expect(marca).toHaveTextContent('Estancada');
   });
 });

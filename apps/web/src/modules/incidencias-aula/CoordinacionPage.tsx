@@ -7,28 +7,42 @@ import { DetailModal } from './DocentePage';
 import {
   aulasResponseSchema,
   incidenciaDetailSchema,
+  incidenciasBandejaResponseSchema,
   incidenciasResponseSchema,
   type Aula,
   type EstadoIncidencia,
+  type IncidenciaBandejaRow,
   type IncidenciaDetail,
+  type IncidenciaGravedad,
   type IncidenciaRow
 } from './incidencias-aula.types';
-import { ESTADO_ACCENT, ESTADO_LABEL, GRAVEDAD_LABEL, TIPO_LABEL } from './incidencias-labels';
+import { DIAS_ALERTA_ESTANCAMIENTO, ESTADO_ACCENT, ESTADO_LABEL, GRAVEDAD_LABEL, TIPO_LABEL } from './incidencias-labels';
 
 type ListState =
   | { status: 'loading' }
   | { status: 'error'; detail: string }
-  | { status: 'ok'; rows: IncidenciaRow[] };
+  | { status: 'ok'; rows: IncidenciaBandejaRow[] };
+
+type Filters = { estado?: EstadoIncidencia; aulaId?: string; gravedad?: IncidenciaGravedad };
 
 const fieldClass =
   'rounded-lg border border-awk-blue-700 bg-awk-navy-900 px-3 py-2 text-sm text-awk-blue-50 focus:border-awk-cyan-500 focus:outline-none';
 
-function buildQuery(filters: { estado?: EstadoIncidencia; aulaId?: string }): string {
+function buildQuery(filters: Filters): string {
   const params = new URLSearchParams();
   if (filters.estado) params.set('estado', filters.estado);
   if (filters.aulaId) params.set('aulaId', filters.aulaId);
+  if (filters.gravedad) params.set('gravedad', filters.gravedad);
   const qs = params.toString();
   return qs ? `?${qs}` : '';
+}
+
+/** `abierta`/`en_curso` con más de `DIAS_ALERTA_ESTANCAMIENTO` días abiertas
+ * (mini-spec técnica, cambio 2 — estrictamente mayor que el umbral, no
+ * "mayor o igual": gate técnico test exigido (c)). Nunca aplica a `cerrada`
+ * (su reloj ya se detuvo en el cierre) — test exigido (d). */
+function isEstancada(row: IncidenciaBandejaRow): boolean {
+  return (row.estado === 'abierta' || row.estado === 'en_curso') && row.diasAbierta > DIAS_ALERTA_ESTANCAMIENTO;
 }
 
 /**
@@ -42,7 +56,7 @@ export function CoordinacionPage() {
   const [allRows, setAllRows] = useState<IncidenciaRow[] | null>(null);
   const [listState, setListState] = useState<ListState>({ status: 'loading' });
   const [aulas, setAulas] = useState<Aula[]>([]);
-  const [filters, setFilters] = useState<{ estado?: EstadoIncidencia; aulaId?: string }>({});
+  const [filters, setFilters] = useState<Filters>({});
   const [openId, setOpenId] = useState<string | null>(null);
 
   // KPIs: siempre sobre la bandeja COMPLETA, independientes del filtro que
@@ -56,9 +70,9 @@ export function CoordinacionPage() {
       .catch(() => setAulas([]));
   }, []);
 
-  const loadFiltered = useCallback((f: { estado?: EstadoIncidencia; aulaId?: string }) => {
+  const loadFiltered = useCallback((f: Filters) => {
     setListState({ status: 'loading' });
-    apiFetch(`/api/incidencias-aula/incidencias${buildQuery(f)}`, incidenciasResponseSchema)
+    apiFetch(`/api/incidencias-aula/incidencias${buildQuery(f)}`, incidenciasBandejaResponseSchema)
       .then((rows) => setListState({ status: 'ok', rows }))
       .catch((err: unknown) =>
         setListState({ status: 'error', detail: err instanceof Error ? err.message : String(err) })
@@ -130,6 +144,21 @@ export function CoordinacionPage() {
             </option>
           ))}
         </select>
+        <select
+          value={filters.gravedad ?? ''}
+          onChange={(e) =>
+            setFilters((f) => ({ ...f, gravedad: (e.target.value || undefined) as IncidenciaGravedad | undefined }))
+          }
+          className={fieldClass}
+          data-testid="filtro-gravedad"
+        >
+          <option value="">Todas las gravedades</option>
+          {Object.entries(GRAVEDAD_LABEL).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
       </section>
 
       {listState.status === 'loading' && <p className="text-awk-blue-300">Cargando…</p>}
@@ -153,29 +182,48 @@ export function CoordinacionPage() {
                   <th className="px-4 py-2 font-medium">Tipo</th>
                   <th className="px-4 py-2 font-medium">Gravedad</th>
                   <th className="px-4 py-2 font-medium">Fecha</th>
+                  <th className="px-4 py-2 font-medium">Días abierta</th>
                   <th className="px-4 py-2 font-medium">Estado</th>
                 </tr>
               </thead>
               <tbody>
-                {listState.rows.map((row) => (
-                  <tr
-                    key={row.id}
-                    onClick={() => setOpenId(row.id)}
-                    className="cursor-pointer border-b border-awk-blue-800 last:border-0 hover:bg-awk-blue-900/40"
-                    data-testid="bandeja-row"
-                  >
-                    <td className="px-4 py-2 text-awk-blue-50">{row.alumnoNombre}</td>
-                    <td className="px-4 py-2 text-awk-blue-300">{row.aulaNombre}</td>
-                    <td className="px-4 py-2 text-awk-blue-300">{TIPO_LABEL[row.tipo]}</td>
-                    <td className="px-4 py-2 text-awk-blue-300">{GRAVEDAD_LABEL[row.gravedad]}</td>
-                    <td className="px-4 py-2 text-awk-blue-300">{row.fechaHecho}</td>
-                    <td className="px-4 py-2">
-                      <span className={`rounded-full border px-2 py-0.5 text-xs ${ESTADO_ACCENT[row.estado]}`}>
-                        {ESTADO_LABEL[row.estado]}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {listState.rows.map((row) => {
+                  const estancada = isEstancada(row);
+                  return (
+                    <tr
+                      key={row.id}
+                      onClick={() => setOpenId(row.id)}
+                      className={`cursor-pointer border-b border-awk-blue-800 last:border-0 hover:bg-awk-blue-900/40 ${
+                        estancada ? 'bg-amber-950/20' : ''
+                      }`}
+                      data-testid="bandeja-row"
+                    >
+                      <td className="px-4 py-2 text-awk-blue-50">{row.alumnoNombre}</td>
+                      <td className="px-4 py-2 text-awk-blue-300">{row.aulaNombre}</td>
+                      <td className="px-4 py-2 text-awk-blue-300">{TIPO_LABEL[row.tipo]}</td>
+                      <td className="px-4 py-2 text-awk-blue-300">{GRAVEDAD_LABEL[row.gravedad]}</td>
+                      <td className="px-4 py-2 text-awk-blue-300">{row.fechaHecho}</td>
+                      <td className="px-4 py-2 text-awk-blue-300">
+                        <span>{row.diasAbierta}</span>
+                        {estancada && (
+                          <span
+                            className="ml-2 inline-flex items-center gap-1 text-amber-400"
+                            title={`Más de ${DIAS_ALERTA_ESTANCAMIENTO} días abierta sin resolver`}
+                            data-testid="estancada-marca"
+                          >
+                            <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+                            <span className="text-xs">Estancada</span>
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2">
+                        <span className={`rounded-full border px-2 py-0.5 text-xs ${ESTADO_ACCENT[row.estado]}`}>
+                          {ESTADO_LABEL[row.estado]}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}

@@ -11,13 +11,16 @@ import {
   createAulaRequestSchema,
   createIncidenciaRequestSchema,
   estadoIncidenciaSchema,
+  incidenciaGravedadSchema,
   updateAulaRequestSchema,
   type AddSeguimientoRequest,
   type Aula,
   type CerrarIncidenciaRequest,
   type CreateAulaRequest,
   type CreateIncidenciaRequest,
+  type IncidenciaBandejaRow,
   type IncidenciaDetail,
+  type IncidenciaGravedad,
   type IncidenciaRow,
   type ResumenMensual,
   type UpdateAulaRequest
@@ -71,9 +74,10 @@ export class IncidenciasAulaController {
   bandeja(
     @CurrentUser() user: AuthUser,
     @Query('estado', new ZodValidationPipe(estadoIncidenciaSchema.optional())) estado: IncidenciaRow['estado'] | undefined,
-    @Query('aulaId') aulaId?: string
-  ): Promise<IncidenciaRow[]> {
-    return this.incidenciasService.bandeja(user, { estado, aulaId });
+    @Query('aulaId') aulaId: string | undefined,
+    @Query('gravedad', new ZodValidationPipe(incidenciaGravedadSchema.optional())) gravedad?: IncidenciaGravedad
+  ): Promise<IncidenciaBandejaRow[]> {
+    return this.incidenciasService.bandeja(user, { estado, aulaId, gravedad });
   }
 
   @Roles('incidencias_docente', 'incidencias_coordinacion', 'admin')
