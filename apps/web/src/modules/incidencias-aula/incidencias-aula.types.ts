@@ -78,6 +78,18 @@ export const incidenciaRowSchema = z.object({
 export type IncidenciaRow = z.infer<typeof incidenciaRowSchema>;
 export const incidenciasResponseSchema = z.array(incidenciaRowSchema);
 
+/**
+ * Fila de la BANDEJA de coordinación (mini-spec técnica, cambio 2) — espejo
+ * exacto de `incidenciaBandejaRowSchema` del backend. EXTIENDE
+ * `incidenciaRowSchema` sin modificarlo: `diasAbierta` solo existe aquí, no
+ * en `IncidenciaRow` (que sigue usando `DocentePage` y el detalle).
+ */
+export const incidenciaBandejaRowSchema = incidenciaRowSchema.extend({
+  diasAbierta: z.number().int()
+});
+export type IncidenciaBandejaRow = z.infer<typeof incidenciaBandejaRowSchema>;
+export const incidenciasBandejaResponseSchema = z.array(incidenciaBandejaRowSchema);
+
 export const incidenciaDetailSchema = incidenciaRowSchema.extend({
   relato: z.string(),
   resolucion: z.string().nullable(),

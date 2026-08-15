@@ -91,6 +91,20 @@ export type IncidenciaRow = z.infer<typeof incidenciaRowSchema>;
 export const incidenciasResponseSchema = z.array(incidenciaRowSchema);
 
 /**
+ * Fila de la BANDEJA de coordinación (mini-spec técnica, cambio 2): EXTIENDE
+ * `incidenciaRowSchema` sin modificarlo (gate técnico nota 4) — `diasAbierta`
+ * solo existe en la respuesta de `GET .../incidencias` (bandeja), nunca en
+ * `listMias` ni en el detalle, para no arrastrar un campo irrelevante al
+ * contrato del docente. Mismo criterio de aislamiento que ya separa
+ * `ResumenMensualDetalleFila` de `IncidenciaRow`.
+ */
+export const incidenciaBandejaRowSchema = incidenciaRowSchema.extend({
+  diasAbierta: z.number().int()
+});
+export type IncidenciaBandejaRow = z.infer<typeof incidenciaBandejaRowSchema>;
+export const incidenciasBandejaResponseSchema = z.array(incidenciaBandejaRowSchema);
+
+/**
  * Detalle completo: alumno, relato y línea de tiempo de seguimiento. NUNCA es
  * la forma que ve Dirección (ver `ResumenMensual` más abajo, que se construye
  * con un mapper propio que no toca ninguno de estos campos identificativos).
@@ -140,7 +154,8 @@ export type CerrarIncidenciaRequest = z.infer<typeof cerrarIncidenciaRequestSche
 
 export const bandejaFiltrosSchema = z.object({
   estado: estadoIncidenciaSchema.optional(),
-  aulaId: z.string().optional()
+  aulaId: z.string().optional(),
+  gravedad: incidenciaGravedadSchema.optional()
 });
 export type BandejaFiltros = z.infer<typeof bandejaFiltrosSchema>;
 

@@ -3,6 +3,7 @@ import { daysBetween, formatDateOnly } from './incidencias-aula-dates';
 import type {
   Aula,
   EstadoIncidencia,
+  IncidenciaBandejaRow,
   IncidenciaDetail,
   IncidenciaGravedad,
   IncidenciaRow,
@@ -52,6 +53,15 @@ export interface IncidenciaDetailRow extends IncidenciaBaseRow {
   seguimientos: SeguimientoRow[];
 }
 
+/** Forma mínima que necesita la bandeja de coordinación (mini-spec técnica,
+ * cambio 2): `IncidenciaBaseRow` + `cerradaAt`, para poder derivar
+ * `diasAbierta` sin traer `seguimientos` (que la bandeja no usa). El `select`
+ * de Prisma de `bandeja()` no cambia (sigue sin `select`/`include`, trae el
+ * modelo completo), así que el objeto real siempre cumple esta forma. */
+export interface IncidenciaBandejaBaseRow extends IncidenciaBaseRow {
+  cerradaAt: Date | null;
+}
+
 export function toAulaDto(row: AulaRow): Aula {
   return {
     id: row.id,
@@ -85,6 +95,19 @@ export function toIncidenciaRowDto(row: IncidenciaBaseRow, aulaNombre: string): 
     estado: row.estado,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString()
+  };
+}
+
+/** Fila de bandeja: la fila ligera de siempre + `diasAbierta`, ya calculado
+ * por el caller (`IncidenciasService.bandeja`, que conoce `now`). */
+export function toIncidenciaBandejaRowDto(
+  row: IncidenciaBandejaBaseRow,
+  aulaNombre: string,
+  diasAbierta: number
+): IncidenciaBandejaRow {
+  return {
+    ...toIncidenciaRowDto(row, aulaNombre),
+    diasAbierta
   };
 }
 
