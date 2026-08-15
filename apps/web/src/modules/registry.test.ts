@@ -10,8 +10,13 @@ const admin: AuthUser = {
 };
 const plain: AuthUser = { ...admin, id: 'u-2', roles: ['user'] };
 const orientadorAdmin: AuthUser = { ...admin, id: 'u-3', roles: ['orientador_admin'] };
+// incidencias-aula (2026-08-15): tres roles DISJUNTOS sobre la misma entidad —
+// un docente no ve la bandeja de coordinación, ni el resumen de dirección, ni
+// la gestión de aulas (esa es solo de admin).
+const incidenciasDocente: AuthUser = { ...admin, id: 'u-4', roles: ['incidencias_docente'] };
 
 const focusFlowNav = ['Enfoque', 'Tareas del día', 'Dashboard', 'Desempeño', 'Configuración'];
+const incidenciasNav = ['Registrar incidencia', 'Bandeja', 'Resumen mensual', 'Aulas'];
 
 describe('registry (manifests → menú/rutas)', () => {
   it('admin accede a todos los módulos registrados, con los de sistema (Fábrica y Administración) al final (orden del sidebar, 2026-07-19; hello retirado del registro)', () => {
@@ -21,6 +26,7 @@ describe('registry (manifests → menú/rutas)', () => {
       'orientador-ia',
       'gestor-proyectos',
       'focus-flow',
+      'incidencias-aula',
       'factory-console',
       'core-admin'
     ]);
@@ -43,6 +49,7 @@ describe('registry (manifests → menú/rutas)', () => {
       'Gestor de Proyectos',
       'Proyectos',
       ...focusFlowNav,
+      ...incidenciasNav,
       'Fábrica',
       'Usuarios'
     ]);
@@ -58,6 +65,22 @@ describe('registry (manifests → menú/rutas)', () => {
       'Gestor de Proyectos',
       'Proyectos',
       ...focusFlowNav
+    ]);
+  });
+
+  it('un docente de incidencias-aula solo ve "Registrar incidencia" — ni bandeja, ni resumen de dirección, ni aulas (roles disjuntos, 2026-08-15)', () => {
+    expect(accessibleModules(incidenciasDocente).map((mod) => mod.manifest.id)).toEqual([
+      'moodle-insights',
+      'gestor-proyectos',
+      'focus-flow',
+      'incidencias-aula'
+    ]);
+    expect(visibleNav(incidenciasDocente).map((item) => item.label)).toEqual([
+      'Moodle Insights',
+      'Gestor de Proyectos',
+      'Proyectos',
+      ...focusFlowNav,
+      'Registrar incidencia'
     ]);
   });
 
