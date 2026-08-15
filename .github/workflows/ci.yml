@@ -157,6 +157,48 @@ jobs:
           cache-from: type=gha,scope=api-migrator
           cache-to: type=gha,mode=max,scope=api-migrator
 
+  docker-factory-runner:
+    name: Docker factory-runner (push a GHCR solo en main)
+    needs: build-test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Owner de la imagen en minúsculas (requisito de GHCR)
+        run: echo "IMAGE_OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
+      - name: Configurar Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login GHCR
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Worker de análisis (D-047): Dockerfile PROPIO (apps/factory/Dockerfile.runner)
+      # sobre Debian slim, no alpine — el Agent SDK trae binarios glibc. Es el
+      # único contenedor que ejecuta agentes; el `factory` sigue sin checkout
+      # del repo ni ANTHROPIC_API_KEY. `target: runtime` explícito (lección D-016).
+      - name: Build (y push en main)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/factory/Dockerfile.runner
+          target: runtime
+          push: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' }}
+          tags: |
+            ghcr.io/${{ env.IMAGE_OWNER }}/awkplatform-factory-runner:${{ github.sha }}
+            ghcr.io/${{ env.IMAGE_OWNER }}/awkplatform-factory-runner:latest
+          cache-from: type=gha,scope=factory-runner
+          cache-to: type=gha,mode=max,scope=factory-runner
+
   docker-factory-migrator:
     name: Docker factory-migrator (push a GHCR solo en main)
     needs: build-test
