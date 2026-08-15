@@ -19,13 +19,14 @@ Se le entrega al admin el one-pager `docs/onboarding/one-pager-admin-cuenta.html
 
 Perfiles habilitados (D-044): gerentes, líderes, supervisores y analistas → todos con rol `gerente`.
 
+> **Puerto 15432**, no 5433 (corregido 2026-08-15, D-046): es el que lleva el `FACTORY_DATABASE_URL` real de `apps/factory/.env`. Con 5433 el túnel levanta pero el CLI no conecta, y el fallo aparece envuelto en un error de Prisma que no menciona la conexión.
 ```bash
 # Terminal A — túnel a la managed PG (dejar abierto).
 # <ENDPOINT>/<PASS> salen de FACTORY_DATABASE_URL en /opt/awkfactory/<entorno>/.env
-ssh -N -L 5433:<ENDPOINT>:5432 AWK-Dev
+ssh -N -L 15432:<ENDPOINT>:5432 AWK-Dev
 
 # Terminal B — desde el repo
-export FACTORY_DATABASE_URL='postgresql://app_factory_<entorno>:<PASS>@localhost:5433/awkfactory_<entorno>?sslmode=require&uselibpqcompat=true'
+export FACTORY_DATABASE_URL='postgresql://app_factory_<entorno>:<PASS>@localhost:15432/awkfactory_<entorno>?sslmode=require&uselibpqcompat=true'
 pnpm --filter=@awk/factory run cli -- create-actor --email <persona>@<dominio> --role gerente
 pnpm --filter=@awk/factory run cli -- set-password --email <persona>@<dominio>   # prompt oculto, mín. 12
 ```

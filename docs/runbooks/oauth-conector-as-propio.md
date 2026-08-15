@@ -73,7 +73,9 @@ Secuencia real ya ejecutada y verde. Todo lo `local` desde la raíz del repo en 
 5. **Migración**: `ssh AWK-Dev '~/migrate-factory.sh staging latest'`.
 6. **Recrear factory con el PROYECTO correcto**: `ssh AWK-Dev 'cd /opt/awkfactory/staging && docker compose -p awk-staging pull factory && docker compose -p awk-staging up -d --force-recreate factory'`. **GOTCHA**: el stack real corre bajo el proyecto `awk-staging`; un `docker compose` sin `-p awk-staging` usa el default `staging`, levanta un stack paralelo y choca en el puerto 18104.
 7. **Nginx** (nano, 443 server block, antes de `location /`): `location /.well-known/oauth- { proxy_pass http://127.0.0.1:18104; ... }` y `location /.well-known/openid-configuration { ... }` (ver `deploy/nginx/staging.conf`); `sudo nginx -t && sudo systemctl reload nginx`. NO toca `acme-challenge`.
-8. **Gerente + contraseña** (túnel SSH a `awkfactory_staging`, como D-031): `ssh -N -L 5433:<ENDPOINT>:5432 AWK-Dev` (terminal A) y, con `FACTORY_DATABASE_URL=postgresql://app_factory_staging:<PASS>@localhost:5433/awkfactory_staging?sslmode=require&uselibpqcompat=true`, `create-actor --email <g> --role gerente` + `set-password --email <g>` (terminal B).
+8. **Gerente + contraseña** (túnel SSH a `awkfactory_staging`, como D-031): `ssh -N -L 15432:<ENDPOINT>:5432 AWK-Dev` (terminal A) y, con `FACTORY_DATABASE_URL=postgresql://app_factory_staging:<PASS>@localhost:15432/awkfactory_staging?sslmode=require&uselibpqcompat=true`, `create-actor --email <g> --role gerente` + `set-password --email <g>` (terminal B).
+
+   > **Puerto 15432**, no 5433 (corregido 2026-08-15, D-046): es el que lleva el `FACTORY_DATABASE_URL` real de `apps/factory/.env`. Con 5433 el túnel levanta pero el CLI no conecta, y el fallo aparece envuelto en un error de Prisma que no menciona la conexión.
 9. **Smoke** (§2.e): `node apps/factory/scripts/oauth-smoke.mjs --base https://staging.apps.awakelab.world --client-id claude --client-secret <secret> --email <g> --password '<pwd>'` → 6/6 verde.
 
 ## 3. Fase 2 — Alta del conector y prueba (necesita al Owner)
