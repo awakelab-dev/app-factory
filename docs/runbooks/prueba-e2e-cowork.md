@@ -33,9 +33,21 @@ La skill `awk-prototipo` debe: (a) llamar **`list_modules` ANTES** de construir 
 `submit_prototype` NO corre el análisis (D-030/D-036): el proyecto queda en `received` hasta que Sistemas lo lanza por CLI. **Es el bloqueante del self-service** y el objeto del **incremento C**.
 
 ```bash
-# con el túnel abierto y FACTORY_DATABASE_URL de staging exportada
+# Terminal A: túnel a la managed PG (PUERTO 15432, el que espera apps/factory/.env
+# del runner — los otros runbooks dicen 5433 y están equivocados, D-046):
+ssh -N -L 15432:<ENDPOINT>:5432 AWK-Dev
+
+# Terminal B: desde el CHECKOUT DEL RUNNER (~/projects/app-factory-runner), que
+# necesita su PROPIO apps/factory/.env (ANTHROPIC_API_KEY + PLATFORM_REPO_PATH +
+# FACTORY_DATABASE_URL); el del working copy NO se hereda y nada lo avisa hasta
+# que el comando falla (D-046):
 pnpm --filter=@awk/factory run cli -- analyze <projectId>
 ```
+
+> Si el comando muere por configuración, el proyecto puede quedar atascado en
+> `analyzing` con un `Run` huérfano en `running` (bug pendiente, D-046): sanear
+> con un `UPDATE runs SET status='error'` y `cli -- advance <id> error` antes de
+> reintentar.
 
 El runner materializa la fuente desde BD a `docs/pipeline/<slug>/source/`, corre el Agent SDK, escribe las specs, crea la `Spec` v1 y abre los gates funcional + técnico → estado `pending_approval`.
 
@@ -73,7 +85,11 @@ El usuario prueba el módulo en `https://staging.apps.awakelab.world` y, si est�
 
 > "Al módulo <X> agrégale <Y>"
 
-→ `request_change` → Sistemas corre `analyze` del cambio → gates frescos → generación incremental sobre el módulo vivo.
+→ `request_change` (solo REGISTRA la petición) → Sistemas la analiza con
+`cli -- analyze-change <changeRequestId>` (comando añadido en D-046: antes no
+existía ninguno para una petición ya creada y el cambio se quedaba muerto en la
+base) → gates frescos, decidibles desde el chat → generación incremental sobre
+el módulo vivo.
 
 ## Qué anotar durante la prueba
 
@@ -90,3 +106,33 @@ El usuario prueba el módulo en `https://staging.apps.awakelab.world` y, si est�
 | AS OAuth solo en staging | El conector de producción no existe aún | Replicar deploy a producción |
 | `FACTORY_OAUTH_JWKS` sin clave RSA persistente | Se genera una RSA efímera en cada reinicio (warning en el log) | Regenerar con `cli oauth-genkeys` y actualizar `.env` |
 | Sin A2F ni rate limiting en el login del AS | Riesgo de fuerza bruta | **Fase 3** de docs/08 |
+
+
+---
+
+## Resultado de la prueba — 2026-08-15 (D-046)
+
+Ejecutada con el caso **`incidencias-aula`** (proyecto `019ffa2c-eb45-70c4-a6a0-9224b7c3518d`): docente registra un parte, coordinación lo resuelve, dirección ve un resumen agregado sin datos identificativos. Recorrió el ciclo entero, incluido un `request_change` con su propia generación y despliegue.
+
+**Qué salió del chat, sin Sistemas**: prototipado con la skill (con `list_modules` previo y sensibilidad por entidad), `submit_prototype`, lectura de las specs, **los cuatro tipos de gate con `approve_spec`** (`functional`, `technical`, `pr_review`, `manager_acceptance`), revisión de PR, `request_change` y seguimiento con `get_project_status`/`list_projects`.
+
+**Corrección al guion**: el paso 5 daba por obligatorio decidir los gates técnicos por CLI. No lo es — el servidor los acepta desde el conector si el actor es `admin`. Para rol `gerente` siguen dando 403, que es el comportamiento correcto.
+
+**Lo único que exigió CLI**: `analyze` y `generate`. Ese es, confirmado en la práctica, el bloqueante del self-service.
+
+**Hallazgos** (detalle en D-046):
+
+| # | Hallazgo | Estado |
+|---|---|---|
+| 1 | `analyze` manual tras `submit_prototype` | Incremento C |
+| 2 | Ninguna forma de analizar una `ChangeRequest` creada desde Cowork | **Corregido**: `cli -- analyze-change` |
+| 3 | `PLATFORM_REPO_PATH` se valida tras transicionar y crear el `Run` → proyecto atascado + run huérfano | Pendiente |
+| 4 | El runner necesita su propio `apps/factory/.env`, sin aviso hasta que falla | Documentado arriba |
+| 5 | Puerto del túnel mal documentado (5433 vs 15432 real) | Corregido aquí; pendiente en los otros 3 runbooks |
+| 6 | Un run fallido no registra coste ni tokens (`costUsd: null`) | Incremento C |
+| 7 | Sin reintento ni reanudación: un corte de red tira la generación entera | Pendiente |
+| 8 | Cada módulo nuevo rompe `registry.test.ts` (la generación no puede tocarlo) | Coste fijo de integración |
+
+**Costes registrados**: 12,64 USD en total — análisis 1,37 (5m46s), generación 8,39 (21m08s), análisis del cambio 0,68 (3m10s), generación del cambio 2,20 (7m29s). No incluye un análisis abortado ni una generación caída a los 23 minutos, ninguno de los dos con coste registrado (hallazgo 6).
+
+**Calidad**: spec sin alucinaciones de alcance, con una sola imprecisión de hecho; 5 preguntas abiertas pertinentes; sensibilidad elevada por el propio análisis (alumnado menor de edad); y **las dos PRs aprobadas sin desviaciones, primera vez en el proyecto**. Las notas vinculantes de los gates volvieron a decidir el resultado: evitaron que la generación intentara tocar `@awk/types` (choque seguro con el guardarraíl) e incorporaron una ampliación de alcance que no estaba en la spec.
