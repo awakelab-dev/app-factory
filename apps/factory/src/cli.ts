@@ -30,6 +30,12 @@ import type { FactoryActorRole, GateDecision, ProjectStatus } from './pipeline/t
  *   # request_change (docs/04) sobre un módulo YA vivo:
  *   pnpm --filter=@awk/factory run cli -- request-change <projectId> \
  *     --request "Restringir 'Desempeño por persona' a admin" --requested-by x@y.com
+ *   # analizar una petición de cambio que YA existe — la que crea la tool
+ *   # `request_change` del conector MCP, que solo registra y no analiza
+ *   # (2026-08-15, prueba E2E: sin esto, un cambio pedido desde Cowork no
+ *   # tenía ningún comando que lo moviera; `request-change` crea y analiza
+ *   # en el mismo paso y no sirve para una petición ya creada):
+ *   pnpm --filter=@awk/factory run cli -- analyze-change <changeRequestId>
  *   # enmendar la nota de un gate ya decidido sin re-decidirlo (D-033):
  *   pnpm --filter=@awk/factory run cli -- amend-gate <gateId> --notes "..." --reviewer x@y.com
  *
@@ -168,6 +174,23 @@ async function main(): Promise<void> {
         break;
       }
 
+      /**
+       * Analiza una `ChangeRequest` que YA existe. Es el complemento de
+       * `request-change` (que crea y analiza a la vez) para las peticiones
+       * que llegan por la tool `request_change` del conector MCP: esa tool
+       * SOLO registra la petición — igual que `submit_prototype` deja el
+       * proyecto en `received` sin analizar (D-030/D-036) — y hasta ahora
+       * ningún comando podía retomarla, así que un cambio pedido desde
+       * Cowork se quedaba muerto en la base (encontrado en la prueba E2E
+       * del 2026-08-15). Lo absorbe el incremento C junto con `analyze`.
+       */
+      case 'analyze-change': {
+        const changeRequestId = requiredArg(rest[0], 'changeRequestId');
+        const spec = await app.get(AnalysisRunnerService).runChangeAnalysis(changeRequestId);
+        console.log(JSON.stringify(spec, null, 2));
+        break;
+      }
+
       case 'create-actor': {
         const flags = parseFlags(rest);
         const role = requiredFlag(flags, 'role');
@@ -263,7 +286,7 @@ async function main(): Promise<void> {
 
       default:
         console.error(
-          `Comando desconocido: "${command ?? ''}". Comandos: create-project, analyze, decide-gate, generate, request-change, amend-gate, create-actor, revoke-actor, set-password, oauth-genkeys, advance, status (ver el comentario al inicio de src/cli.ts).`
+          `Comando desconocido: "${command ?? ''}". Comandos: create-project, analyze, decide-gate, generate, request-change, analyze-change, amend-gate, create-actor, revoke-actor, set-password, oauth-genkeys, advance, status (ver el comentario al inicio de src/cli.ts).`
         );
         process.exitCode = 1;
     }
