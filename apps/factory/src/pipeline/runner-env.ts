@@ -24,8 +24,16 @@ export interface RunnerEnv {
 /** Marcadores que distinguen un checkout del monorepo de una carpeta cualquiera. */
 const REPO_MARKERS = ['pnpm-workspace.yaml', 'apps/factory'];
 
-export function assertRunnerEnv(): RunnerEnv {
-  const repoPath = process.env.PLATFORM_REPO_PATH;
+/**
+ * `env` es inyectable SOLO para los tests: así comprueban los casos de entorno
+ * incompleto con un objeto propio, sin mutar `process.env`, que en vitest es
+ * compartido entre archivos de test que corren a la vez (un `delete` en un
+ * archivo puede tumbar a otro que se esté ejecutando en paralelo — falso
+ * negativo dificilísimo de reproducir en local). En producción se llama sin
+ * argumentos.
+ */
+export function assertRunnerEnv(env: NodeJS.ProcessEnv = process.env): RunnerEnv {
+  const repoPath = env.PLATFORM_REPO_PATH;
   if (!repoPath) {
     throw new Error(
       'PLATFORM_REPO_PATH no está configurado — debe apuntar a un checkout local del monorepo app-factory (ver apps/factory/.env.example). ' +
@@ -41,7 +49,7 @@ export function assertRunnerEnv(): RunnerEnv {
       `PLATFORM_REPO_PATH ("${repoPath}") no parece un checkout del monorepo app-factory: falta ${missing.join(', ')}.`
     );
   }
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (!env.ANTHROPIC_API_KEY) {
     throw new Error(
       'ANTHROPIC_API_KEY no está configurada — el Agent SDK no puede correr (ver apps/factory/.env.example).'
     );
