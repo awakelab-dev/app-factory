@@ -109,6 +109,16 @@ services:
       FACTORY_WORKER_POLL_MS: ${FACTORY_WORKER_POLL_MS:-10000}
     volumes:
       - ${PLATFORM_REPO_HOST_PATH}:/platform-repo
+      # Clave de SOLO LECTURA del repo (deploy key sin write) + known_hosts, para
+      # que el `git fetch` previo a cada análisis lo haga el propio worker. Se
+      # sincroniza él y no un cron del host por dos razones: (1) el contenedor
+      # corre como root y es el dueño de lo que el agente escribe en el
+      # checkout — un cron como `ubuntu` no podría limpiarlo; (2) un cron puede
+      # caer A MITAD de un análisis y borrarle al agente los archivos que está
+      # escribiendo. El worker sincroniza justo ANTES de cada run, nunca durante.
+      # Si no hay clave, deja la ruta por defecto: el directorio se crea vacío,
+      # el fetch falla con un warning y se analiza con lo que haya en disco.
+      - ${FACTORY_RUNNER_SSH_PATH:-/opt/awkfactory/ssh-readonly}:/root/.ssh:ro
     healthcheck:
       # El proceso está vivo si Node sigue corriendo; basta con comprobar que
       # el ejecutable responde (no hay puerto que sondear).

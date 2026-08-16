@@ -259,35 +259,41 @@ El servicio que hace que un prototipo enviado desde Cowork **avance solo**, sin
 que Sistemas lance ningún comando. Es el único contenedor que ejecuta el Agent
 SDK, así que es el único con checkout del monorepo y `ANTHROPIC_API_KEY`.
 
-**1 · Checkout dedicado en el host** (NUNCA un working copy de una persona: el
-worker hace `git reset --hard` sobre él antes de cada análisis).
+**1 · Deploy key de SOLO LECTURA para el repo** (el server nunca ha clonado el
+repo: hasta ahora solo bajaba imágenes de GHCR). Como root, porque el contenedor
+corre como root y debe ser dueño de lo que escribe en el checkout:
 
 ```bash
-# ya en el server, como el usuario del deploy:
-sudo mkdir -p /opt/awkfactory/staging
-sudo chown "$USER" /opt/awkfactory/staging
-git clone https://github.com/awakelab-dev/app-factory.git \
+sudo ssh-keygen -t ed25519 -N "" -C "awkfactory-runner@lightsail" -f /root/.ssh/id_ed25519
+sudo ssh-keyscan github.com | sudo tee -a /root/.ssh/known_hosts
+sudo cat /root/.ssh/id_ed25519.pub
+```
+
+Esa pública se añade en GitHub → repo → *Settings → Deploy keys → Add deploy key*,
+**sin marcar "Allow write access"**. El worker solo necesita leer.
+
+**2 · Checkout dedicado** (NUNCA un working copy de una persona: el worker hace
+`git reset --hard` sobre él antes de cada análisis):
+
+```bash
+sudo git clone git@github.com:awakelab-dev/app-factory.git \
   /opt/awkfactory/staging/platform-repo
 ```
 
-Para que el worker pueda hacer `git fetch` solo hacen falta credenciales de
-**lectura**. Dos opciones, por orden de preferencia:
+Para analizar NO hace falta `pnpm install`: el agente solo lee código y escribe
+markdown. Si prefieres arrancar sin deploy key, deja `FACTORY_WORKER_GIT_SYNC=0`
+— el worker avisa en el log y analiza con lo que haya en el checkout, que se irá
+quedando viejo a medida que se mergeen módulos nuevos.
 
-- **Deploy key de solo lectura** (SSH): genera la clave en el server
-  (`ssh-keygen -t ed25519 -f ~/.ssh/awkfactory_repo -N ""`), súbela al repo en
-  *Settings → Deploy keys* **sin** "Allow write access", y clona con el remoto
-  SSH. El contenedor no necesita ver la clave si clonas y haces `fetch` desde el
-  host por cron; si quieres que el propio contenedor haga el fetch, monta
-  `~/.ssh` en modo solo lectura.
-- **Sin credenciales**: deja `FACTORY_WORKER_GIT_SYNC=0`. El worker avisa en el
-  log y analiza con lo que haya en el checkout — sirve para arrancar, pero el
-  análisis empieza a leer un repo viejo en cuanto se mergean módulos nuevos.
-
-**2 · Variables** en `/opt/awkfactory/<entorno>/.env` (plantilla al final de
+**3 · Variables** en `/opt/awkfactory/<entorno>/.env` (plantilla al final de
 `deploy/staging.env.example`): `ANTHROPIC_API_KEY`, `PLATFORM_REPO_HOST_PATH`,
-`PLATFORM_REPO_REF`, `FACTORY_WORKER_GIT_SYNC`, `FACTORY_WORKER_POLL_MS`.
+`PLATFORM_REPO_REF`, `FACTORY_WORKER_GIT_SYNC`, `FACTORY_RUNNER_SSH_PATH`,
+`FACTORY_WORKER_POLL_MS`. Y **copia el compose nuevo** desde el Mac (el del
+server es una copia, no sale de un clone): `scp deploy/docker-compose.yml
+AWK-Dev:/opt/awkfactory/staging/docker-compose.yml`. Sin esas variables el
+`docker compose up -d` falla por el volumen vacío.
 
-**3 · Migración y arranque**:
+**4 · Migración y arranque**:
 
 ```bash
 ~/migrate-factory.sh staging latest          # aplica 20260815120000_analysis_jobs
@@ -302,7 +308,7 @@ En el arranque debe aparecer `entorno OK (checkout /platform-repo)` seguido de
 código 1 y lo dice** — deliberado: más vale que no levante a que se vaya comiendo
 los trabajos de la cola marcándolos en error de uno en uno.
 
-**4 · Prueba de humo** (desde Cowork o por CLI):
+**5 · Prueba de humo** (desde Cowork o por CLI):
 
 ```bash
 pnpm --filter=@awk/factory run cli -- enqueue-analysis --project <projectId>
