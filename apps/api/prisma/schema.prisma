@@ -16,7 +16,7 @@ generator client {
 // y el runtime recibe el adapter (@prisma/adapter-pg) en el constructor.
 datasource db {
   provider = "postgresql"
-  schemas  = ["core", "moodle", "orientador", "proyectos", "focus", "incidencias"]
+  schemas  = ["core", "moodle", "orientador", "proyectos", "focus", "incidencias", "reservas"]
 }
 
 /// Usuario de la plataforma. La identidad vendrá del IdP (SSO pendiente,
@@ -652,4 +652,94 @@ model IncidenciaSeguimiento {
   @@index([incidenciaId])
   @@map("incidencia_seguimientos")
   @@schema("incidencias")
+}
+
+// ---------------------------------------------------------------------------
+// Módulo reserva-salas (spec docs/pipeline/reserva-salas/): reserva de salas
+// de reunión con calendario por franjas horarias fijas, reemplaza la hoja de
+// cálculo compartida y los avisos por chat del prototipo. Complejidad
+// media-baja (spec técnica, "Score de complejidad y por qué el gate es
+// obligatorio"): MÁXIMA reutilización del core, sin cambios de RBAC/
+// auditoría. Datos personales (RGPD): nombre de quien reserva, motivo de la
+// reunión, día/hora — control por RBAC de endpoint +
+// `ReservaSalasPermissionsService` (regla de fila "solo mías" en
+// `GET /reservas`) + auditoría vía `AuditService`, sin RLS (mismo criterio
+// que orientador-ia/incidencias-aula: dato "personal", no "confidencial").
+//
+// Roles nuevos de manifest, DISJUNTOS de los de incidencias-aula: `empleado`
+// y `recepcion` (declarados en `module.manifest.ts`), SIN `admin` en ningún
+// `@Roles()` de este módulo — spec técnica aprobada, a diferencia de
+// incidencias-aula, que sí añade `admin` por convención.
+//
+// `userId` es referencia conceptual a `core.users.id` (quien REGISTRÓ la
+// reserva), SIN FK cross-schema — mismo patrón que `docenteId` de
+// incidencias/`assigneeId` de proyectos/`userId` de focus. `personaNombre`
+// es texto libre (spec técnica, "Justificación de persona_nombre"): a
+// nombre de quién es la reserva, que puede no ser un usuario de la
+// plataforma (Recepción reserva para visitantes). NUNCA se resuelve por
+// join a `core.users`: llega ya resuelta desde el JWT (`AuthUser.
+// displayName`) para el caso del propio empleado, o como texto libre de
+// Recepción para un tercero — ver `ReservasService.create`.
+//
+// Franjas horarias: 7 valores fijos ("09:00".."13:00", "16:00".."17:00",
+// salta 14:00-15:59) — constante `FRANJAS` en `reserva-salas-franjas.ts` +
+// `franjaSchema` (Zod). `hora` se guarda como `VARCHAR(5)` en vez de un enum
+// de Prisma porque esos valores ("09:00") no son identificadores válidos de
+// enum (el ":" no es sintaxis permitida sin un mapeo símbolo a símbolo, que
+// aquí solo añadiría indirección sin beneficio).
+//
+// Exclusividad (sala, fecha, hora) para reservas ACTIVAS (spec técnica,
+// "Modelo de datos": `unique(sala_id, fecha, hora) where cancelada_at IS
+// NULL`): Prisma no tiene sintaxis de índice único PARCIAL en el schema
+// declarativo (solo `@@unique` total, que bloquearía re-reservar un hueco ya
+// cancelado — justo el caso que este módulo necesita permitir). La
+// exclusividad se aplica en `ReservasService.create` (chequeo antes de
+// insertar + 409 si ya existe una reserva no cancelada para la misma tupla,
+// spec técnica "Conflictos") — mismo criterio de "regla de fila en el
+// servicio, nunca solo en la base" que el resto de módulos generados. Queda
+// una ventana de carrera teórica entre el chequeo y el insert (dos requests
+// casi simultáneas para el mismo hueco); aceptable para la complejidad
+// media-baja de este módulo y sin precedente de mitigarla a nivel de índice
+// en ningún otro módulo generado hasta ahora. `@@index` (no único) declarado
+// abajo solo para el rendimiento de las consultas de la rejilla.
+// ---------------------------------------------------------------------------
+
+/// Catálogo de salas de reunión. Alta/edición/baja lógica SOLO Recepción
+/// (spec-tecnica.md "Endpoints") — ver `SalasService`.
+model Sala {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  nombre       String   @unique
+  capacidad    Int
+  equipamiento String?
+  activa       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  reservas Reserva[]
+
+  @@map("salas")
+  @@schema("reservas")
+}
+
+/// Reserva de una franja de una sala. `fecha` es día de calendario
+/// (`@db.Date`, no timestamptz) — mismo motivo que `incidencias.fechaHecho`:
+/// el día no depende de la zona horaria de quien reserva o consulta.
+/// `canceladaAt` es soft delete (spec-tecnica.md "Auditoría"): nunca se
+/// borra la fila, para conservar el histórico de Recepción y la auditoría.
+model Reserva {
+  id            String    @id @default(uuid(7)) @db.Uuid
+  salaId        String    @db.Uuid
+  sala          Sala      @relation(fields: [salaId], references: [id])
+  fecha         DateTime  @db.Date
+  hora          String    @db.VarChar(5)
+  userId        String    @db.Uuid // core.users.id, sin FK cross-schema
+  personaNombre String
+  motivo        String?
+  createdAt     DateTime  @default(now())
+  canceladaAt   DateTime?
+
+  @@index([salaId, fecha, hora])
+  @@index([userId])
+  @@map("reservas")
+  @@schema("reservas")
 }
