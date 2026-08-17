@@ -14,6 +14,14 @@ const orientadorAdmin: AuthUser = { ...admin, id: 'u-3', roles: ['orientador_adm
 // un docente no ve la bandeja de coordinación, ni el resumen de dirección, ni
 // la gestión de aulas (esa es solo de admin).
 const incidenciasDocente: AuthUser = { ...admin, id: 'u-4', roles: ['incidencias_docente'] };
+// reserva-salas (2026-08-16, D-048): roles de negocio SIN admin. La spec
+// aprobada no incluía `admin` en ningún @Roles(), a diferencia de
+// incidencias-aula que sí lo añade por convención — así que un admin de
+// plataforma que no sea empleado ni recepción NO ve el módulo. Es una
+// decisión consciente, y este test existe para que se rompa si alguien la
+// cambia sin querer.
+const empleado: AuthUser = { ...admin, id: 'u-5', roles: ['empleado'] };
+const recepcion: AuthUser = { ...admin, id: 'u-6', roles: ['recepcion'] };
 
 const focusFlowNav = ['Enfoque', 'Tareas del día', 'Dashboard', 'Desempeño', 'Configuración'];
 const incidenciasNav = ['Registrar incidencia', 'Bandeja', 'Resumen mensual', 'Aulas'];
@@ -82,6 +90,25 @@ describe('registry (manifests → menú/rutas)', () => {
       ...focusFlowNav,
       'Registrar incidencia'
     ]);
+  });
+
+  it('reserva-salas lo ven empleado y recepción; un admin SIN esos roles no (D-048)', () => {
+    expect(accessibleModules(empleado).map((mod) => mod.manifest.id)).toEqual([
+      'moodle-insights',
+      'gestor-proyectos',
+      'focus-flow',
+      'reserva-salas'
+    ]);
+    expect(visibleNav(recepcion).map((item) => item.label)).toEqual([
+      'Moodle Insights',
+      'Gestor de Proyectos',
+      'Proyectos',
+      ...focusFlowNav,
+      'Reserva de Salas'
+    ]);
+    // Consecuencia operativa: para verlo en staging hay que darse el rol
+    // `empleado` o `recepcion`; ser admin de plataforma no basta.
+    expect(accessibleModules(admin).map((mod) => mod.manifest.id)).not.toContain('reserva-salas');
   });
 
   it('visibleNavGroups agrupa los ítems por módulo con su nombre de manifest (sidebar por "carpetas", 2026-07-19)', () => {

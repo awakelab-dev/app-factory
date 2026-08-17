@@ -7,6 +7,7 @@ import { gestorProyectosModule } from './gestor-proyectos';
 import { incidenciasAulaModule } from './incidencias-aula';
 import { moodleInsightsModule } from './moodle-insights';
 import { orientadorIaModule } from './orientador-ia';
+import { reservaSalasModule } from './reserva-salas';
 import type { ModuleRegistration, ModuleRoute } from './types';
 
 /**
@@ -25,6 +26,7 @@ export const modules: ModuleRegistration[] = [
   gestorProyectosModule,
   focusFlowModule,
   incidenciasAulaModule,
+  reservaSalasModule,
   factoryConsoleModule,
   coreAdminModule
 ];
