@@ -42,9 +42,11 @@ Resumen de lo que quedó en el repo:
 - **Cableado**: `apps/web/src/modules/registry.ts` descubre con `import.meta.glob` (build time: mismo
   bundle y mismo tree-shaking que antes) y `apps/api/src/modules/modules.loader.ts` descubre con
   `readdirSync` + `import()`. El módulo raíz de la API se construye con `await AppModule.register()`.
-- **Roles**: `RolesSeedService` siembra en `onApplicationBootstrap` los roles declarados en los
-  `@Roles()` de los controllers registrados; `PUT /api/core/users/:id/roles` + casillas en
-  `/admin/usuarios` los asignan, auditado. **Re-login obligatorio**: los roles viajan en el JWT.
+- **Roles**: `RolesSeedService` siembra los roles declarados en los `@Roles()` de los controllers
+  registrados; `PUT /api/core/users/:id/roles` + casillas en `/admin/usuarios` los asignan, auditado.
+  **Re-login obligatorio**: los roles viajan en el JWT. **La siembra la llama `main.ts` tras
+  `listen()`, no un hook de Nest**: con `onApplicationBootstrap` cada `app.init()` de un e2e hacía una
+  query a la BD y eso rompe la conexión perezosa de `PrismaService` (lo tumbó la CI, ver D-050).
 - **Visibilidad**: `analysis_jobs` en el detalle de `/factory` y en `get_project_status`.
 
 Tres cosas que conviene no volver a discutir:

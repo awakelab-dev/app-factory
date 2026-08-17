@@ -61,8 +61,8 @@ describe('RolesSeedService (siembra de roles desde los @Roles, incremento D bloq
     expect(seeded).toEqual(['admin', 'user']);
   });
 
-  it('si la siembra falla, la API arranca igual y lo deja en el log (no lanza)', async () => {
+  it('si la siembra falla, la API sigue sirviendo y lo deja en el log (no lanza)', async () => {
     const service = serviceWith([DemoController], vi.fn(() => Promise.reject(new Error('BD caída'))));
-    await expect(service.onApplicationBootstrap()).resolves.toBeUndefined();
+    await expect(service.seedOnBoot()).resolves.toBeUndefined();
   });
 });

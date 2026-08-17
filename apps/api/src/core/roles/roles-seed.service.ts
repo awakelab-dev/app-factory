@@ -1,4 +1,4 @@
-import { Injectable, Logger, type OnApplicationBootstrap } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { DiscoveryService, MetadataScanner } from '@nestjs/core';
 import { ROLES_KEY } from '../auth/auth.constants';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -31,9 +31,19 @@ const BASE_ROLES: ReadonlyArray<{ name: string; description: string }> = [
  *
  * `update: {}` en el upsert: nunca pisa la descripción de un rol que ya existe
  * (las buenas descripciones de `seed.ts` se conservan).
+ *
+ * **Lo invoca `main.ts` DESPUÉS de `listen()`, no un hook de ciclo de vida de
+ * Nest.** La primera versión usaba `onApplicationBootstrap` y eso rompía una
+ * propiedad deliberada de `PrismaService`: la conexión es PEREZOSA («se abre en
+ * la primera query, no en el boot — así los tests y endpoints públicos funcionan
+ * sin BD levantada»). Con el hook, cada `app.init()` de un e2e pasaba a hacer un
+ * ida y vuelta a la BD, y con 30+ archivos de test en paralelo en un runner de
+ * 2 vCPU eso es una espera dentro de un `beforeAll` — la familia de flakes que
+ * ya nos costó dos correcciones (D-045, D-048). Llamarlo desde `main.ts` deja el
+ * boot de los tests sin tocar la BD y la siembra igual de real en el servidor.
  */
 @Injectable()
-export class RolesSeedService implements OnApplicationBootstrap {
+export class RolesSeedService {
   private readonly logger = new Logger(RolesSeedService.name);
 
   constructor(
@@ -43,10 +53,11 @@ export class RolesSeedService implements OnApplicationBootstrap {
   ) {}
 
   /**
-   * `onApplicationBootstrap` y no `onModuleInit`: corre cuando TODOS los módulos
-   * (incluidos los de negocio descubiertos) ya están registrados.
+   * Siembra + log, sin propagar el fallo. La llama `main.ts` tras `listen()`:
+   * para entonces todos los módulos (incluidos los de negocio descubiertos) están
+   * registrados, así que el escaneo de `@Roles()` los ve todos.
    */
-  async onApplicationBootstrap(): Promise<void> {
+  async seedOnBoot(): Promise<void> {
     try {
       const seeded = await this.seed();
       this.logger.log(
