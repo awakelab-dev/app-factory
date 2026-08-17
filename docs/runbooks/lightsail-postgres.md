@@ -144,3 +144,57 @@ Lightsail como control de acceso, no PKI).
 - [03 · Arquitectura — tabla de infraestructura](../03-arquitectura.md)
 - [06 · Roadmap — Fase 0](../06-roadmap.md)
 - Precios verificados: https://aws.amazon.com/lightsail/pricing/ (sección *Managed databases*)
+
+## Operar la BD de la PLATAFORMA a mano (roles, datos puntuales)
+
+Añadido el 2026-08-17 (D-049): hasta entonces solo estaba documentado el túnel
+a `awkfactory_*` (la base de la FÁBRICA, que es otra). Para `awkplatform_*` no
+hace falta túnel — la managed PG está en modo privado y **el Lightsail sí la
+alcanza**, así que se opera desde dentro:
+
+```bash
+ssh AWK-Dev
+
+# La URL con endpoint y contraseña sale del .env del entorno, nunca del repo
+# (D-008). Se extrae SOLO esa línea: sourcear el .env entero ensucia otras
+# variables (el JWKS del AS lleva comillas y bash se las come).
+DB=$(grep -m1 '^DATABASE_URL=' /opt/awkfactory/staging/.env | cut -d= -f2-)
+
+# `uselibpqcompat` es un parámetro de Prisma, NO de libpq: si se lo pasas a
+# psql, falla con "invalid URI query parameter". Se recorta la query string.
+PG="${DB%%\?*}?sslmode=require"
+
+psql "$PG" -c "SELECT id, email FROM core.users ORDER BY email;"
+```
+
+Si `psql` no está instalado en el host, por contenedor (la red del host alcanza
+la managed PG igual):
+
+```bash
+docker run --rm -i --network host postgres:18 psql "$PG" -c "\dt core.*"
+```
+
+### Asignar roles a un usuario
+
+Mientras no exista alta de roles en `core-admin` ni siembra desde los manifests
+(backlog de D-049), es la única vía. Ejemplo con los roles de `reserva-salas`:
+
+```sql
+INSERT INTO core.roles (id, name, description)
+VALUES
+  (gen_random_uuid(), 'empleado',  'Empleado: consulta disponibilidad y reserva salas a su nombre'),
+  (gen_random_uuid(), 'recepcion', 'Recepción: gestiona el catálogo de salas y todas las reservas')
+ON CONFLICT (name) DO NOTHING;
+
+INSERT INTO core.user_roles ("userId", "roleId")
+SELECT u.id, r.id FROM core.users u, core.roles r
+WHERE u.email = '<email>' AND r.name IN ('empleado', 'recepcion')
+ON CONFLICT DO NOTHING;
+```
+
+> `id` NO tiene DEFAULT en Postgres: Prisma genera el uuid en el cliente, así
+> que un INSERT crudo debe pasarlo (`gen_random_uuid()`).
+
+> **Después, cerrar sesión y volver a entrar.** Los roles viajan dentro del JWT:
+> con el token anterior el shell sigue filtrando el módulo aunque la BD ya diga
+> otra cosa. Es el paso que parece opcional y no lo es.
