@@ -17,12 +17,13 @@ import { NavLink, Outlet } from 'react-router-dom';
 import { Button } from '@awk/ui';
 import type { AuthUser, NavItem } from '@awk/types';
 import { useAuth } from '../auth/auth-context';
-import { visibleNavGroups, type NavGroup } from '../modules/registry';
+import { SYSTEM_MODULE_IDS, visibleNavGroups, type NavGroup } from '../modules/registry';
 
 /** Módulos "de sistema": van al final del sidebar, tras un separador
- * (pedido de Leonardo 2026-07-19) — Fábrica penúltima, Administración última
- * (el orden entre ellos lo da el registry). */
-const SYSTEM_MODULE_IDS = new Set(['factory-console', 'core-admin']);
+ * (pedido de Leonardo 2026-07-19) — Fábrica penúltima, Administración última.
+ * La lista y su orden viven en el registry (que es quien ordena el sidebar);
+ * aquí solo se usa para saber dónde pintar el separador. */
+const systemModuleIds = new Set<string>(SYSTEM_MODULE_IDS);
 
 /**
  * Registro de iconos de sidebar (estilo consola AWS: un icono por app/módulo).
@@ -106,8 +107,8 @@ function NavEntry({ item }: { item: NavItem }) {
 export function Layout({ user }: { user: AuthUser }) {
   const { logout } = useAuth();
   const navGroups = visibleNavGroups(user);
-  const projectGroups = navGroups.filter((group) => !SYSTEM_MODULE_IDS.has(group.moduleId));
-  const systemGroups = navGroups.filter((group) => SYSTEM_MODULE_IDS.has(group.moduleId));
+  const projectGroups = navGroups.filter((group) => !systemModuleIds.has(group.moduleId));
+  const systemGroups = navGroups.filter((group) => systemModuleIds.has(group.moduleId));
   // Colapso por módulo, todo desplegado por defecto (solo estado de UI en
   // memoria: se reinicia al recargar, deliberadamente sin persistencia).
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});

@@ -352,6 +352,13 @@ Ajusta el código existente para cumplir la spec y las notas de los gates (en
 especial donde difieran de lo generado); no lo reescribas desde cero si no
 hace falta.
 
+El módulo NO hay que registrarlo en ninguna parte (incremento D, D-050): la API
+descubre apps/api/src/modules/<slug>/<slug>.module.ts y el shell descubre
+apps/web/src/modules/<slug>/index.tsx por el hecho de existir. Respeta esos dos
+nombres de archivo y el módulo queda enchufado; no edites app.module.ts ni
+registry.ts (no hace falta, y no puedes), y no dejes notas diciendo que el
+cableado queda pendiente.
+
 Reglas estrictas:
 - SOLO puedes escribir dentro de apps/api/src/modules/<slug>/,
   apps/web/src/modules/<slug>/, y tocar apps/api/prisma/schema.prisma SOLO

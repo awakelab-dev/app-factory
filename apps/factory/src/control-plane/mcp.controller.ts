@@ -159,7 +159,8 @@ export class McpController {
       {
         title: 'Estado de un proyecto',
         description:
-          'Estado completo de un proyecto en el pipeline: fase actual, versiones de spec (con su contenido funcional para revisarlo), gates pendientes/decididos y runs. ' +
+          'Estado completo de un proyecto en el pipeline: fase actual, versiones de spec (con su contenido funcional para revisarlo), gates pendientes/decididos, runs y ' +
+          'los trabajos de la cola de análisis (en cola / en curso / completado / fallido, con intentos y motivo del error) — úsalos para responder "¿por qué no avanza?" sin pedir logs a Sistemas. ' +
           'Un gerente solo ve sus propios proyectos.',
         inputSchema: { projectId: z.string().describe('UUID del proyecto (lo devuelve submit_prototype)') }
       },

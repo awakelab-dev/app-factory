@@ -63,6 +63,37 @@ export type CoreUser = z.infer<typeof coreUserSchema>;
 export const coreUsersResponseSchema = z.array(coreUserSchema);
 
 // ---------------------------------------------------------------------------
+// Roles del core (GET /api/core/roles, PUT /api/core/users/:id/roles — admin).
+//
+// Incremento D, bloque 2: hasta 2026-08-17 los roles que declaraban los
+// módulos generados no existían en la BD hasta que alguien metía un INSERT a
+// mano, y no había forma de ASIGNARLOS que no fuera SQL (el controller de
+// usuarios solo tenía @Get). Pasó con incidencias-aula y con reserva-salas
+// (D-049): módulo desplegado y correcto, invisible para quien iba a validarlo.
+// ---------------------------------------------------------------------------
+
+export const coreRoleSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  /** Cuántos usuarios lo tienen (para no borrar un rol en uso a ciegas). */
+  usersCount: z.number().int()
+});
+
+export type CoreRole = z.infer<typeof coreRoleSchema>;
+
+export const coreRolesResponseSchema = z.array(coreRoleSchema);
+
+/**
+ * Reemplaza el conjunto completo de roles de un usuario (no es un parche
+ * incremental: lo que llega es el estado final). Lista vacía = sin roles.
+ */
+export const updateUserRolesRequestSchema = z.object({
+  roles: z.array(z.string().min(1)).max(50)
+});
+
+export type UpdateUserRolesRequest = z.infer<typeof updateUserRolesRequestSchema>;
+
+// ---------------------------------------------------------------------------
 // Manifest de módulo. Cada módulo (generado por la fábrica o hecho a mano)
 // declara uno; el shell de apps/web construye menú y rutas a partir de él.
 // Es data serializable a propósito: más adelante la API podrá servir los
@@ -365,13 +396,48 @@ export const factoryProjectSummarySchema = z.object({
 export type FactoryProjectSummary = z.infer<typeof factoryProjectSummarySchema>;
 export const factoryProjectsResponseSchema = z.array(factoryProjectSummarySchema);
 
-/** GET /factory-api/projects/:id — proyecto completo (specs desc con gates + runs desc). */
+/**
+ * Trabajo de la cola de la Fábrica (`analysis_jobs`, D-047).
+ *
+ * Se expone (incremento D, bloque 5) porque hasta 2026-08-17 diagnosticar la
+ * cola era `docker compose logs` por SSH: si un análisis no arrancaba o moría,
+ * desde `/factory` y desde el chat el proyecto simplemente "no avanzaba", sin
+ * ninguna señal de por qué.
+ */
+export const factoryAnalysisJobKindSchema = z.enum(['analysis', 'change_analysis']);
+export type FactoryAnalysisJobKind = z.infer<typeof factoryAnalysisJobKindSchema>;
+
+export const factoryAnalysisJobStatusSchema = z.enum(['queued', 'running', 'success', 'error']);
+export type FactoryAnalysisJobStatus = z.infer<typeof factoryAnalysisJobStatusSchema>;
+
+export const factoryAnalysisJobSchema = z.object({
+  id: z.string(),
+  createdAt: z.iso.datetime(),
+  kind: factoryAnalysisJobKindSchema,
+  status: factoryAnalysisJobStatusSchema,
+  /** Veces que un worker lo ha tomado (un 2 sin éxito ya es una señal). */
+  attempts: z.number().int(),
+  requestedBy: z.string(),
+  /** Proceso que lo tomó (host:pid) — para cruzar con los logs si hace falta. */
+  workerId: z.string().nullable(),
+  claimedAt: z.iso.datetime().nullable(),
+  /** Último latido del worker: si se queda atrás, el barrido lo da por muerto. */
+  heartbeatAt: z.iso.datetime().nullable(),
+  finishedAt: z.iso.datetime().nullable(),
+  runId: z.string().nullable(),
+  errorMessage: z.string().nullable(),
+  changeRequestId: z.string().nullable()
+});
+export type FactoryAnalysisJob = z.infer<typeof factoryAnalysisJobSchema>;
+
+/** GET /factory-api/projects/:id — proyecto completo (specs desc con gates + runs desc + cola). */
 export const factoryProjectDetailSchema = factoryProjectSummarySchema
   .omit({ latestSpecVersion: true, pendingGates: true })
   .extend({
     sourceRef: z.string(),
     specs: z.array(factorySpecSchema),
-    runs: z.array(factoryRunSchema)
+    runs: z.array(factoryRunSchema),
+    analysisJobs: z.array(factoryAnalysisJobSchema)
   });
 export type FactoryProjectDetail = z.infer<typeof factoryProjectDetailSchema>;
 

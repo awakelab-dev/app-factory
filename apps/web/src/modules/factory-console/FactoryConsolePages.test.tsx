@@ -83,6 +83,24 @@ function buildDetail(overrides: Partial<FactoryProjectDetail> = {}): FactoryProj
         outputTokens: 2000
       }
     ],
+    // Cola de la Fábrica (D-047), visible en el detalle desde el incremento D.
+    analysisJobs: [
+      {
+        id: 'job-1',
+        createdAt: '2026-07-15T09:05:00.000Z',
+        kind: 'analysis',
+        status: 'success',
+        attempts: 1,
+        requestedBy: 'leonardo.barreto@awakelab.dev',
+        workerId: 'runner-1:42',
+        claimedAt: '2026-07-15T09:05:06.000Z',
+        heartbeatAt: '2026-07-15T09:07:00.000Z',
+        finishedAt: '2026-07-15T09:07:24.000Z',
+        runId: 'run-1',
+        errorMessage: null,
+        changeRequestId: null
+      }
+    ],
     ...overrides
   };
 }
@@ -232,5 +250,73 @@ describe('FactoryProjectDetailPage (rol admin, D-030)', () => {
 
     expect(await screen.findByTestId('factory-detour')).toBeInTheDocument();
     expect(screen.getByTestId('factory-project-status')).toHaveTextContent('Error');
+  });
+
+  it('la cola de la Fábrica se ve en el detalle: intentos, worker y motivo del fallo (incremento D, bloque 5)', async () => {
+    window.history.replaceState({}, '', '/factory/proj-1');
+    // El caso real de D-048: la generación se cayó por un corte de red y el
+    // proyecto "no avanzaba" sin más explicación que los logs del Lightsail.
+    mockApi({
+      detail: buildDetail({
+        status: 'error',
+        analysisJobs: [
+          {
+            id: 'job-2',
+            createdAt: '2026-07-15T09:05:00.000Z',
+            kind: 'change_analysis',
+            status: 'error',
+            attempts: 2,
+            requestedBy: 'gerente@awakelab.world',
+            workerId: 'runner-1:42',
+            claimedAt: '2026-07-15T09:05:06.000Z',
+            heartbeatAt: '2026-07-15T09:19:00.000Z',
+            finishedAt: '2026-07-15T09:19:45.000Z',
+            runId: 'run-1',
+            errorMessage: 'API Error: Connection closed mid-response',
+            changeRequestId: 'cr-1'
+          }
+        ]
+      })
+    });
+    render(<App />);
+
+    const queue = await screen.findByTestId('factory-queue');
+    expect(within(queue).getByText('Análisis del cambio')).toBeInTheDocument();
+    expect(within(queue).getByText('fallido')).toBeInTheDocument();
+    expect(within(queue).getByText(/Intentos: 2/)).toBeInTheDocument();
+    expect(within(queue).getByText(/runner-1:42/)).toBeInTheDocument();
+    expect(within(queue).getByText('API Error: Connection closed mid-response')).toBeInTheDocument();
+    expect(screen.queryByTestId('factory-queue-active')).not.toBeInTheDocument();
+  });
+
+  it('con un trabajo en cola lo dice explícitamente — "avanza solo, no hace falta lanzar nada"', async () => {
+    window.history.replaceState({}, '', '/factory/proj-1');
+    mockApi({
+      detail: buildDetail({
+        status: 'analyzing',
+        specs: [],
+        analysisJobs: [
+          {
+            id: 'job-3',
+            createdAt: '2026-07-15T09:05:00.000Z',
+            kind: 'analysis',
+            status: 'running',
+            attempts: 1,
+            requestedBy: 'gerente@awakelab.world',
+            workerId: 'runner-1:42',
+            claimedAt: '2026-07-15T09:05:06.000Z',
+            heartbeatAt: '2026-07-15T09:05:36.000Z',
+            finishedAt: null,
+            runId: null,
+            errorMessage: null,
+            changeRequestId: null
+          }
+        ]
+      })
+    });
+    render(<App />);
+
+    expect(await screen.findByTestId('factory-queue-active')).toHaveTextContent('Hay 1 trabajo activo');
+    expect(screen.getByTestId('factory-queue-job-job-3')).toHaveTextContent('en curso');
   });
 });

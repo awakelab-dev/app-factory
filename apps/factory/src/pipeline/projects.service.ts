@@ -70,13 +70,23 @@ export class ProjectsService {
     });
   }
 
-  /** Proyecto + todas sus specs (con gates) + runs, más reciente primero — lo que necesita un `status` de CLI o, más adelante, el dashboard. Con actor `gerente`, solo si es SUYO (D-036). */
+  /**
+   * Proyecto + todas sus specs (con gates) + runs + trabajos de la cola, más
+   * reciente primero — lo que necesita un `status` de CLI, el detalle de
+   * `/factory` y `get_project_status`. Con actor `gerente`, solo si es SUYO
+   * (D-036).
+   *
+   * `analysisJobs` se incluye desde el incremento D (bloque 5): sin ellos, un
+   * análisis que no arranca o que muere se veía como "el proyecto no avanza" y
+   * diagnosticarlo era `docker compose logs` por SSH.
+   */
   async getFullStatus(id: string, actor?: FactoryActorContext) {
     const project = await this.prisma.project.findUniqueOrThrow({
       where: { id },
       include: {
         specs: { orderBy: { version: 'desc' }, include: { gates: true } },
-        runs: { orderBy: { createdAt: 'desc' } }
+        runs: { orderBy: { createdAt: 'desc' } },
+        analysisJobs: { orderBy: { createdAt: 'desc' } }
       }
     });
     assertProjectVisibleToActor(project, actor);

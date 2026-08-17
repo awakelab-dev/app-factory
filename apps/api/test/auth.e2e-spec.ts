@@ -18,7 +18,7 @@ describe('auth + RBAC (e2e)', () => {
     jwt.signAsync({ sub: 'u-2', email: 'b@awakelab.dev', name: 'User', roles: ['user'] });
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    const moduleRef = await Test.createTestingModule({ imports: [await AppModule.register()] }).compile();
     app = moduleRef.createNestApplication();
     app.setGlobalPrefix('api');
     await app.init();

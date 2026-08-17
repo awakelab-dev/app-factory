@@ -1,4 +1,5 @@
 import type {
+  FactoryAnalysisJob,
   FactoryChangeRequestResponse,
   FactoryGate,
   FactoryModuleSummary,
@@ -7,7 +8,16 @@ import type {
   FactoryRun,
   FactorySpec
 } from '@awk/types';
-import type { GateStatus, GateType, ProjectSourceType, ProjectStatus, RunStatus, RunType } from '../pipeline/types';
+import type {
+  AnalysisJobKind,
+  AnalysisJobStatus,
+  GateStatus,
+  GateType,
+  ProjectSourceType,
+  ProjectStatus,
+  RunStatus,
+  RunType
+} from '../pipeline/types';
 
 /**
  * Prisma (Date, Json) → DTOs de @awk/types (ISO strings, arrays tipados).
@@ -51,6 +61,22 @@ interface RunRecord {
   costUsd: number | null;
   inputTokens: number | null;
   outputTokens: number | null;
+}
+
+interface AnalysisJobRecord {
+  id: string;
+  createdAt: Date;
+  kind: string;
+  status: string;
+  attempts: number;
+  requestedBy: string;
+  workerId: string | null;
+  claimedAt: Date | null;
+  heartbeatAt: Date | null;
+  finishedAt: Date | null;
+  runId: string | null;
+  errorMessage: string | null;
+  changeRequestId: string | null;
 }
 
 interface ProjectRecord {
@@ -111,6 +137,29 @@ export function toRunDto(run: RunRecord): FactoryRun {
     costUsd: run.costUsd,
     inputTokens: run.inputTokens,
     outputTokens: run.outputTokens
+  };
+}
+
+/**
+ * Trabajo de la cola (D-047) → DTO. Se expone en el detalle de proyecto y en
+ * `get_project_status` (incremento D, bloque 5): hasta 2026-08-17 el estado de
+ * la cola solo se veía con `docker compose logs` por SSH.
+ */
+export function toAnalysisJobDto(job: AnalysisJobRecord): FactoryAnalysisJob {
+  return {
+    id: job.id,
+    createdAt: job.createdAt.toISOString(),
+    kind: job.kind as AnalysisJobKind,
+    status: job.status as AnalysisJobStatus,
+    attempts: job.attempts,
+    requestedBy: job.requestedBy,
+    workerId: job.workerId,
+    claimedAt: job.claimedAt?.toISOString() ?? null,
+    heartbeatAt: job.heartbeatAt?.toISOString() ?? null,
+    finishedAt: job.finishedAt?.toISOString() ?? null,
+    runId: job.runId,
+    errorMessage: job.errorMessage,
+    changeRequestId: job.changeRequestId
   };
 }
 
@@ -182,7 +231,7 @@ export function toChangeRequestDto(changeRequest: ChangeRequestRecord): FactoryC
 }
 
 export function toProjectDetailDto(
-  project: ProjectRecord & { specs: SpecRecord[]; runs: RunRecord[] }
+  project: ProjectRecord & { specs: SpecRecord[]; runs: RunRecord[]; analysisJobs?: AnalysisJobRecord[] }
 ): FactoryProjectDetail {
   return {
     id: project.id,
@@ -195,6 +244,7 @@ export function toProjectDetailDto(
     status: project.status as ProjectStatus,
     sourceRef: project.sourceRef,
     specs: project.specs.map(toSpecDto),
-    runs: project.runs.map(toRunDto)
+    runs: project.runs.map(toRunDto),
+    analysisJobs: (project.analysisJobs ?? []).map(toAnalysisJobDto)
   };
 }

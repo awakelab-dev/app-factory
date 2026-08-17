@@ -1,6 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth/auth-context';
-import { accessibleModules, publicModuleRoutes, visibleNav } from './modules/registry';
+import { accessibleModules, homePathFor, publicModuleRoutes } from './modules/registry';
 import { Layout } from './shell/Layout';
 import { LoginPage } from './shell/LoginPage';
 
@@ -49,7 +49,10 @@ function AppRoutes() {
 
   // Menú y rutas salen de los module.manifest, filtrados por los roles del usuario.
   const registrations = accessibleModules(user);
-  const home = visibleNav(user)[0]?.path;
+  // Portada declarada en el registry (no "el primer ítem del menú"): con el
+  // descubrimiento automático de módulos, eso último cambiaría solo en cuanto
+  // la Fábrica generase un módulo que ordenase antes alfabéticamente.
+  const home = homePathFor(user);
 
   return (
     <Routes>

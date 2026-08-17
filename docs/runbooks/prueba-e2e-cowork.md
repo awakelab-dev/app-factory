@@ -141,18 +141,32 @@ Ejecutada con el caso **`incidencias-aula`** (proyecto `019ffa2c-eb45-70c4-a6a0-
 
 **Lo único que exigió CLI**: `analyze` y `generate`. Ese es, confirmado en la práctica, el bloqueante del self-service.
 
+> **Actualización 2026-08-17 (D-050, incremento D fase D1) — pasos de este guion que YA NO EXISTEN:**
+> - **El cableado del commit de integración**: no hay que editar `apps/api/src/app.module.ts` ni
+>   `apps/web/src/modules/registry.ts`. Los módulos se descubren por carpeta; el commit de integración
+>   se queda solo con la migración (y esa se automatiza en D2).
+> - **El SQL de roles**: los roles que declara un módulo (sus `@Roles()`) existen en cuanto la API
+>   arranca, y se asignan a un usuario desde **Administración → Usuarios**. Sigue haciendo falta
+>   **volver a iniciar sesión** para que un rol nuevo surta efecto: viaja dentro del JWT.
+> - **`docker compose logs` por SSH para saber por qué un proyecto no avanza**: el estado de la cola
+>   (en cola / en curso / fallido, con intentos, worker y motivo) está en el detalle del proyecto en
+>   `/factory` y en `get_project_status` desde el chat.
+>
+> Siguen exigiendo consola, con diseño ya validado en `docs/09-incremento-d-cero-consola.md`: escribir
+> y aplicar la migración (**D2**) y lanzar `generate` (**D3**).
+
 **Hallazgos** (detalle en D-046):
 
 | # | Hallazgo | Estado |
 |---|---|---|
 | 1 | `analyze` manual tras `submit_prototype` | Incremento C |
 | 2 | Ninguna forma de analizar una `ChangeRequest` creada desde Cowork | **Corregido**: `cli -- analyze-change` |
-| 3 | `PLATFORM_REPO_PATH` se valida tras transicionar y crear el `Run` → proyecto atascado + run huérfano | Pendiente |
+| 3 | `PLATFORM_REPO_PATH` se valida tras transicionar y crear el `Run` → proyecto atascado + run huérfano | **Corregido** (D-047, `assertRunnerEnv`) |
 | 4 | El runner necesita su propio `apps/factory/.env`, sin aviso hasta que falla | Documentado arriba |
 | 5 | Puerto del túnel mal documentado (5433 vs 15432 real) | Corregido aquí; pendiente en los otros 3 runbooks |
 | 6 | Un run fallido no registra coste ni tokens (`costUsd: null`) | Incremento C |
-| 7 | Sin reintento ni reanudación: un corte de red tira la generación entera | Pendiente |
-| 8 | Cada módulo nuevo rompe `registry.test.ts` (la generación no puede tocarlo) | Coste fijo de integración |
+| 7 | Sin reintento ni reanudación: un corte de red tira la generación entera | Diseñado, en el alcance de **D3** (docs/09) — el reintento clasificado va DENTRO de la generación server-side |
+| 8 | Cada módulo nuevo rompe `registry.test.ts` (la generación no puede tocarlo) | **Desaparecido** (D-050): los módulos se descubren, ya no hay lista que editar. El test pasó a asserter invariantes (ids/basePaths únicos, rutas dentro del basePath, cero problemas de descubrimiento) |
 
 **Costes registrados**: 12,64 USD en total — análisis 1,37 (5m46s), generación 8,39 (21m08s), análisis del cambio 0,68 (3m10s), generación del cambio 2,20 (7m29s). No incluye un análisis abortado ni una generación caída a los 23 minutos, ninguno de los dos con coste registrado (hallazgo 6).
 

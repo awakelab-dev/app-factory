@@ -130,5 +130,52 @@ describe('ProjectsController.detail', () => {
       finishedAt: null,
       costUsd: 0.42
     });
+    // Sin trabajos de cola (un proyecto creado por CLI): array vacío, no undefined.
+    expect(detail.analysisJobs).toEqual([]);
+  });
+
+  it('expone los trabajos de la cola con intentos y motivo del fallo (incremento D, bloque 5)', async () => {
+    // El caso que hasta ahora solo se veía con `docker compose logs` por SSH:
+    // el trabajo murió y el proyecto "no avanzaba" sin explicación en ningún sitio.
+    const job = {
+      id: 'job-1',
+      createdAt: NOW,
+      kind: 'analysis',
+      status: 'error',
+      attempts: 2,
+      requestedBy: 'gerente@awakelab.world',
+      workerId: 'runner-1:42',
+      claimedAt: NOW,
+      heartbeatAt: NOW,
+      finishedAt: NOW,
+      runId: 'run-1',
+      errorMessage: 'API Error: Connection closed mid-response',
+      changeRequestId: null
+    };
+    const projects = {
+      getFullStatus: vi
+        .fn()
+        .mockResolvedValue(buildProject({ status: 'error', specs: [], runs: [], analysisJobs: [job] }))
+    } as unknown as ProjectsService;
+
+    const detail = await new ProjectsController(projects).detail('proj-1', ADMIN);
+
+    expect(detail.analysisJobs).toEqual([
+      {
+        id: 'job-1',
+        createdAt: NOW.toISOString(),
+        kind: 'analysis',
+        status: 'error',
+        attempts: 2,
+        requestedBy: 'gerente@awakelab.world',
+        workerId: 'runner-1:42',
+        claimedAt: NOW.toISOString(),
+        heartbeatAt: NOW.toISOString(),
+        finishedAt: NOW.toISOString(),
+        runId: 'run-1',
+        errorMessage: 'API Error: Connection closed mid-response',
+        changeRequestId: null
+      }
+    ]);
   });
 });

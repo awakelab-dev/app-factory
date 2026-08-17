@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import {
   factoryGateSchema,
   factoryProjectDetailSchema,
+  type FactoryAnalysisJob,
   type FactoryGate,
   type FactoryGateDecision,
   type FactoryProjectDetail,
@@ -11,12 +12,15 @@ import {
 import { apiFetch } from '../../lib/api';
 import { SpecMarkdown } from './SpecMarkdown';
 import {
+  ANALYSIS_JOB_KIND_LABEL,
+  ANALYSIS_JOB_STATUS_LABEL,
   GATE_STATUS_LABEL,
   GATE_TYPE_LABEL,
   HAPPY_PATH,
   PROJECT_STATUS_LABEL,
   RUN_STATUS_LABEL,
   formatDateTime,
+  jobBadgeClass,
   statusBadgeClass
 } from './pipeline-labels';
 
@@ -87,6 +91,7 @@ export function FactoryProjectDetailPage() {
       <p className="mt-1 text-sm text-awk-blue-400">Fuente: {project.sourceRef}</p>
 
       <PipelineStepper status={project.status} />
+      <QueueSection jobs={project.analysisJobs} onRefresh={load} />
       <SpecSection specs={project.specs} onGateDecided={load} />
       <HistorySection project={project} />
     </div>
@@ -142,6 +147,77 @@ function PipelineStepper({ status }: { status: FactoryProjectDetail['status'] })
   );
 }
 
+/**
+ * Cola de la Fábrica para este proyecto (incremento D, bloque 5).
+ *
+ * Es la respuesta a "aprobé/envié y no pasa nada": aquí se ve si el trabajo está
+ * en cola, quién lo tomó, cuántos intentos lleva y —cuando falla— el motivo
+ * exacto. Antes eso vivía solo en `docker compose logs` del Lightsail.
+ */
+function QueueSection({ jobs, onRefresh }: { jobs: FactoryAnalysisJob[]; onRefresh: () => void }) {
+  const active = jobs.filter((job) => job.status === 'queued' || job.status === 'running');
+
+  return (
+    <section className="mt-8" data-testid="factory-queue">
+      <div className="flex flex-wrap items-center gap-3">
+        <h2 className="text-lg font-semibold text-white">Cola de la Fábrica</h2>
+        <button
+          type="button"
+          onClick={onRefresh}
+          className="rounded-lg border border-awk-blue-700 px-2 py-1 text-xs text-awk-blue-200 hover:border-awk-cyan-500 hover:text-awk-cyan-300"
+        >
+          Actualizar
+        </button>
+      </div>
+
+      {jobs.length === 0 ? (
+        <p className="mt-3 rounded-xl border border-awk-blue-700 bg-awk-navy-800 p-4 text-sm text-awk-blue-300">
+          Sin trabajos en la cola para este proyecto (los proyectos creados por CLI no pasan por ella).
+        </p>
+      ) : (
+        <>
+          {active.length > 0 && (
+            <p className="mt-3 text-sm text-awk-cyan-300" data-testid="factory-queue-active">
+              {active.length === 1 ? 'Hay 1 trabajo activo' : `Hay ${active.length} trabajos activos`} — el
+              proyecto avanza solo cuando termine; no hace falta lanzar nada.
+            </p>
+          )}
+          <ul className="mt-3 space-y-2">
+            {jobs.map((job) => (
+              <li
+                key={job.id}
+                className="rounded-lg border border-awk-blue-800 bg-awk-navy-800 px-4 py-3 text-sm"
+                data-testid={`factory-queue-job-${job.id}`}
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={`rounded-full px-2 py-0.5 text-xs ${jobBadgeClass(job.status)}`}>
+                    {ANALYSIS_JOB_STATUS_LABEL[job.status]}
+                  </span>
+                  <span className="text-awk-blue-50">{ANALYSIS_JOB_KIND_LABEL[job.kind]}</span>
+                  <span className="font-mono text-xs text-awk-blue-400">
+                    {formatDateTime(job.createdAt)} · pedido por {job.requestedBy}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-awk-blue-400">
+                  Intentos: {job.attempts}
+                  {job.workerId && ` · worker ${job.workerId}`}
+                  {job.heartbeatAt && ` · último latido ${formatDateTime(job.heartbeatAt)}`}
+                  {job.finishedAt && ` · terminó ${formatDateTime(job.finishedAt)}`}
+                </p>
+                {job.errorMessage && (
+                  <p className="mt-2 rounded border border-red-800 bg-red-950 px-3 py-2 text-xs text-red-300">
+                    {job.errorMessage}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </section>
+  );
+}
+
 /** Visor de spec (funcional/técnica) con selector de versión y decisión de gates. */
 function SpecSection({ specs, onGateDecided }: { specs: FactorySpec[]; onGateDecided: () => void }) {
   // specs llega ordenada por versión desc (getFullStatus) — la [0] es la vigente.
@@ -157,7 +233,8 @@ function SpecSection({ specs, onGateDecided }: { specs: FactorySpec[]; onGateDec
       <section className="mt-8">
         <h2 className="text-lg font-semibold text-white">Spec</h2>
         <p className="mt-3 rounded-xl border border-awk-blue-700 bg-awk-navy-800 p-6 text-awk-blue-300">
-          Sin spec todavía — corre el análisis por CLI (<code className="text-awk-cyan-100">analyze</code>).
+          Sin spec todavía. Si el prototipo llegó desde Cowork, su análisis se encoló solo (D-047):
+          mira el estado en «Cola de la Fábrica», arriba.
         </p>
       </section>
     );

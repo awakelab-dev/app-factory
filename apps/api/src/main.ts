@@ -3,7 +3,9 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule);
+  // `AppModule.register()` y no `AppModule`: los módulos de negocio se
+  // descubren (incremento D, bloque 1) y el descubrimiento es asíncrono.
+  const app = await NestFactory.create(await AppModule.register());
   app.setGlobalPrefix('api');
   // CORS abierto solo en dev; en prod web y api comparten origen tras Nginx.
   app.enableCors({ origin: process.env.NODE_ENV === 'production' ? false : true });

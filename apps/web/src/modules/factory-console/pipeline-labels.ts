@@ -1,4 +1,11 @@
-import type { FactoryGateStatus, FactoryGateType, FactoryProjectStatus, FactoryRunStatus } from '@awk/types';
+import type {
+  FactoryAnalysisJobKind,
+  FactoryAnalysisJobStatus,
+  FactoryGateStatus,
+  FactoryGateType,
+  FactoryProjectStatus,
+  FactoryRunStatus
+} from '@awk/types';
 
 /**
  * Etiquetas y presentación de los estados del pipeline (docs/03,
@@ -64,6 +71,30 @@ export const RUN_STATUS_LABEL: Record<FactoryRunStatus, string> = {
   success: 'ok',
   error: 'error'
 };
+
+/**
+ * Cola de la Fábrica (`analysis_jobs`, D-047). Se muestra desde el incremento D
+ * (bloque 5): hasta entonces, si un análisis no arrancaba o moría, el proyecto
+ * "no avanzaba" y el único diagnóstico era `docker compose logs` por SSH.
+ */
+export const ANALYSIS_JOB_KIND_LABEL: Record<FactoryAnalysisJobKind, string> = {
+  analysis: 'Análisis del prototipo',
+  change_analysis: 'Análisis del cambio'
+};
+
+export const ANALYSIS_JOB_STATUS_LABEL: Record<FactoryAnalysisJobStatus, string> = {
+  queued: 'en cola',
+  running: 'en curso',
+  success: 'completado',
+  error: 'fallido'
+};
+
+export function jobBadgeClass(status: FactoryAnalysisJobStatus): string {
+  if (status === 'error') return 'bg-red-950 text-red-400 border border-red-800';
+  if (status === 'success') return 'bg-awk-blue-800 text-awk-cyan-300 border border-awk-blue-700';
+  if (status === 'running') return 'bg-awk-cyan-500 text-awk-navy-900 border border-awk-cyan-500';
+  return 'bg-awk-navy-800 text-awk-blue-300 border border-awk-blue-700';
+}
 
 export function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString('es-ES', {
