@@ -1,5 +1,13 @@
-import { Body, Controller, Get, Param, Put, UsePipes } from '@nestjs/common';
-import { CoreUser, updateUserRolesRequestSchema, type UpdateUserRolesRequest } from '@awk/types';
+import { Body, Controller, Get, Param, Patch, Post, Put } from '@nestjs/common';
+import {
+  CoreUser,
+  createUserRequestSchema,
+  setUserActiveRequestSchema,
+  updateUserRolesRequestSchema,
+  type CreateUserRequest,
+  type SetUserActiveRequest,
+  type UpdateUserRolesRequest
+} from '@awk/types';
 import type { AuthUser } from '@awk/auth';
 import { ZodValidationPipe } from '../../common/zod-validation.pipe';
 import { CurrentUser, Roles } from '../auth/auth.decorators';
@@ -21,6 +29,19 @@ export class UsersController {
   }
 
   /**
+   * Alta de usuario de plataforma (incremento D, bloque 2 — cierre). Sin esto,
+   * dar acceso a staging a un gerente del piloto era un `INSERT` a mano: el
+   * `dev-login` solo autentica usuarios que ya existen.
+   */
+  @Post()
+  create(
+    @Body(new ZodValidationPipe(createUserRequestSchema)) body: CreateUserRequest,
+    @CurrentUser() actor: AuthUser
+  ): Promise<CoreUser> {
+    return this.usersService.create(body, actor?.id);
+  }
+
+  /**
    * Reemplaza los roles de un usuario (incremento D, bloque 2). Hasta
    * 2026-08-17 este controller solo tenía `@Get()`: asignar un rol era SQL a
    * mano — y con él, la única forma de hacer visible un módulo generado que
@@ -31,12 +52,21 @@ export class UsersController {
    * entrar. La UI lo dice explícitamente.
    */
   @Put(':id/roles')
-  @UsePipes(new ZodValidationPipe(updateUserRolesRequestSchema))
   updateRoles(
     @Param('id') id: string,
-    @Body() body: UpdateUserRolesRequest,
+    @Body(new ZodValidationPipe(updateUserRolesRequestSchema)) body: UpdateUserRolesRequest,
     @CurrentUser() actor: AuthUser
   ): Promise<CoreUser> {
     return this.rolesService.setUserRoles(id, body.roles, actor?.id);
+  }
+
+  /** Corta o devuelve el acceso de un usuario (`dev-login` rechaza a los inactivos). */
+  @Patch(':id/active')
+  setActive(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(setUserActiveRequestSchema)) body: SetUserActiveRequest,
+    @CurrentUser() actor: AuthUser
+  ): Promise<CoreUser> {
+    return this.usersService.setActive(id, body.isActive, actor?.id);
   }
 }

@@ -11,6 +11,7 @@
 |---|---|---|---|
 | Commit de integración: `app.module.ts` + `registry.ts` | B1 | nada | **hecho (D-050)** |
 | `INSERT` de roles + `user_roles` por SQL | B2 | asignar roles **en la UI** | **hecho (D-050)** |
+| `INSERT` de un usuario de plataforma por SQL (para que un gerente entre a staging) | B2 | dar de alta **en la UI** | **hecho (D-050)** |
 | `docker compose logs` por SSH para saber por qué no avanza | B5 | mirar `/factory` | **hecho (D-050)** |
 | Escribir la migración a mano | B3 | revisar el `.sql` **en la PR** | pendiente (D2) |
 | `~/migrate.sh staging latest` por SSH | B3b | nada | pendiente (D2) |
@@ -47,6 +48,10 @@ Resumen de lo que quedó en el repo:
   **Re-login obligatorio**: los roles viajan en el JWT. **La siembra la llama `main.ts` tras
   `listen()`, no un hook de Nest**: con `onApplicationBootstrap` cada `app.init()` de un e2e hacía una
   query a la BD y eso rompe la conexión perezosa de `PrismaService` (lo tumbó la CI, ver D-050).
+- **Usuarios**: `POST /api/core/users` + `PATCH /api/core/users/:id/active` y su formulario en
+  `/admin/usuarios`. Cierra el hueco que salió al provisionar el piloto: un **actor de la Fábrica**
+  (`factory_actors`, otra BD) no es un usuario de plataforma, y `dev-login` solo autentica a quien ya
+  existe en `core.users`.
 - **Visibilidad**: `analysis_jobs` en el detalle de `/factory` y en `get_project_status`.
 
 Tres cosas que conviene no volver a discutir:

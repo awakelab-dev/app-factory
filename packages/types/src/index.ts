@@ -93,6 +93,32 @@ export const updateUserRolesRequestSchema = z.object({
 
 export type UpdateUserRolesRequest = z.infer<typeof updateUserRolesRequestSchema>;
 
+/**
+ * Alta de usuario de plataforma (POST /api/core/users — admin).
+ *
+ * Cierra el último hueco de "cero consola" del bloque 2: `dev-login` exige que
+ * el usuario EXISTA en `core.users`, así que un gerente del piloto no podía
+ * entrar a staging a validar su módulo sin que alguien le insertara la fila por
+ * SQL. Ojo con la confusión de conceptos: un actor de la Fábrica
+ * (`factory_actors`, el que crea `create-actor` para el conector de Cowork) NO
+ * es un usuario de plataforma — son dos bases de datos y dos identidades.
+ */
+export const createUserRequestSchema = z.object({
+  email: z.email(),
+  displayName: z.string().min(1).max(120),
+  /** Roles iniciales; vacío = usuario sin roles (ve solo los módulos abiertos). */
+  roles: z.array(z.string().min(1)).max(50).default([])
+});
+
+export type CreateUserRequest = z.infer<typeof createUserRequestSchema>;
+
+/** Alta/baja de acceso de un usuario (PATCH /api/core/users/:id/active — admin). */
+export const setUserActiveRequestSchema = z.object({
+  isActive: z.boolean()
+});
+
+export type SetUserActiveRequest = z.infer<typeof setUserActiveRequestSchema>;
+
 // ---------------------------------------------------------------------------
 // Manifest de módulo. Cada módulo (generado por la fábrica o hecho a mano)
 // declara uno; el shell de apps/web construye menú y rutas a partir de él.

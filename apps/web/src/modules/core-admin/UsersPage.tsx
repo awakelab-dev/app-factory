@@ -15,28 +15,45 @@ type UsersState =
   | { status: 'ok'; users: CoreUser[]; roles: CoreRole[] }
   | { status: 'error'; detail: string };
 
+interface NewUserDraft {
+  email: string;
+  displayName: string;
+  roles: string[];
+}
+
+const EMPTY_DRAFT: NewUserDraft = { email: '', displayName: '', roles: [] };
+
 function sameSet(a: string[], b: string[]): boolean {
   return a.length === b.length && [...a].sort().join('|') === [...b].sort().join('|');
 }
 
+function toggle(list: string[], value: string): string[] {
+  return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
+}
+
 /**
- * Usuarios y ROLES del core. Hasta 2026-08-17 esta pantalla solo LEÍA: asignar
- * un rol era un `INSERT` a mano por SQL — y con él, la única forma de hacer
- * visible un módulo generado que declara roles nuevos. Pasó con
- * `incidencias-aula` y con `reserva-salas` (D-049). Desde el incremento D
- * (bloque 2) los roles se siembran solos al arrancar la API y se asignan aquí.
+ * Usuarios y ROLES del core. Hasta 2026-08-17 esta pantalla solo LEÍA: dar de
+ * alta a alguien o asignarle un rol era SQL a mano — y con ello, la única forma
+ * de que un gerente del piloto entrara a staging o de que un módulo generado
+ * fuera visible (D-049). Desde el incremento D (bloque 2) los roles se siembran
+ * solos al arrancar la API, y aquí se da de alta, se asignan roles y se corta el
+ * acceso, todo auditado.
  *
- * El aviso de re-login no es decorativo: los roles viajan dentro del JWT
- * (`AuthService` los mete en el payload al hacer login), así que un cambio no
- * afecta a las sesiones ya abiertas.
+ * Dos avisos que la UI da explícitamente porque el sistema no puede evitarlos:
+ *  - **Re-login**: los roles viajan dentro del JWT, así que un cambio no afecta
+ *    a una sesión ya abierta.
+ *  - **Dos identidades**: este usuario es el de la PLATAFORMA. El acceso al
+ *    conector de Cowork es un actor de la Fábrica (otra base de datos), que se
+ *    crea con el CLI — tener uno no da el otro.
  */
 export function UsersPage() {
   const { user: currentUser } = useAuth();
   const [state, setState] = useState<UsersState>({ status: 'loading' });
   const [editing, setEditing] = useState<{ userId: string; roles: string[] } | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [draft, setDraft] = useState<NewUserDraft | null>(null);
+  const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -49,49 +66,87 @@ export function UsersPage() {
       );
   }, []);
 
-  const toggleRole = (role: string) =>
-    setEditing((prev) =>
-      prev
+  function upsertUser(updated: CoreUser): void {
+    setState((prev) =>
+      prev.status === 'ok'
         ? {
             ...prev,
-            roles: prev.roles.includes(role)
-              ? prev.roles.filter((name) => name !== role)
-              : [...prev.roles, role]
+            users: prev.users.some((user) => user.id === updated.id)
+              ? prev.users.map((user) => (user.id === updated.id ? updated : user))
+              : [...prev.users, updated]
           }
         : prev
     );
+  }
 
-  async function save(): Promise<void> {
-    if (!editing || state.status !== 'ok') return;
-    setSaving(true);
-    setSaveError(null);
+  async function run(action: () => Promise<void>): Promise<void> {
+    setBusy(true);
+    setActionError(null);
     try {
+      await action();
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const saveRoles = () =>
+    run(async () => {
+      if (!editing) return;
       const updated = await apiFetch(`/api/core/users/${editing.userId}/roles`, coreUserSchema, {
         method: 'PUT',
         body: JSON.stringify({ roles: editing.roles })
       });
-      setState({
-        ...state,
-        users: state.users.map((user) => (user.id === updated.id ? updated : user))
-      });
+      upsertUser(updated);
       setNotice(
         updated.id === currentUser?.id
           ? `Roles de ${updated.displayName} actualizados. Son TUS roles: vuelve a iniciar sesión para que apliquen (viajan en el token).`
           : `Roles de ${updated.displayName} actualizados. Tendrá que volver a iniciar sesión para que apliquen (viajan en el token).`
       );
       setEditing(null);
-    } catch (err: unknown) {
-      setSaveError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSaving(false);
-    }
-  }
+    });
+
+  const createUser = () =>
+    run(async () => {
+      if (!draft) return;
+      const created = await apiFetch('/api/core/users', coreUserSchema, {
+        method: 'POST',
+        body: JSON.stringify(draft)
+      });
+      upsertUser(created);
+      setNotice(
+        `Usuario ${created.email} creado. Ya puede entrar a la plataforma. Recuerda: para usar el conector de Cowork necesita además un actor de la Fábrica (CLI create-actor + set-password).`
+      );
+      setDraft(null);
+    });
+
+  const setActive = (user: CoreUser, isActive: boolean) =>
+    run(async () => {
+      const updated = await apiFetch(`/api/core/users/${user.id}/active`, coreUserSchema, {
+        method: 'PATCH',
+        body: JSON.stringify({ isActive })
+      });
+      upsertUser(updated);
+      setNotice(
+        isActive
+          ? `Acceso devuelto a ${updated.displayName}.`
+          : `Acceso cortado a ${updated.displayName}: no podrá volver a entrar (su sesión abierta caduca sola).`
+      );
+    });
 
   return (
     <div className="mx-auto max-w-4xl">
-      <h1 className="text-3xl font-semibold text-white">
-        Usuarios <span className="text-awk-cyan-400">·</span> core
-      </h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-3xl font-semibold text-white">
+          Usuarios <span className="text-awk-cyan-400">·</span> core
+        </h1>
+        {state.status === 'ok' && !draft && (
+          <Button size="sm" onClick={() => { setActionError(null); setDraft(EMPTY_DRAFT); }}>
+            Nuevo usuario
+          </Button>
+        )}
+      </div>
       <p className="mt-2 text-awk-blue-300">
         Usuarios y roles de la plataforma (schema <code className="text-awk-cyan-100">core</code>). Los
         roles de cada módulo se crean solos al arrancar la API; aquí se asignan.
@@ -105,6 +160,69 @@ export function UsersPage() {
         >
           {notice}
         </p>
+      )}
+
+      {state.status === 'ok' && draft && (
+        <section
+          className="mt-6 rounded-xl border border-awk-blue-700 bg-awk-navy-800 p-5"
+          data-testid="new-user-form"
+        >
+          <h2 className="text-lg font-semibold text-white">Nuevo usuario de plataforma</h2>
+          <p className="mt-1 text-xs text-awk-blue-400">
+            Da acceso a la plataforma (login por email). El acceso al conector de Cowork es otra cosa:
+            se crea con el CLI de la Fábrica.
+          </p>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <label className="text-sm text-awk-blue-100">
+              Email
+              <input
+                type="email"
+                value={draft.email}
+                onChange={(event) => setDraft({ ...draft, email: event.target.value })}
+                className="mt-1 w-full rounded-lg border border-awk-blue-700 bg-awk-navy-900 px-3 py-2 text-sm text-awk-blue-50"
+                placeholder="nombre.apellido@awakelab.dev"
+              />
+            </label>
+            <label className="text-sm text-awk-blue-100">
+              Nombre visible
+              <input
+                type="text"
+                value={draft.displayName}
+                onChange={(event) => setDraft({ ...draft, displayName: event.target.value })}
+                className="mt-1 w-full rounded-lg border border-awk-blue-700 bg-awk-navy-900 px-3 py-2 text-sm text-awk-blue-50"
+                placeholder="Nombre Apellido"
+              />
+            </label>
+          </div>
+          <fieldset className="mt-4">
+            <legend className="text-xs uppercase tracking-wide text-awk-blue-400">Roles iniciales</legend>
+            <div className="mt-2 grid gap-1 sm:grid-cols-2">
+              {state.roles.map((role) => (
+                <label key={role.name} className="flex items-center gap-2 text-xs text-awk-blue-100">
+                  <input
+                    type="checkbox"
+                    className="accent-awk-cyan-400"
+                    checked={draft.roles.includes(role.name)}
+                    onChange={() => setDraft({ ...draft, roles: toggle(draft.roles, role.name) })}
+                  />
+                  <span className="text-awk-cyan-300">{role.name}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <div className="mt-4 flex gap-2">
+            <Button
+              size="sm"
+              onClick={() => void createUser()}
+              disabled={busy || !draft.email.includes('@') || draft.displayName.trim().length === 0}
+            >
+              {busy ? 'Creando…' : 'Crear usuario'}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setDraft(null)} disabled={busy}>
+              Cancelar
+            </Button>
+          </div>
+        </section>
       )}
 
       <section className="mt-8 overflow-hidden rounded-xl border border-awk-blue-700">
@@ -148,7 +266,7 @@ export function UsersPage() {
                                 type="checkbox"
                                 className="mt-0.5 accent-awk-cyan-400"
                                 checked={editing.roles.includes(role.name)}
-                                onChange={() => toggleRole(role.name)}
+                                onChange={() => setEditing({ ...editing, roles: toggle(editing.roles, role.name) })}
                               />
                               <span>
                                 <span className="text-awk-cyan-300">{role.name}</span>
@@ -180,31 +298,46 @@ export function UsersPage() {
                         <div className="flex justify-end gap-2">
                           <Button
                             size="sm"
-                            onClick={() => void save()}
-                            disabled={saving || sameSet(editing.roles, user.roles)}
+                            onClick={() => void saveRoles()}
+                            disabled={busy || sameSet(editing.roles, user.roles)}
                           >
-                            {saving ? 'Guardando…' : 'Guardar'}
+                            {busy ? 'Guardando…' : 'Guardar'}
                           </Button>
                           <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => setEditing(null)}
-                            disabled={saving}
+                            disabled={busy}
                           >
                             Cancelar
                           </Button>
                         </div>
                       ) : (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setSaveError(null);
-                            setEditing({ userId: user.id, roles: [...user.roles] });
-                          }}
-                        >
-                          Editar roles
-                        </Button>
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setActionError(null);
+                              setEditing({ userId: user.id, roles: [...user.roles] });
+                            }}
+                          >
+                            Editar roles
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={busy || user.id === currentUser?.id}
+                            title={
+                              user.id === currentUser?.id
+                                ? 'No puedes cortarte el acceso a ti mismo'
+                                : undefined
+                            }
+                            onClick={() => void setActive(user, !user.isActive)}
+                          >
+                            {user.isActive ? 'Dar de baja' : 'Reactivar'}
+                          </Button>
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -215,9 +348,9 @@ export function UsersPage() {
         )}
       </section>
 
-      {saveError && (
+      {actionError && (
         <p className="mt-4 text-sm text-red-400" data-testid="roles-save-error">
-          No se pudieron guardar los roles ({saveError}).
+          No se pudo completar la operación ({actionError}).
         </p>
       )}
     </div>

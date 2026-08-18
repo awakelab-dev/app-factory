@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthUser, CoreRole, CoreUser } from '@awk/types';
 import { AuthProvider } from '../../auth/auth-context';
@@ -44,11 +44,27 @@ function ok(body: unknown) {
 function mockApi(putHandler?: (body: unknown) => Promise<unknown>) {
   return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    const method = init?.method ?? 'GET';
     if (url.endsWith('/api/auth/me')) return ok(adminFixture);
-    if (url.endsWith('/api/core/users')) return ok(usersFixture);
+    if (url.endsWith('/api/core/users') && method === 'GET') return ok(usersFixture);
     if (url.endsWith('/api/core/roles')) return ok(rolesFixture);
-    if (url.endsWith('/api/core/users/u-2/roles') && init?.method === 'PUT') {
-      if (putHandler) return putHandler(JSON.parse(String(init.body)));
+    if (url.endsWith('/api/core/users') && method === 'POST') {
+      const body = JSON.parse(String(init?.body)) as { email: string; displayName: string; roles: string[] };
+      return ok({
+        id: 'u-3',
+        email: body.email,
+        displayName: body.displayName,
+        isActive: true,
+        roles: body.roles,
+        createdAt: '2026-08-17T10:00:00.000Z'
+      });
+    }
+    if (url.endsWith('/api/core/users/u-2/active') && method === 'PATCH') {
+      const body = JSON.parse(String(init?.body)) as { isActive: boolean };
+      return ok({ ...usersFixture[1], isActive: body.isActive });
+    }
+    if (url.endsWith('/api/core/users/u-2/roles') && method === 'PUT') {
+      if (putHandler) return putHandler(JSON.parse(String(init?.body)));
       return ok({ ...usersFixture[1], roles: ['empleado', 'recepcion'] });
     }
     return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) });
@@ -121,6 +137,57 @@ describe('UsersPage (asignación de roles sin SQL — incremento D, bloque 2)', 
 
     expect(await screen.findByTestId('roles-save-error')).toBeInTheDocument();
     expect(screen.getByTestId('roles-editor-u-2')).toBeInTheDocument();
+  });
+
+  it('da de alta un usuario de plataforma y avisa de que el actor de la Fábrica es otra cosa', async () => {
+    // El caso real: `prueba.gerente@awakelab.dev` existía como actor de la
+    // Fábrica pero no como usuario de plataforma, así que no podía entrar a
+    // staging (dev-login solo autentica usuarios que ya existen).
+    const fetchMock = mockApi();
+    vi.stubGlobal('fetch', fetchMock);
+    renderPage();
+    await screen.findByTestId('users-table');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Nuevo usuario' }));
+    const form = await screen.findByTestId('new-user-form');
+    expect(within(form).getByRole('button', { name: 'Crear usuario' })).toBeDisabled();
+
+    fireEvent.change(within(form).getByLabelText('Email'), {
+      target: { value: 'prueba.gerente@awakelab.dev' }
+    });
+    fireEvent.change(within(form).getByLabelText('Nombre visible'), {
+      target: { value: 'Prueba Gerente' }
+    });
+    fireEvent.click(within(form).getByRole('checkbox', { name: 'empleado' }));
+    fireEvent.click(within(form).getByRole('button', { name: 'Crear usuario' }));
+
+    const notice = await screen.findByTestId('roles-notice');
+    expect(notice.textContent).toContain('prueba.gerente@awakelab.dev');
+    expect(notice.textContent).toContain('actor de la Fábrica');
+    const post = fetchMock.mock.calls.find(([, init]) => (init as RequestInit | undefined)?.method === 'POST');
+    expect(JSON.parse(String((post?.[1] as RequestInit).body))).toEqual({
+      email: 'prueba.gerente@awakelab.dev',
+      displayName: 'Prueba Gerente',
+      roles: ['empleado']
+    });
+    // La fila nueva aparece sin recargar.
+    expect(await screen.findByText('Prueba Gerente')).toBeInTheDocument();
+    expect(screen.queryByTestId('new-user-form')).not.toBeInTheDocument();
+  });
+
+  it('corta el acceso de un usuario, y nunca el propio', async () => {
+    vi.stubGlobal('fetch', mockApi());
+    renderPage();
+    const table = await screen.findByTestId('users-table');
+
+    const rows = within(table).getAllByRole('row');
+    // Fila 0 = cabecera; fila 1 = el propio admin; fila 2 = el otro usuario.
+    expect(within(rows[1]!).getByRole('button', { name: 'Dar de baja' })).toBeDisabled();
+
+    fireEvent.click(within(rows[2]!).getByRole('button', { name: 'Dar de baja' }));
+    expect((await screen.findByTestId('roles-notice')).textContent).toContain('Acceso cortado');
+    await waitFor(() => expect(within(rows[2]!).getByText('inactivo')).toBeInTheDocument());
+    expect(within(rows[2]!).getByRole('button', { name: 'Reactivar' })).toBeInTheDocument();
   });
 
   it('si la carga falla, lo dice en vez de quedarse en blanco', async () => {
