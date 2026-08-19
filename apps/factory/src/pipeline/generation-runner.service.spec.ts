@@ -26,12 +26,24 @@ const successResult: AgentRunResult = {
 const okGit: GitCommandResult = { stdout: '', stderr: '' };
 
 /** Checkout de mentira REAL: `assertRunnerEnv` (D-047) comprueba que exista. */
-function fakeCheckout(): string {
+function fakeCheckout({ conPrisma = true } = {}): string {
   const dir = mkdtempSync(join(tmpdir(), 'awkf-repo-'));
   writeFileSync(join(dir, 'pnpm-workspace.yaml'), 'packages: []\n');
   mkdirSync(join(dir, 'apps/factory'), { recursive: true });
+  if (conPrisma) {
+    // D2: `assertPrismaCli` exige el CLI del checkout antes de gastar agente.
+    mkdirSync(join(dir, 'apps/api/node_modules/.bin'), { recursive: true });
+    writeFileSync(join(dir, 'apps/api/node_modules/.bin/prisma'), '#!/bin/sh\nexit 0\n');
+  }
   return dir;
 }
+
+/**
+ * La generación de la migración (D2) se inyecta en TODOS los tests: aquí se
+ * ejercita el runner, no el generador — ese tiene su propio archivo
+ * (migration-generator.spec.ts) y correrlo de verdad implicaría un repo git.
+ */
+const sinMigracion = () => vi.fn().mockResolvedValue(null);
 
 let repo = '';
 
@@ -118,7 +130,7 @@ describe('GenerationRunnerService.runGeneration', () => {
       })
     );
 
-    const run = await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh });
+    const run = await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh, generateMigration: sinMigracion() });
 
     expect(runGit).toHaveBeenCalledWith(['checkout', '-b', 'factory/demo-modulo'], repo);
     expect(agentRunner).toHaveBeenCalledWith(
@@ -149,7 +161,7 @@ describe('GenerationRunnerService.runGeneration', () => {
     const runGit = vi.fn().mockResolvedValue(okGit);
     const runGh = vi.fn().mockRejectedValue(new Error('gh: command not found'));
 
-    await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh });
+    await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh, generateMigration: sinMigracion() });
 
     expect(projects.transition).toHaveBeenCalledWith('proj-1', 'verifying');
     expect(projects.transition).not.toHaveBeenCalledWith('proj-1', 'pr_review');
@@ -169,7 +181,7 @@ describe('GenerationRunnerService.runGeneration', () => {
         : Promise.reject(new Error('a pull request for branch "factory/demo-modulo" already exists'))
     );
 
-    await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh });
+    await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh, generateMigration: sinMigracion() });
 
     expect(runGh).toHaveBeenCalledWith(['pr', 'view', 'factory/demo-modulo', '--json', 'url,state'], repo);
     expect(runGh).not.toHaveBeenCalledWith(expect.arrayContaining(['pr', 'create']), repo);
@@ -193,7 +205,7 @@ describe('GenerationRunnerService.runGeneration', () => {
         : Promise.resolve({ stdout: 'https://github.com/awakelab-dev/app-factory/pull/3\n', stderr: '' })
     );
 
-    await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh });
+    await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh, generateMigration: sinMigracion() });
 
     expect(runGh).toHaveBeenCalledWith(expect.arrayContaining(['pr', 'create']), repo);
     expect(prisma.run.update).toHaveBeenCalledWith(
@@ -216,7 +228,7 @@ describe('GenerationRunnerService.runGeneration', () => {
       })
     );
 
-    await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh });
+    await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh, generateMigration: sinMigracion() });
 
     expect(gates.openGatesForSpec).toHaveBeenCalledWith('spec-1', ['pr_review']);
   });
@@ -235,7 +247,7 @@ describe('GenerationRunnerService.runGeneration', () => {
     const runGit = vi.fn().mockResolvedValue(okGit);
     const runGh = vi.fn().mockResolvedValue(okGit);
 
-    await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh });
+    await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh, generateMigration: sinMigracion() });
 
     expect(prisma.gate.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { specId: 'spec-1', status: 'approved' } })
@@ -255,7 +267,7 @@ describe('GenerationRunnerService.runGeneration', () => {
     const runGit = vi.fn().mockResolvedValue(okGit);
     const runGh = vi.fn().mockResolvedValue(okGit);
 
-    await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh });
+    await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh, generateMigration: sinMigracion() });
 
     expect(agentRunner.mock.calls[0]?.[0]?.prompt).not.toContain('NOTAS DE LOS GATES APROBADOS');
   });
@@ -266,7 +278,7 @@ describe('GenerationRunnerService.runGeneration', () => {
     const runGit = vi.fn().mockResolvedValue(okGit);
     const runGh = vi.fn().mockResolvedValue(okGit);
 
-    await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh });
+    await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh, generateMigration: sinMigracion() });
 
     const call = agentRunner.mock.calls[0]?.[0];
     expect(call.isBashCommandAllowed('git push origin main')).toBe(false);
@@ -280,7 +292,7 @@ describe('GenerationRunnerService.runGeneration', () => {
     const runGit = vi.fn().mockResolvedValue(okGit);
     const runGh = vi.fn().mockResolvedValue(okGit);
 
-    await expect(service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh })).rejects.toThrow('build roto');
+    await expect(service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh, generateMigration: sinMigracion() })).rejects.toThrow('build roto');
 
     expect(prisma.run.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: 'error', errorMessage: 'build roto' }) })
@@ -301,7 +313,7 @@ describe('GenerationRunnerService.runGeneration', () => {
     const runGit = vi.fn().mockResolvedValue(okGit);
     const runGh = vi.fn().mockResolvedValue(okGit);
 
-    await expect(service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh })).rejects.toThrow(
+    await expect(service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh, generateMigration: sinMigracion() })).rejects.toThrow(
       'Connection closed mid-response'
     );
 
@@ -310,6 +322,97 @@ describe('GenerationRunnerService.runGeneration', () => {
         data: expect.objectContaining({ status: 'error', costUsd: 0.02, inputTokens: 500, outputTokens: 800 })
       })
     );
+  });
+
+  // ---- Incremento D, bloque 3a: la migración se genera dentro del run ----
+
+  it('genera la migración con el checkout y el slug del proyecto, ANTES del commit', async () => {
+    const { service } = buildService();
+    const orden: string[] = [];
+    const agentRunner = vi.fn().mockResolvedValue(successResult);
+    const runGit = vi.fn().mockImplementation((args: string[]) => {
+      orden.push(`git:${args[0]}`);
+      return Promise.resolve(okGit);
+    });
+    const runGh = vi.fn().mockResolvedValue(okGit);
+    const generateMigration = vi.fn().mockImplementation(() => {
+      orden.push('migracion');
+      return Promise.resolve({
+        dirName: '20260818224500_demo_modulo',
+        sql: 'CREATE SCHEMA "demo";',
+        includesExtraSql: true,
+        removedDirs: [],
+        baseSha: 'abc1234'
+      });
+    });
+
+    await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh, generateMigration });
+
+    expect(generateMigration).toHaveBeenCalledWith(
+      { repoPath: repo, moduleSlug: 'demo-modulo' },
+      expect.objectContaining({ runGit, runPrisma: expect.any(Function) })
+    );
+    // El .sql tiene que entrar en el MISMO commit que el código, o la PR
+    // llegaría al gate técnico sin nada que revisar.
+    expect(orden.indexOf('migracion')).toBeLessThan(orden.indexOf('git:add'));
+  });
+
+  it('si la migración no se puede escribir, el run falla (con su coste) y NO se abre PR', async () => {
+    // Una PR con el modelo en schema.prisma pero sin su .sql devolvería el
+    // paso manual que D2 elimina — y el 500 silencioso en staging.
+    const { service, prisma, projects } = buildService();
+    const agentRunner = vi.fn().mockResolvedValue(successResult);
+    const runGit = vi.fn().mockResolvedValue(okGit);
+    const runGh = vi.fn().mockResolvedValue(okGit);
+    const generateMigration = vi.fn().mockRejectedValue(new Error('prisma migrate diff falló: schema inválido'));
+
+    await expect(service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh, generateMigration })).rejects.toThrow(
+      /no se pudo escribir la migración de "demo-modulo"/
+    );
+
+    expect(prisma.run.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'error', costUsd: 0.02, inputTokens: 500, outputTokens: 800 })
+      })
+    );
+    expect(projects.transition).toHaveBeenCalledWith('proj-1', 'error');
+    expect(runGh).not.toHaveBeenCalled();
+  });
+
+  it('un módulo que no toca el esquema (migración null) sigue adelante con normalidad', async () => {
+    const { service, projects } = buildService();
+    const agentRunner = vi.fn().mockResolvedValue(successResult);
+    const runGit = vi.fn().mockResolvedValue(okGit);
+    const runGh = vi.fn().mockResolvedValue(okGit);
+
+    await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh, generateMigration: sinMigracion() });
+
+    expect(projects.transition).toHaveBeenCalledWith('proj-1', 'verifying');
+  });
+
+  it('un checkout sin el CLI de Prisma falla ANTES de transicionar y sin gastar agente (regla de D-047)', async () => {
+    process.env.PLATFORM_REPO_PATH = fakeCheckout({ conPrisma: false });
+    const { service, prisma, projects } = buildService();
+    const agentRunner = vi.fn().mockResolvedValue(successResult);
+
+    await expect(service.runGeneration('spec-1', {}, { agentRunner })).rejects.toThrow(/CLI de Prisma/);
+    expect(agentRunner).not.toHaveBeenCalled();
+    expect(projects.transition).not.toHaveBeenCalled();
+    expect(prisma.run.create).not.toHaveBeenCalled();
+  });
+
+  it('el system prompt manda las constraints que Prisma no expresa a migration.extra.sql', async () => {
+    const { service } = buildService();
+    const agentRunner = vi.fn().mockResolvedValue(successResult);
+    const runGit = vi.fn().mockResolvedValue(okGit);
+    const runGh = vi.fn().mockResolvedValue(okGit);
+
+    await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh, generateMigration: sinMigracion() });
+
+    const systemPrompt: string = agentRunner.mock.calls[0]?.[0]?.systemPrompt;
+    expect(systemPrompt).toContain('migration.extra.sql');
+    expect(systemPrompt).toContain('PARCIAL');
+    expect(systemPrompt).toContain('D-049');
   });
 
   it('sin PLATFORM_REPO_PATH falla ANTES de transicionar y sin crear Run (D-046 bug 1)', async () => {

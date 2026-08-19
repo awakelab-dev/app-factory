@@ -1,7 +1,8 @@
 # Incremento D — «cero consola»: del prototipo al módulo vivo en staging
 
 > Diseño validado con Leonardo el 2026-08-17 antes de escribir código (patrón D-036/D-047).
-> **D1 está construido y verificado** (D-050). **D2 y D3 están diseñados y aprobados, sin construir.**
+> **D1 está construido y verificado** (D-050). **D2 también** (D-051, 2026-08-18). **D3 sigue
+> diseñado y aprobado, sin construir.**
 > Objetivo: que el ciclo prototipo → módulo funcionando **en staging** no exija una sola orden por
 > terminal. Producción y Fase 3 (A2F) quedan fuera a propósito.
 
@@ -13,8 +14,8 @@
 | `INSERT` de roles + `user_roles` por SQL | B2 | asignar roles **en la UI** | **hecho (D-050)** |
 | `INSERT` de un usuario de plataforma por SQL (para que un gerente entre a staging) | B2 | dar de alta **en la UI** | **hecho (D-050)** |
 | `docker compose logs` por SSH para saber por qué no avanza | B5 | mirar `/factory` | **hecho (D-050)** |
-| Escribir la migración a mano | B3 | revisar el `.sql` **en la PR** | pendiente (D2) |
-| `~/migrate.sh staging latest` por SSH | B3b | nada | pendiente (D2) |
+| Escribir la migración a mano | B3 | revisar el `.sql` **en la PR** | **hecho (D-051)** |
+| `~/migrate.sh staging latest` por SSH | B3b | nada | **hecho (D-051)** |
 | `cli generate <specId>` en el Mac | B4 | nada | pendiente (D3) |
 | Mergear la PR | B6 | **leer el diff** (gate `pr_review`, humano, admin) | pendiente (D3) |
 
@@ -27,7 +28,7 @@ toca: D-049 es la mejor prueba que tenemos de que el gate de PR debe seguir sien
 | Fase | Bloques | Infra nueva | Estado |
 |---|---|---|---|
 | **D1** | 1 (cableado) + 2 (roles) + 5 (visibilidad) | ninguna | **cerrada, D-050** |
-| **D2** | 3 (migración generada y aplicada) | fragmento de `deploy.yml` | diseñada |
+| **D2** | 3 (migración generada y aplicada) | fragmento de `deploy.yml` | **cerrada, D-051** |
 | **D3** | 4 (generación server-side + reintento) + 6 (merge verificado) | +1 servicio, +1 checkout, +1 credencial | diseñada |
 
 Se decidió trocear así (Leonardo, 2026-08-17) para que un fallo de la credencial de git de D3 no
@@ -67,7 +68,7 @@ Tres cosas que conviene no volver a discutir:
 
 ---
 
-## D2 — Migración: generarla en el run, aplicarla en el Deploy (diseñado, sin construir)
+## D2 — Migración: generarla en el run, aplicarla en el Deploy (CONSTRUIDO, D-051)
 
 **3a — Generarla.** Al terminar el agente y **antes** del commit, código nuestro (no el agente)
 ejecuta:
@@ -106,6 +107,38 @@ STATUS. Y la regla «migrar solo tras CI de main verde» deja de ser disciplina 
 
 **Aviso operativo**: `.github/workflows/*` es archivo protegido para el bridge de Cowork
 (`device_commit_files` lo rechaza) — el fragmento se entrega para pegar a mano.
+
+### Lo que salió al construirlo (D-051, 2026-08-18)
+
+El diseño se sostuvo entero; estos son los detalles que no estaban escritos y que conviene no volver
+a averiguar:
+
+- **Dónde vive el código.** `apps/factory/src/pipeline/migration-generator.ts`
+  (`generateMigrationForBranch`) y `prisma-client.ts` (`runPrisma`, hermano de `runGit`/`runGh`). El
+  runner de generación lo llama entre el agente y el commit, y lo **inyecta** como dependencia igual
+  que `runGit`/`runGh` — el mismo patrón de siempre.
+- **El CLI de Prisma se valida al principio, no al final.** `assertPrismaCli(repoPath)` corre en la
+  primera línea de `runGeneration`, antes de transicionar y antes de gastar agente (regla de D-047).
+  Vive aparte de `assertRunnerEnv` a propósito: el worker de ANÁLISIS no tiene `node_modules` en su
+  checkout y exigirle Prisma lo rompería en producción. El binario es
+  `apps/api/node_modules/.bin/prisma` — con pnpm no existe en la raíz.
+- **Si la migración no se puede escribir, el run falla** (con su coste registrado) y no se abre PR.
+  Una PR con el modelo en `schema.prisma` pero sin su `.sql` es justo el paso manual que D2 elimina.
+- **La limpieza de la regeneración compara CARPETAS, no `git diff`.** Si el push de la vuelta anterior
+  falló, su carpeta está sin commitear y `git diff origin/main` no la vería: quedarían dos migraciones
+  apiladas en la misma PR.
+- **`_change<n>` se cuenta con una expresión exacta**, no con `startsWith`: el guion bajo separa
+  también las palabras del slug, así que `reservas` contaría las migraciones de `reservas_vip`.
+- **Los avisos de Prisma 7 van a stderr, no a stdout** (verificado en el sandbox), así que no
+  contaminan el `.sql`. El filtro de líneas se dejó igualmente: si algún día se mueven de stream,
+  el síntoma sería `migrate deploy` fallando con un error de sintaxis en el primer despliegue.
+- **Residual honesto**: la invocación real de `prisma migrate diff` **no se pudo ejercitar** en el
+  sandbox — el schema engine nativo se descarga de `binaries.prisma.sh`, que devuelve 403 a través del
+  proxy (y también desde la VM del bridge, que es linux-arm64 mientras el `node_modules` del Mac es
+  darwin). Se verificó todo lo demás de verdad (git real, fs real, `execFile` real contra un CLI stub
+  que imprime lo que el real, y el `.sql` resultante aplicado sobre la cadena completa de migraciones
+  en un PostgreSQL de verdad). **Queda un smoke test en el Mac**: un `generate` cuya spec toque el
+  esquema, comprobando que la carpeta de migración aparece en la PR.
 
 ---
 

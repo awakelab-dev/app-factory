@@ -25,7 +25,15 @@ describe('descubrimiento de módulos de negocio (src/modules/<slug>/<slug>.modul
     expect(entries.map((entry) => entry.slug)).toContain('reserva-salas');
   });
 
-  it('carga un @Module por carpeta, sin problemas — incluido reserva-salas, el último generado', async () => {
+  // Timeout generoso a propósito: este test hace `import()` de TODOS los
+  // módulos de negocio, y cada uno arrastra Nest + el cliente Prisma por el
+  // transform de vitest. Verificado en el sandbox (2026-08-18): en aislado
+  // tarda ~5,0 s y con los 6 paquetes del monorepo corriendo a la vez, 5,055 s
+  // — contra el límite por defecto de 5 s. Es decir: estaba a un runner lento
+  // de tumbar la CI sin que el código tuviera nada que ver, justo el
+  // diagnóstico equivocado que costó tiempo en D1. Y el coste crece con cada
+  // módulo generado, así que el margen es amplio.
+  it('carga un @Module por carpeta, sin problemas — incluido reserva-salas, el último generado', { timeout: 30_000 }, async () => {
     const { modules, issues } = await discoverBusinessModules(__dirname);
     expect(issues).toEqual([]);
     expect(modules).toHaveLength(listModuleEntries(__dirname).length);

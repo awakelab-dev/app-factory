@@ -4,6 +4,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { runAgent, toUsageFields, type AgentRunResult, type AgentUsage } from './agent-sdk.client';
 import { GatesService } from './gates.service';
 import { runGh, runGit } from './git-client';
+import { generateMigrationForBranch, EXTRA_SQL_FILENAME } from './migration-generator';
+import { assertPrismaCli, runPrisma } from './prisma-client';
 import { ProjectsService } from './projects.service';
 import { assertRunnerEnv } from './runner-env';
 import type { GateType } from './types';
@@ -32,6 +34,9 @@ export interface GenerationRunnerDeps {
   agentRunner?: typeof runAgent;
   runGit?: typeof runGit;
   runGh?: typeof runGh;
+  runPrisma?: typeof runPrisma;
+  /** Inyectable solo para los tests (evita ejecutar git/prisma de verdad). */
+  generateMigration?: typeof generateMigrationForBranch;
 }
 
 /**
@@ -64,10 +69,16 @@ export class GenerationRunnerService {
   async runGeneration(specId: string, options: GenerationOptions = {}, deps: GenerationRunnerDeps = {}) {
     // Entorno completo ANTES de tocar estado, igual que en el runner de
     // análisis (D-046 bug 1 — "revisar también el runner de generación").
-    assertRunnerEnv();
+    const { repoPath } = assertRunnerEnv();
+    // D2: la generación escribe la migración con el CLI de Prisma del checkout.
+    // Se comprueba AQUÍ, antes de transicionar y antes de gastar un agente
+    // (misma regla de D-047 que motivó assertRunnerEnv).
+    assertPrismaCli(repoPath);
     const agentRunner = deps.agentRunner ?? runAgent;
     const gitRunner = deps.runGit ?? runGit;
     const ghRunner = deps.runGh ?? runGh;
+    const prismaRunner = deps.runPrisma ?? runPrisma;
+    const migrationGenerator = deps.generateMigration ?? generateMigrationForBranch;
 
     const spec = await this.prisma.spec.findUnique({
       where: { id: specId },
@@ -179,6 +190,39 @@ export class GenerationRunnerService {
     if (!result.success) {
       // Con el consumo: un run caído gastó igual (D-046, hueco (a)).
       return this.fail(run.id, project.id, result.errorMessage ?? 'El run de generación no tuvo éxito.', result);
+    }
+
+    // Migración: DESPUÉS del agente y ANTES del commit, para que el .sql entre
+    // en la misma PR y se revise en el gate técnico (incremento D, bloque 3a).
+    try {
+      const migration = await migrationGenerator(
+        { repoPath, moduleSlug: project.moduleSlug },
+        { runGit: gitRunner, runPrisma: prismaRunner }
+      );
+      if (migration) {
+        this.logger.log(
+          `Migración generada para "${project.moduleSlug}": ${migration.dirName}` +
+            ` (base ${migration.baseSha.slice(0, 7)}` +
+            `${migration.includesExtraSql ? `, con ${EXTRA_SQL_FILENAME}` : ''})` +
+            (migration.removedDirs.length > 0
+              ? `. Reescrita sobre la vuelta anterior de esta rama: ${migration.removedDirs.join(', ')}`
+              : '')
+        );
+      } else {
+        this.logger.log(`Sin cambios de esquema para "${project.moduleSlug}": no se genera migración.`);
+      }
+    } catch (error) {
+      // Falla el run entero a propósito. Una PR con el modelo en schema.prisma
+      // pero sin su .sql es justo el paso manual que D2 elimina: dejarlo pasar
+      // devolvería el "500 silencioso en staging" que STATUS documenta dos veces.
+      return this.fail(
+        run.id,
+        project.id,
+        `El código se generó pero no se pudo escribir la migración de "${project.moduleSlug}": ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        result
+      );
     }
 
     const prUrl = await this.tryOpenPullRequest(
@@ -358,6 +402,22 @@ apps/web/src/modules/<slug>/index.tsx por el hecho de existir. Respeta esos dos
 nombres de archivo y el módulo queda enchufado; no edites app.module.ts ni
 registry.ts (no hace falta, y no puedes), y no dejes notas diciendo que el
 cableado queda pendiente.
+
+La MIGRACIÓN no la escribes tú (incremento D, D2): al terminar, código nuestro
+corre "prisma migrate diff" entre el schema.prisma de origin/main y el que dejes
+tú, y escribe apps/api/prisma/migrations/<timestamp>_<slug>/migration.sql. Tu
+parte es declarar el modelo en schema.prisma y nada más; no crees carpetas de
+migración (no puedes) ni dejes SQL suelto en tu módulo "para que alguien lo
+aplique".
+
+EXCEPCIÓN, y es importante: toda constraint que la spec pida y Prisma NO sepa
+declarar —índice único PARCIAL (con WHERE), CHECK, exclusion constraint— va en
+apps/api/src/modules/<slug>/${EXTRA_SQL_FILENAME}, dentro de tu carpeta. Nuestro
+código lo añade al final del migration.sql generado. Un índice único normal NO
+sustituye a un único parcial: si la spec dice "un solo X activo por Y", el
+@@unique de Prisma prohíbe también los inactivos y cambia la regla de negocio
+(pasó de verdad en reserva-salas, D-049, y lo cazó la revisión humana). Escribe
+ahí el SQL completo y ejecutable, con un comentario que diga qué regla implementa.
 
 Reglas estrictas:
 - SOLO puedes escribir dentro de apps/api/src/modules/<slug>/,

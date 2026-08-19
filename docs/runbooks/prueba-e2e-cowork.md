@@ -84,7 +84,11 @@ El gerente decide `functional` y `manager_acceptance`; los gates `technical` y `
 pnpm --filter=@awk/factory run cli -- decide-gate <gateIdTecnico> approved --notes "..."
 pnpm --filter=@awk/factory run cli -- generate <specId>
 ```
-Abre rama `factory/<slug>` y PR. Revisión de PR según docs/05 (si hay desviación: **no parchear a mano** — enmendar la nota del gate y regenerar). Luego merge, migración a mano si el módulo trae modelos nuevos, y deploy de staging.
+Abre rama `factory/<slug>` y PR **con su migración ya dentro** (D-051: la escribe el propio run con
+`prisma migrate diff`, no un humano). Revisión de PR según docs/05 — ahora incluye **leer el `.sql`**,
+que es lo que queda de trabajo humano aquí; si hay desviación, **no parchear a mano**: enmendar la nota
+del gate y regenerar, que la migración se reescribe sola (una por PR, sin apilar). Tras el merge, el
+deploy de staging aplica las migraciones antes de levantar el código nuevo — sin SSH.
 
 ## 6. Validación del usuario en staging + aceptación
 
@@ -123,7 +127,8 @@ chat → generación incremental sobre el módulo vivo.
 | Brecha | Impacto | Estado |
 |---|---|---|
 | ~~Análisis manual por CLI tras `submit_prototype`~~ | ~~El usuario espera a Sistemas en cada envío~~ | **CERRADA** por D-047 (incremento C): se encola y corre sola |
-| `generate` sigue siendo manual | Tras aprobar los gates, el usuario espera a Sistemas para que el código se escriba | Fuera del alcance de C (necesita toolchain de build y credenciales de git en el runner) |
+| ~~Escribir la migración a mano tras el merge~~ | ~~Un módulo con modelos nuevos no funciona en staging hasta que alguien redacta y aplica el SQL~~ | **CERRADA** por D-051 (D2): se genera dentro del run y el Deploy la aplica |
+| `generate` sigue siendo manual | Tras aprobar los gates, el usuario espera a Sistemas para que el código se escriba | **Único paso de consola que queda.** Diseñado en docs/09 (**D3**): necesita toolchain de build y credencial de git con push en un worker propio |
 | AS OAuth solo en staging | El conector de producción no existe aún | Replicar deploy a producción |
 | `FACTORY_OAUTH_JWKS` sin clave RSA persistente | Se genera una RSA efímera en cada reinicio (warning en el log) | Regenerar con `cli oauth-genkeys` y actualizar `.env` |
 | Sin A2F ni rate limiting en el login del AS | Riesgo de fuerza bruta | **Fase 3** de docs/08 |
@@ -152,8 +157,18 @@ Ejecutada con el caso **`incidencias-aula`** (proyecto `019ffa2c-eb45-70c4-a6a0-
 >   (en cola / en curso / fallido, con intentos, worker y motivo) está en el detalle del proyecto en
 >   `/factory` y en `get_project_status` desde el chat.
 >
-> Siguen exigiendo consola, con diseño ya validado en `docs/09-incremento-d-cero-consola.md`: escribir
-> y aplicar la migración (**D2**) y lanzar `generate` (**D3**).
+> **Actualización 2026-08-18 (D-051, fase D2) — dos pasos más que YA NO EXISTEN:**
+> - **Escribir la migración a mano.** El run de generación la produce con `prisma migrate diff` entre
+>   el `schema.prisma` de `origin/main` y el que dejó el agente, y la commitea en la misma PR. Lo que
+>   queda es **leerla en la revisión de PR**. Las constraints que Prisma no sabe declarar (índice único
+>   parcial, CHECK, exclusion) las escribe el agente en
+>   `apps/api/src/modules/<slug>/migration.extra.sql` y se anexan al final del `.sql` generado.
+> - **`~/migrate.sh staging latest` por SSH.** El job de staging de `deploy.yml` corre las dos
+>   migraciones (plataforma y Fábrica) entre el `pull` y el `up -d`. Si una falla, el deploy se rompe
+>   en ROJO en vez de dejar la API sirviendo 500 contra un esquema viejo.
+>
+> Sigue exigiendo consola, con diseño ya validado en `docs/09-incremento-d-cero-consola.md`: lanzar
+> `generate` (**D3**), que es ya el único paso del ciclo que necesita a Sistemas en una terminal.
 
 **Hallazgos** (detalle en D-046):
 
