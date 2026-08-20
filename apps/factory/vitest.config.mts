@@ -9,6 +9,14 @@ export default defineConfig({
       module: { type: 'es6' }
     })
   ],
+  // `oxc: false` desde vitest 4: `unplugin-swc` pone `esbuild: false` por dentro
+  // y vitest ya no lo respeta ("`esbuild: false` does not have effect any more"),
+  // porque la transformación por defecto la hace Oxc. Hoy no rompe nada —los
+  // e2e levantan Nest con DI real y pasan, así que swc sigue transformando
+  // primero— pero Oxc tampoco soporta `emitDecoratorMetadata`, que es la única
+  // razón de ser de este archivo. Se declara explícito para que la garantía no
+  // dependa del orden de los plugins, y de paso desaparece el aviso de cada run.
+  oxc: false,
   test: {
     environment: 'node',
     include: ['src/**/*.spec.ts']

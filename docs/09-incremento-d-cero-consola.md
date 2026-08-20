@@ -75,12 +75,20 @@ ejecuta:
 
 ```
 prisma migrate diff \
-  --from-schema-datamodel <schema.prisma de origin/main, a un temporal> \
-  --to-schema-datamodel   apps/api/prisma/schema.prisma \
+  --from-schema <schema.prisma de origin/main, a un temporal> \
+  --to-schema   apps/api/prisma/schema.prisma \
   --script
 ```
 
-Datamodel → datamodel **no necesita shadow database ni conexión**: por eso esta forma y no
+> **Corrección del 2026-08-20 (smoke test en el Mac).** El diseño decía
+> `--from-schema-datamodel`/`--to-schema-datamodel`: esos flags **fueron eliminados en Prisma 7** y el
+> CLI responde `` `--from-schema-datamodel` was removed. Please use `--[from/to]-schema` instead ``.
+> Los buenos son `--from-schema`/`--to-schema`, que según el propio help *"uses the datamodel for the
+> diff"* — misma semántica, sin shadow DB. **La idea del diseño se sostiene; solo cambió el nombre.**
+> No salió antes porque en el sandbox de Cowork `prisma migrate *` no se puede correr (403 al bajar el
+> schema engine), y por eso este smoke test era el paso 0 obligatorio.
+
+Schema → schema (datamodel) **no necesita shadow database ni conexión**: por eso esta forma y no
 `--from-migrations` (que sí exige una BD viva; el runner no tiene ruta a la managed PG). El "antes"
 sale de `git show origin/main:apps/api/prisma/schema.prisma`, que es la base de la rama.
 
@@ -132,13 +140,18 @@ a averiguar:
 - **Los avisos de Prisma 7 van a stderr, no a stdout** (verificado en el sandbox), así que no
   contaminan el `.sql`. El filtro de líneas se dejó igualmente: si algún día se mueven de stream,
   el síntoma sería `migrate deploy` fallando con un error de sintaxis en el primer despliegue.
-- **Residual honesto**: la invocación real de `prisma migrate diff` **no se pudo ejercitar** en el
-  sandbox — el schema engine nativo se descarga de `binaries.prisma.sh`, que devuelve 403 a través del
-  proxy (y también desde la VM del bridge, que es linux-arm64 mientras el `node_modules` del Mac es
-  darwin). Se verificó todo lo demás de verdad (git real, fs real, `execFile` real contra un CLI stub
-  que imprime lo que el real, y el `.sql` resultante aplicado sobre la cadena completa de migraciones
-  en un PostgreSQL de verdad). **Queda un smoke test en el Mac**: un `generate` cuya spec toque el
-  esquema, comprobando que la carpeta de migración aparece en la PR.
+- **El residual, y lo que encontró (2026-08-20, CERRADO).** La invocación real de
+  `prisma migrate diff` no se pudo ejercitar en el sandbox — el schema engine nativo se descarga de
+  `binaries.prisma.sh`, que devuelve 403 a través del proxy (y también desde la VM del bridge, que es
+  linux-arm64 mientras el `node_modules` del Mac es darwin). Todo lo demás se verificó de verdad (git
+  real, fs real, `execFile` real contra un CLI stub que imprime lo que el real, y el `.sql` resultante
+  aplicado sobre la cadena completa de migraciones en un PostgreSQL de verdad). **El smoke test en el
+  Mac encontró el único bug que quedaba**: los flags del diseño estaban eliminados en Prisma 7 (ver la
+  corrección arriba). Tres comandos, coste cero, y justo donde el residual decía que estaba el riesgo.
+  Se hizo así y no gastando un `generate` porque los cuatro proyectos estaban en `manager_acceptance`,
+  ninguno con spec aprobada esperando: un run habría costado ~8 USD para un diff vacío que no probaba
+  nada. **Lo que sigue pendiente de ver en vivo** es el ejercicio completo agente → migración → PR, y
+  llega solo con el próximo módulo que se genere.
 
 ---
 

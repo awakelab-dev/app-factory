@@ -48,11 +48,17 @@ export interface GeneratedMigration {
  * `migration.extra.sql`); el `.sql` aplicable lo escribe esta función y entra en
  * la PR, donde se revisa en el gate técnico.
  *
- * **Por qué datamodel → datamodel**: `prisma migrate diff` con
- * `--from-schema-datamodel` / `--to-schema-datamodel` compara dos archivos de
- * esquema y no necesita ni shadow database ni conexión. La alternativa
- * (`--from-migrations`) exige una BD viva, y el runner no tiene ruta a la
- * managed PostgreSQL (es privada, docs/runbooks/lightsail-postgres.md).
+ * **Por qué datamodel → datamodel**: `prisma migrate diff` con `--from-schema`
+ * / `--to-schema` compara dos ARCHIVOS de esquema ("uses the datamodel for the
+ * diff", dice el help) y no necesita ni shadow database ni conexión. La
+ * alternativa (`--from-migrations`) exige una BD viva, y el runner no tiene
+ * ruta a la managed PostgreSQL (es privada, docs/runbooks/lightsail-postgres.md).
+ *
+ * **Nombre de los flags (Prisma 7.8, comprobado en el Mac el 2026-08-20)**: son
+ * `--from-schema`/`--to-schema`. Los `--from-schema-datamodel`/
+ * `--to-schema-datamodel` que trae el diseño de docs/09 **fueron eliminados** en
+ * Prisma 7 y el CLI falla con "`--from-schema-datamodel` was removed". El
+ * comportamiento es el mismo; solo cambió el nombre.
  *
  * Devuelve `null` cuando no hay nada que migrar (un módulo puede ser solo de
  * lectura sobre modelos que ya existen, o un cambio puede no tocar el esquema).
@@ -95,9 +101,9 @@ export async function generateMigrationForBranch(
       [
         'migrate',
         'diff',
-        '--from-schema-datamodel',
+        '--from-schema',
         basePath,
-        '--to-schema-datamodel',
+        '--to-schema',
         join(repoPath, SCHEMA_REL),
         '--script'
       ],

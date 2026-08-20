@@ -19,8 +19,9 @@
 > Si está vacía, no hay nada pendiente de manos humanas. **Todos los comandos se pegan desde la raíz
 > del repo** (`cd ~/projects/app-factory`).
 
-**Estado: 6 pasos pendientes de D2 (D-051, 2026-08-18).** El código ya está en el repo sin commitear;
-los dos workflows no, porque el bridge de Cowork no puede escribir `.github/workflows/*`.
+**Estado (2026-08-20): pasos 1-7 EJECUTADOS Y VERDES.** El smoke test del paso 7 encontró un bug de
+flags de Prisma 7, ya corregido — **hay que recommitear** (`migration-generator.ts` y su spec) y
+volver a pasar por los pasos 3-5. Los pasos 1, 2 y 6 no hay que repetirlos.
 
 ### Paso 1 — Poner los dos workflows en su sitio
 
@@ -108,38 +109,59 @@ Se espera ver la salida de las dos migraciones (`Migración (staging @ latest) c
 o `No pending migrations to apply` si no había ninguna nueva). Si el job salió en rojo justo ahí, es
 `set -euo pipefail` haciendo su trabajo: el error de la migración está en ese mismo log.
 
-### Paso 7 — SMOKE TEST pendiente: `prisma migrate diff` de verdad
+### Paso 7 — SMOKE TEST: HECHO, y encontró un bug (2026-08-20)
 
-Es lo único de D2 que **nunca ha corrido**: en el sandbox de Cowork no se puede (403 al descargar el
-schema engine de Prisma). Basta un `generate` cuya spec toque el esquema.
+Era lo único de D2 que nunca había corrido (en el sandbox de Cowork `prisma migrate *` no se puede:
+403 al bajar el schema engine). **Encontró el bug**: los flags `--from-schema-datamodel` /
+`--to-schema-datamodel` que traía el diseño **fueron eliminados en Prisma 7**; el CLI responde
+`` `--from-schema-datamodel` was removed. Please use `--[from/to]-schema` instead ``. Ya está corregido
+en `apps/factory/src/pipeline/migration-generator.ts` y fijado en su test.
 
-Primero, elegir el proyecto. **No hay `list-projects` en el CLI** (solo `status <projectId>`): la
-lista está en `https://staging.apps.awakelab.world/factory`, o en el chat de Cowork preguntando
-"¿cómo van mis proyectos?" (`list_projects`). Busca uno con `functional` y `technical` aprobados y
-cuyo cambio añada o modifique modelos.
-
-Con ese `projectId`, saca el `specId`:
+Para volver a comprobarlo (o cuando se suba de versión de Prisma), el comando exacto:
 
 ```bash
-cd ~/projects/app-factory && pnpm --filter=@awk/factory run cli -- status <projectId>
+cd ~/projects/app-factory && \
+git show origin/main:apps/api/prisma/schema.prisma > /tmp/base.prisma && \
+cp /tmp/base.prisma /tmp/nuevo.prisma && \
+cat >> /tmp/nuevo.prisma <<'EOF'
+
+model SmokeTestD2 {
+  id   String @id @default(uuid(7)) @db.Uuid
+  nota String
+
+  @@map("smoke_test_d2")
+  @@schema("core")
+}
+EOF
+cd ~/projects/app-factory/apps/api && node_modules/.bin/prisma migrate diff \
+  --from-schema /tmp/base.prisma \
+  --to-schema   /tmp/nuevo.prisma \
+  --script
 ```
 
-Copia el campo `id` de la última spec y lanza la generación:
+Se espera SQL con esta forma (y **nada** de `Loaded Prisma config…` en stdout — ese aviso va a stderr):
+
+```
+-- CreateTable
+CREATE TABLE "core"."smoke_test_d2" (
+    "id" UUID NOT NULL,
+    "nota" TEXT NOT NULL,
+
+    CONSTRAINT "SmokeTestD2_pkey" PRIMARY KEY ("id")
+);
+```
+
+Limpieza de los temporales:
 
 ```bash
-cd ~/projects/app-factory && pnpm --filter=@awk/factory run cli -- generate <specId>
+rm -f /tmp/base.prisma /tmp/nuevo.prisma && echo "temporales borrados"
 ```
 
-Se espera, en el log del run: `Migración generada para "<slug>": <timestamp>_<slug> (base <sha>)`.
-Y en el repo, la carpeta nueva:
-
-```bash
-cd ~/projects/app-factory && git status --short apps/api/prisma/migrations/
-```
-
-Si en cambio sale `El código se generó pero no se pudo escribir la migración de "<slug>"`, el mensaje
-lleva el error exacto de `prisma migrate diff` (stderr incluido): eso es lo que hay que arreglar antes
-de empezar D3.
+> **Lo que queda por ver en vivo** es el ejercicio completo (agente → migración → PR), y llega solo con
+> el próximo módulo que se genere: buscar en el log del run la línea
+> `Migración generada para "<slug>": <timestamp>_<slug> (base <sha>)` y comprobar que la carpeta
+> aparece en la PR. Si sale `El código se generó pero no se pudo escribir la migración`, el mensaje
+> trae el error exacto de `prisma migrate diff` con su stderr.
 
 ### Paso 8 — Limpieza
 
@@ -154,7 +176,7 @@ cd ~/projects/app-factory && rm -rf _to_delete _entrega-d2 && echo "limpio"
 
 ## Hecho
 
-- **Incremento D, fase D2 (D-051) — CONSTRUIDO Y VERIFICADO**: la migración de un módulo se **genera dentro del run** (`apps/factory/src/pipeline/migration-generator.ts` → `prisma migrate diff --from-schema-datamodel <origin/main> --to-schema-datamodel <rama> --script`, sin shadow DB ni conexión) y se **aplica en el Deploy** (job `staging` de `deploy.yml`: `~/migrate.sh` + `~/migrate-factory.sh` entre `pull` y `up -d`, con `set -euo pipefail` para romper en rojo). Una migración por PR (regeneración: borra y reescribe; `request_change`: `_change<n>`). `apps/api/src/modules/<slug>/migration.extra.sql` para las constraints que Prisma no expresa, anexadas al final con comentario de procedencia, con la regla en el system prompt de generación. `assertPrismaCli` valida el CLI en la primera línea del runner (regla de D-047) y **fuera** de `assertRunnerEnv`, que lo comparte el worker de análisis, cuyo checkout no tiene `node_modules`. Si la migración falla, el run falla con su coste y sin PR. Verificado con PostgreSQL real (cadena completa + la generada con `psql -v ON_ERROR_STOP=1`, y el índice único parcial rechazando el segundo turno activo y admitiendo dos cancelados). **Residual**: la invocación real de `prisma migrate diff` no se pudo ejercitar en el sandbox (403 en `binaries.prisma.sh` desde el contenedor y desde la VM del bridge) → queda un smoke test en el Mac con un `generate` que toque el esquema. **A pegar a mano**: `.github/workflows/deploy.yml` y `.github/workflows/ci.yml` son archivos protegidos para el bridge de Cowork.
+- **Incremento D, fase D2 (D-051) — CONSTRUIDO Y VERIFICADO**: la migración de un módulo se **genera dentro del run** (`apps/factory/src/pipeline/migration-generator.ts` → `prisma migrate diff --from-schema <origin/main> --to-schema <rama> --script`, sin shadow DB ni conexión) y se **aplica en el Deploy** (job `staging` de `deploy.yml`: `~/migrate.sh` + `~/migrate-factory.sh` entre `pull` y `up -d`, con `set -euo pipefail` para romper en rojo). Una migración por PR (regeneración: borra y reescribe; `request_change`: `_change<n>`). `apps/api/src/modules/<slug>/migration.extra.sql` para las constraints que Prisma no expresa, anexadas al final con comentario de procedencia, con la regla en el system prompt de generación. `assertPrismaCli` valida el CLI en la primera línea del runner (regla de D-047) y **fuera** de `assertRunnerEnv`, que lo comparte el worker de análisis, cuyo checkout no tiene `node_modules`. Si la migración falla, el run falla con su coste y sin PR. Verificado con PostgreSQL real (cadena completa + la generada con `psql -v ON_ERROR_STOP=1`, y el índice único parcial rechazando el segundo turno activo y admitiendo dos cancelados). **Residual CERRADO el 2026-08-20**: el smoke test en el Mac (3 comandos, coste cero) destapó que los flags `--from-schema-datamodel`/`--to-schema-datamodel` del diseño **fueron eliminados en Prisma 7** — son `--from-schema`/`--to-schema`. Corregido y fijado en test. **A pegar a mano**: `.github/workflows/deploy.yml` y `.github/workflows/ci.yml` son archivos protegidos para el bridge de Cowork.
 - **`reserva-salas` (D-049)**: primer módulo del catálogo nacido del análisis automático — prototipo desde el chat, análisis solo, gates, PR, integración y validado en staging. En `manager_acceptance`.
 - **Incremento C de Fase 2 (D-047) — CONSTRUIDO, DESPLEGADO Y VALIDADO EN STAGING (D-048)**: análisis server-side automático en los dos caminos (`submit_prototype` y `request_change`), cola `analysis_jobs` + worker `factory-runner` corriendo en el Lightsail, validación de entorno antes de tocar estado (bug 1 de D-046) y coste/tokens en los runs fallidos — esto último verificado en producción con un corte real de la API. Humo end-to-end: `reserva-salas` analizado solo en 2m18s y generado hasta PR #7.
 - Estrategia completa documentada y aprobada (`docs/01..06`).

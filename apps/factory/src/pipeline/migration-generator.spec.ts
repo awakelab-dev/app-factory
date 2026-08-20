@@ -79,9 +79,16 @@ describe('generateMigrationForBranch (incremento D, bloque 3a)', () => {
     expect(leerSql(`${STAMP}_reserva_salas`)).toBe(`${DIFF}\n`);
   });
 
-  it('compara datamodel contra datamodel (sin shadow DB) y corre el CLI desde apps/api', async () => {
+  it('usa --from-schema/--to-schema (Prisma 7) contra dos archivos, sin shadow DB', async () => {
     // Es el corazón del diseño: --from-migrations exigiría una BD viva y el
     // runner no tiene ruta a la managed PostgreSQL (es privada).
+    //
+    // Los nombres de flag son parte del contrato con el CLI, y este test es lo
+    // que los fija: en Prisma 7 desaparecieron `--from-schema-datamodel` y
+    // `--to-schema-datamodel` (el CLI responde "was removed"). El smoke test en
+    // el Mac lo destapó el 2026-08-20, después de que el diseño de docs/09 los
+    // diera por buenos — el sandbox no puede correr `migrate diff` y por eso no
+    // salió antes.
     const runGit = fakeGit();
     const runPrisma = fakePrisma(DIFF);
 
@@ -91,9 +98,9 @@ describe('generateMigrationForBranch (incremento D, bloque 3a)', () => {
     expect(args.slice(0, 2)).toEqual(['migrate', 'diff']);
     expect(args).toContain('--script');
     expect(args).not.toContain('--from-migrations');
-    expect(args[args.indexOf('--to-schema-datamodel') + 1]).toBe(join(repo, 'apps/api/prisma/schema.prisma'));
+    expect(args[args.indexOf('--to-schema') + 1]).toBe(join(repo, 'apps/api/prisma/schema.prisma'));
     // El "antes" sale de origin/main a un temporal, no del disco de la rama.
-    const fromPath = args[args.indexOf('--from-schema-datamodel') + 1] as string;
+    const fromPath = args[args.indexOf('--from-schema') + 1] as string;
     expect(fromPath.startsWith(repo)).toBe(false);
     expect(runGit).toHaveBeenCalledWith(['show', 'origin/main:apps/api/prisma/schema.prisma'], repo);
     // El cwd correcto (apps/api, donde vive prisma.config.ts) lo resuelve
@@ -105,7 +112,7 @@ describe('generateMigrationForBranch (incremento D, bloque 3a)', () => {
     const runGit = fakeGit();
     let fromPath = '';
     const runPrisma = vi.fn(async (args: string[]): Promise<GitCommandResult> => {
-      fromPath = args[args.indexOf('--from-schema-datamodel') + 1] as string;
+      fromPath = args[args.indexOf('--from-schema') + 1] as string;
       expect(existsSync(fromPath)).toBe(true);
       return { stdout: DIFF, stderr: '' };
     });
