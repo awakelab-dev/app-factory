@@ -14,3 +14,13 @@ coverage/
 apps/api/src/generated/
 apps/factory/src/generated/
 prototipos/
+
+# Andamiaje de las tareas de Cowork, nunca versionable (D-051, 2026-08-20).
+# `_entrega-*/`: archivos que el bridge no puede escribir en su destino final
+# (`.github/workflows/*`) y se dejan aquí para copiarlos a mano.
+# `_to_delete/`: lo que hay que borrar y el bridge no puede (`rm` está prohibido
+# en el mount, así que se mueve aquí y lo borra Leonardo).
+# Se ignoran porque el commit de D2 se los llevó a `main` —incluido un .tgz de
+# 928 KB— por dejar la limpieza DESPUÉS del commit en el guion.
+_entrega-*/
+_to_delete/
