@@ -4,6 +4,8 @@
 
 **Última actualización**: 2026-08-20 (**INCREMENTO D, FASE D2 CERRADA Y VERIFICADA: «cero SQL a mano y cero SSH para migrar» (D-051)**. La migración de un módulo la **escribe el propio run de generación** con `prisma migrate diff` entre el `schema.prisma` de `origin/main` y el que deja el agente, y entra en la MISMA PR —revisable en el gate técnico— sin que el agente gane ni un permiso: `apps/api/prisma/migrations/` sigue fuera de su guardarraíl. Una migración por PR: en una regeneración se borra la de la vuelta anterior y se reescribe; en un `request_change` sobre un módulo ya en `main` el diff es solo el delta y la carpeta se llama `_change<n>`. Lo que Prisma no sabe declarar —índice único PARCIAL, CHECK, exclusion— lo escribe el agente en `apps/api/src/modules/<slug>/migration.extra.sql` y nuestro código lo anexa al final con su comentario de procedencia: cierra el hallazgo de D-049 sin ampliar el guardarraíl. **Y el Deploy la aplica**: el job `staging` corre `~/migrate.sh` y `~/migrate-factory.sh` entre el `pull` y el `up -d`, con `set -euo pipefail`, así que un fallo de migración **rompe el deploy en ROJO** en vez de dejar código nuevo contra un esquema viejo — el 500 silencioso documentado dos veces aquí abajo. Si la migración no se puede escribir, el run falla con su coste registrado y NO se abre PR: no hay modo degradado, porque una PR sin su `.sql` es justo el paso manual que D2 elimina. **Tras D2 el único paso del ciclo que sigue exigiendo consola es `generate`** — eso es D3, ya diseñado en `docs/09-incremento-d-cero-consola.md`.)
 
+**PRISMA 7.9.1 EN STAGING el 2026-08-21 (D-052)**: subida decidida por Leonardo para absorber el salto con D2 recién cerrada en vez de arrastrarlo a después de D3. Verificada en las tres capas que importan: el **contrato de flags** leyendo el bundle del CLI (`--from-schema`/`--to-schema` siguen siendo los buenos; los `-datamodel` solo quedan para emitir el «was removed»), el **`migrate diff` real en el Mac** con su SQL correcto, y el **`migrate deploy` real** en la CI y en el Deploy contra el `_prisma_migrations` de las dos bases (`9 migrations found` / `5 migrations found`, `No pending migrations to apply`). **El código de D-051 no necesitó ni un cambio.** `origin/main` en `11aa2d2`. Turbo (2.10.11) y pnpm (11.22.0) se dejaron sin subir a propósito: una herramienta a la vez, o el diagnóstico de un Deploy rojo se vuelve ambiguo.
+
 **DESPLEGADO EN STAGING el 2026-08-20**: CI y Deploy en verde a la primera, y el bloque 3b **verificado en el log del Deploy real**: los dos migrators bajaron su imagen y corrieron (`9 migrations found` en la BD de plataforma, `5 migrations found` en la de la Fábrica, `No pending migrations to apply` en ambas — correcto, D2 no añadió migraciones nuevas). **El smoke test de `prisma migrate diff` encontró el único bug que quedaba**: los flags `--from-schema-datamodel`/`--to-schema-datamodel` del diseño fueron ELIMINADOS en Prisma 7 y hay que usar `--from-schema`/`--to-schema` (misma semántica, sin shadow DB). Corregido y **fijado en un test** para que un renombrado futuro salga en la CI y no en producción. Tres comandos y coste cero: exactamente donde el residual de verificación decía que estaba el riesgo. De paso: `oxc: false` explícito en los dos `vitest.config.mts` (vitest 4 ya no respeta el `esbuild: false` que pone `unplugin-swc`, y Oxc tampoco soporta `emitDecoratorMetadata`, que es la única razón de ser de esos archivos). **Tras D2, el único paso del ciclo que sigue exigiendo terminal es `generate` — eso es D3.**
 
 **Sesión anterior (2026-08-17, D-050, contexto)**: **INCREMENTO D, FASE D1 CERRADA Y VERIFICADA: «cero cableado y cero SQL»**. Los módulos generados **se registran solos** en api y web —descubrimiento por carpeta, sin tocar `app.module.ts` ni `registry.ts`, sin ampliar el guardarraíl—, los roles que declaran **se siembran al arrancar la API** desde sus propios `@Roles()` y **se asignan desde `/admin/usuarios`** (auditado, con aviso de re-login porque viajan en el JWT), y la **cola de la Fábrica se ve en `/factory` y en el chat** (estado, intentos, worker, motivo del fallo) en vez de en `docker compose logs` por SSH. Con esto **el «commit de integración» pierde su primera mitad y el SQL de roles desaparece**. Verificado fuera del mount: 25/25 tareas de turbo en verde (`@awk/api` 245 tests, `@awk/web` 126, `@awk/factory` 160) **más una integración contra un Postgres 16 real** (cadena completa de las 9 migraciones + arranque de la app: siembra exactamente los 8 roles, con `empleado` y `recepcion` —los que en D-049 hubo que crear a mano— descritos desde `ReservaSalasController`; y asignar/reducir/vaciar roles deja sus tres filas de auditoría). Sin dependencias npm nuevas y sin migración de BD. **HALLAZGO DEL DISEÑO**: la portada de la plataforma no podía seguir siendo «el primer módulo del menú» — con descubrimiento alfabético cambiaría sola el día que la Fábrica genere un módulo que ordene antes; ahora se declara (`DEFAULT_HOME_MODULE_ID`). **LECCIÓN GENERAL**: `require` extensionless resuelve `.js` en `dist/` pero NO `.ts` bajo vitest, así que un descubrimiento con `require` no se puede ejercitar en los tests — que es justo donde debe saltar el fallo; se usa `import()`, y el módulo raíz pasa a construirse con `await AppModule.register()`. **Lo que sigue exigiendo consola**: la migración (D2, diseñada) y `generate` (D3, diseñado) — ambos diseños validados y escritos en `docs/09-incremento-d-cero-consola.md`.)
@@ -21,132 +23,32 @@
 > Si está vacía, no hay nada pendiente de manos humanas. **Todos los comandos se pegan desde la raíz
 > del repo** (`cd ~/projects/app-factory`).
 
-**Estado: D2 CERRADA Y DESPLEGADA (D-051); Prisma 7.9.1 instalado y con su smoke test VERDE (D-052).**
-Los 8 pasos del guion de D2 salieron verdes y el andamiaje que se había colado en `main` ya está fuera
-(commit `861ce20`). De la subida de Prisma, **los pasos 1-3 están hechos** (marcados abajo): instalado
-con `--frozen-lockfile` sin tocar el lockfile, 7.9.1 en las seis resoluciones de los dos apps, y
-`prisma migrate diff --from-schema/--to-schema` **ejecutado de verdad en el Mac con salida correcta**.
-El código de D2 no necesitó ni un cambio. Quedan **los pasos 4 y 5**: commitear/empujar y vigilar que
-la CI y el Deploy validen `migrate deploy` con la versión nueva.
+**VACÍA: no queda nada pendiente de tus manos.** D2 (D-051) y la subida de Prisma a 7.9.1 (D-052) están
+cerradas, verificadas y desplegadas; `origin/main` va por `11aa2d2`, limpio de andamiaje, con CI y
+Deploy verdes y las dos migraciones corriendo dentro del job de staging.
 
-### Paso 1 — Instalar Prisma 7.9.1 ✅ HECHO (2026-08-20)
-
-Los `package.json` y el `pnpm-lock.yaml` ya están en el repo con `^7.9.1`; falta materializarlo en tu
-`node_modules`.
-
-```bash
-cd ~/projects/app-factory && pnpm install --frozen-lockfile
-```
-
-Se espera que termine sin tocar el lockfile (`--frozen-lockfile` falla si no cuadra). Si falla, el
-lockfile no se copió bien: avísame en vez de correr `pnpm install` a secas.
-
-### Paso 2 — Comprobar que solo queda 7.9.1 ✅ HECHO: 7.9.1 en las 6 líneas + engines 7.9.1
+Lo único que queda es **un commit de cierre con esta documentación** (este archivo y `DECISIONES.md`),
+que puede ir suelto o junto con el primer commit de D3:
 
 ```bash
 cd ~/projects/app-factory && \
-for a in api factory; do for p in prisma @prisma/client @prisma/adapter-pg; do \
-  printf '%-10s %-22s %s\n' "$a" "$p" "$(node -e "console.log(require('./apps/$a/node_modules/$p/package.json').version)")"; \
-done; done
-```
-
-Se espera **7.9.1 en las seis líneas** (medido en el sandbox).
-
-### Paso 3 — SMOKE TEST de `migrate diff` con la versión nueva ✅ HECHO Y VERDE
-
-Es lo único que el sandbox no puede validar: el schema engine se baja de `binaries.prisma.sh` y ahí
-devuelve 403. Con 7.9.1 sigue siendo un binario nativo (no pasó a WASM).
-
-```bash
-cd ~/projects/app-factory && \
-git show origin/main:apps/api/prisma/schema.prisma > /tmp/base.prisma && \
-cp /tmp/base.prisma /tmp/nuevo.prisma && \
-cat >> /tmp/nuevo.prisma <<'EOF'
-
-model SmokeTestD2 {
-  id   String @id @default(uuid(7)) @db.Uuid
-  nota String
-
-  @@map("smoke_test_d2")
-  @@schema("core")
-}
-EOF
-cd ~/projects/app-factory/apps/api && node_modules/.bin/prisma migrate diff \
-  --from-schema /tmp/base.prisma \
-  --to-schema   /tmp/nuevo.prisma \
-  --script
-```
-
-Se espera exactamente esta forma en stdout (los avisos `Loaded Prisma config…` van a stderr, no se
-mezclan):
-
-```
--- CreateTable
-CREATE TABLE "core"."smoke_test_d2" (
-    "id" UUID NOT NULL,
-    "nota" TEXT NOT NULL,
-
-    CONSTRAINT "smoke_test_d2_pkey" PRIMARY KEY ("id")
-);
-```
-
-Salida real del 2026-08-20 con Prisma 7.9.1, tal cual. **Ojo con el nombre de la constraint**: Prisma la
-deriva del `@@map` (`smoke_test_d2_pkey`), no del nombre del modelo — al escribir la salida esperada de
-este test se predijo `SmokeTestD2_pkey` y era falso.
-
-Si sale un error de flags, **para aquí y avísame**: sería un cambio de contrato del CLI y hay que
-arreglar `migration-generator.ts` antes de seguir. Limpieza:
-
-```bash
-rm -f /tmp/base.prisma /tmp/nuevo.prisma && echo "temporales borrados"
-```
-
-### Paso 4 — Verificar en local, commitear y empujar
-
-```bash
-cd ~/projects/app-factory && \
-rm -f /tmp/base.prisma /tmp/nuevo.prisma && \
-pnpm exec turbo run build lint typecheck test && \
-git add -A && \
-git commit -m "[infra] sube Prisma a 7.9.1 en api y factory (D-052)" && \
+git add docs/STATUS.md docs/DECISIONES.md && \
+git commit -m "[docs] cierra D2 y la subida de Prisma 7.9.1 (D-051, D-052)" && \
 git push origin main && \
-echo "pusheado"
+echo "documentación al día"
 ```
 
-Se espera `Tasks: 25 successful, 25 total` (medido en el sandbox con 7.9.1) antes del commit.
-
-### Paso 5 — Vigilar CI y Deploy: aquí se valida `migrate deploy` con la versión nueva
-
-La CI corre `prisma migrate deploy` contra su Postgres 18 efímero y el Deploy lo corre contra staging.
-Es la única prueba real de que el migrador 7.9.1 se entiende con el `_prisma_migrations` existente.
-
-```bash
-cd ~/projects/app-factory && gh run watch "$(gh run list -w CI -L 1 --json databaseId -q '.[0].databaseId')" --exit-status
-```
-
-Y después del Deploy:
-
-```bash
-cd ~/projects/app-factory && \
-gh run view "$(gh run list -w Deploy -L 1 --json databaseId -q '.[0].databaseId')" --log | grep -iE "migrat|Applying|No pending migrations" | head -20
-```
-
-Se espera lo mismo que el 2026-08-20: los dos migrators con `9 migrations found` / `5 migrations found`
-y `No pending migrations to apply`. **Si el Deploy sale rojo en la línea de `~/migrate.sh`, es la
-subida de Prisma** — el `set -euo pipefail` de D-051 está ahí justo para que se vea así y no como un
-500 silencioso; el error exacto sale en ese mismo log.
-
-### Y después: D3
-
-No queda nada más a mano. Abre una tarea nueva de Cowork y pégale el guion de D3 que está en
-«Siguiente (en orden)» punto 0.
+**Lo siguiente es D3, y es trabajo de una tarea de Cowork, no tuyo.** Abre una tarea nueva y pégale el
+guion que está en «Siguiente (en orden)» punto 0. Con D3 el incremento se cierra y el humano se queda
+con exactamente tres cosas, todas fuera de la terminal: decidir gates, leer el diff de la PR y validar
+el módulo en staging.
 
 ---
 
 
 ## Hecho
 
-- **Prisma 7.8.0 → 7.9.1 (D-052, 2026-08-20)**: `prisma`, `@prisma/client` y `@prisma/adapter-pg` a `^7.9.1` explícitos en `apps/api` y `apps/factory`. Decisión de Leonardo de absorber el salto con D2 recién cerrada en vez de arrastrarlo hasta después de D3. **El código de D2 no necesitó cambios**: comprobado leyendo `prisma@7.9.1/build/cli.js` que `--from-schema`/`--to-schema` siguen siendo los flags válidos y que los `-datamodel` solo quedan para emitir el error «was removed» — grepear el bundle del CLI es la forma de validar el contrato de flags cuando el engine no se puede descargar. Monorepo entero en verde (25/25) con el cliente regenerado, e2e de Nest incluidos. `migrate diff` y `migrate deploy` con la versión nueva se validan en el Mac y en la CI (ver «Para ejecutar AHORA»): 7.9.1 sigue necesitando el schema engine nativo, no pasó a WASM.
+- **Prisma 7.8.0 → 7.9.1 (D-052, 2026-08-20)**: `prisma`, `@prisma/client` y `@prisma/adapter-pg` a `^7.9.1` explícitos en `apps/api` y `apps/factory`. Decisión de Leonardo de absorber el salto con D2 recién cerrada en vez de arrastrarlo hasta después de D3. **El código de D2 no necesitó cambios**: comprobado leyendo `prisma@7.9.1/build/cli.js` que `--from-schema`/`--to-schema` siguen siendo los flags válidos y que los `-datamodel` solo quedan para emitir el error «was removed» — grepear el bundle del CLI es la forma de validar el contrato de flags cuando el engine no se puede descargar. Monorepo entero en verde (25/25) con el cliente regenerado, e2e de Nest incluidos. **Verificada de punta a punta el 2026-08-21**: `migrate diff` ejecutado en el Mac (SQL correcto) y `migrate deploy` en la CI y en el Deploy contra el `_prisma_migrations` real de las dos bases, ambos verdes. 7.9.1 sigue necesitando el schema engine nativo (no pasó a WASM), así que el sandbox sigue sin poder correr `prisma migrate *`.
 - **Incremento D, fase D2 (D-051) — CONSTRUIDO Y VERIFICADO**: la migración de un módulo se **genera dentro del run** (`apps/factory/src/pipeline/migration-generator.ts` → `prisma migrate diff --from-schema <origin/main> --to-schema <rama> --script`, sin shadow DB ni conexión) y se **aplica en el Deploy** (job `staging` de `deploy.yml`: `~/migrate.sh` + `~/migrate-factory.sh` entre `pull` y `up -d`, con `set -euo pipefail` para romper en rojo). Una migración por PR (regeneración: borra y reescribe; `request_change`: `_change<n>`). `apps/api/src/modules/<slug>/migration.extra.sql` para las constraints que Prisma no expresa, anexadas al final con comentario de procedencia, con la regla en el system prompt de generación. `assertPrismaCli` valida el CLI en la primera línea del runner (regla de D-047) y **fuera** de `assertRunnerEnv`, que lo comparte el worker de análisis, cuyo checkout no tiene `node_modules`. Si la migración falla, el run falla con su coste y sin PR. Verificado con PostgreSQL real (cadena completa + la generada con `psql -v ON_ERROR_STOP=1`, y el índice único parcial rechazando el segundo turno activo y admitiendo dos cancelados). **Residual CERRADO el 2026-08-20**: el smoke test en el Mac (3 comandos, coste cero) destapó que los flags `--from-schema-datamodel`/`--to-schema-datamodel` del diseño **fueron eliminados en Prisma 7** — son `--from-schema`/`--to-schema`. Corregido y fijado en test. **DESPLEGADO Y VERIFICADO EN STAGING el 2026-08-20**: CI y Deploy verdes a la primera y el log del Deploy real muestra los dos migrators corriendo entre `pull` y `up -d`. De paso, `oxc: false` explícito en `apps/{api,factory}/vitest.config.mts` (vitest 4 ya no respeta el `esbuild: false` de `unplugin-swc`, y Oxc tampoco soporta `emitDecoratorMetadata`) y reglas `_entrega-*/` + `_to_delete/` en `.gitignore`, porque el commit de D2 se llevó el andamiaje a `main`.
 - **`reserva-salas` (D-049)**: primer módulo del catálogo nacido del análisis automático — prototipo desde el chat, análisis solo, gates, PR, integración y validado en staging. En `manager_acceptance`.
 - **Incremento C de Fase 2 (D-047) — CONSTRUIDO, DESPLEGADO Y VALIDADO EN STAGING (D-048)**: análisis server-side automático en los dos caminos (`submit_prototype` y `request_change`), cola `analysis_jobs` + worker `factory-runner` corriendo en el Lightsail, validación de entorno antes de tocar estado (bug 1 de D-046) y coste/tokens en los runs fallidos — esto último verificado en producción con un corte real de la API. Humo end-to-end: `reserva-salas` analizado solo en 2m18s y generado hasta PR #7.
