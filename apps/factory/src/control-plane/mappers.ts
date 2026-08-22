@@ -77,6 +77,8 @@ interface AnalysisJobRecord {
   runId: string | null;
   errorMessage: string | null;
   changeRequestId: string | null;
+  specId: string | null;
+  nextAttemptAt: Date | null;
 }
 
 interface ProjectRecord {
@@ -159,7 +161,9 @@ export function toAnalysisJobDto(job: AnalysisJobRecord): FactoryAnalysisJob {
     finishedAt: job.finishedAt?.toISOString() ?? null,
     runId: job.runId,
     errorMessage: job.errorMessage,
-    changeRequestId: job.changeRequestId
+    changeRequestId: job.changeRequestId,
+    specId: job.specId,
+    nextAttemptAt: job.nextAttemptAt?.toISOString() ?? null
   };
 }
 

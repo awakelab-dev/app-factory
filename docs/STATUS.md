@@ -2,7 +2,9 @@
 
 > Actualizar al cerrar CADA sesión de trabajo. Este archivo es lo primero que lee cualquier tarea nueva.
 
-**Última actualización**: 2026-08-20 (**INCREMENTO D, FASE D2 CERRADA Y VERIFICADA: «cero SQL a mano y cero SSH para migrar» (D-051)**. La migración de un módulo la **escribe el propio run de generación** con `prisma migrate diff` entre el `schema.prisma` de `origin/main` y el que deja el agente, y entra en la MISMA PR —revisable en el gate técnico— sin que el agente gane ni un permiso: `apps/api/prisma/migrations/` sigue fuera de su guardarraíl. Una migración por PR: en una regeneración se borra la de la vuelta anterior y se reescribe; en un `request_change` sobre un módulo ya en `main` el diff es solo el delta y la carpeta se llama `_change<n>`. Lo que Prisma no sabe declarar —índice único PARCIAL, CHECK, exclusion— lo escribe el agente en `apps/api/src/modules/<slug>/migration.extra.sql` y nuestro código lo anexa al final con su comentario de procedencia: cierra el hallazgo de D-049 sin ampliar el guardarraíl. **Y el Deploy la aplica**: el job `staging` corre `~/migrate.sh` y `~/migrate-factory.sh` entre el `pull` y el `up -d`, con `set -euo pipefail`, así que un fallo de migración **rompe el deploy en ROJO** en vez de dejar código nuevo contra un esquema viejo — el 500 silencioso documentado dos veces aquí abajo. Si la migración no se puede escribir, el run falla con su coste registrado y NO se abre PR: no hay modo degradado, porque una PR sin su `.sql` es justo el paso manual que D2 elimina. **Tras D2 el único paso del ciclo que sigue exigiendo consola es `generate`** — eso es D3, ya diseñado en `docs/09-incremento-d-cero-consola.md`.)
+**Última actualización**: 2026-08-21 (**INCREMENTO D CERRADO: FASE D3 CONSTRUIDA Y VERIFICADA — «cero consola» (D-053)**. Aprobar el gate que completa `functional`+`technical` **encola la generación** y la corre un segundo worker, `factory-generator` (misma imagen, checkout propio con `node_modules`, PAT fine-grained con push, `FACTORY_WORKER_KINDS=generation,pr_merge`); un corte de red **se reintenta solo** con backoff en vez de perder el run (`classifyFailure`: infraestructura sí, error del agente no, y **por defecto fatal**); y aprobar el gate `pr_review` **encola el merge de verdad** — el worker espera los checks, hace `gh pr merge --squash --delete-branch` y SOLO ENTONCES pasa el proyecto a `staging` y abre el gate `manager_acceptance`. El gate deja de mentir (D-049): el estado lo mueve quien comprobó la realidad. **Ya no queda ningún paso del ciclo en una terminal**: al humano le quedan tres cosas y ninguna es consola — decidir gates, **leer el diff de la PR** y validar el módulo en staging. Verificado fuera del mount: 25/25 tareas de turbo, cadena de migraciones de la Fábrica sobre PostgreSQL real **y dentro de una transacción** (como la corre Prisma), ciclo de cola completo contra esa BD (filtro por kind, backoff, cascada, FIFO) y `PrMergeService` contra un repositorio git REAL con stub de `gh`. **Pendiente de ver en vivo**: el ciclo real contra GitHub y una generación real de agente — llegan con el primer módulo que genere D3.)
+
+**Sesión anterior (2026-08-20, D-051/D-052, contexto)**: **INCREMENTO D, FASE D2 CERRADA Y VERIFICADA: «cero SQL a mano y cero SSH para migrar» (D-051)**. La migración de un módulo la **escribe el propio run de generación** con `prisma migrate diff` entre el `schema.prisma` de `origin/main` y el que deja el agente, y entra en la MISMA PR —revisable en el gate técnico— sin que el agente gane ni un permiso: `apps/api/prisma/migrations/` sigue fuera de su guardarraíl. Una migración por PR: en una regeneración se borra la de la vuelta anterior y se reescribe; en un `request_change` sobre un módulo ya en `main` el diff es solo el delta y la carpeta se llama `_change<n>`. Lo que Prisma no sabe declarar —índice único PARCIAL, CHECK, exclusion— lo escribe el agente en `apps/api/src/modules/<slug>/migration.extra.sql` y nuestro código lo anexa al final con su comentario de procedencia: cierra el hallazgo de D-049 sin ampliar el guardarraíl. **Y el Deploy la aplica**: el job `staging` corre `~/migrate.sh` y `~/migrate-factory.sh` entre el `pull` y el `up -d`, con `set -euo pipefail`, así que un fallo de migración **rompe el deploy en ROJO** en vez de dejar código nuevo contra un esquema viejo — el 500 silencioso documentado dos veces aquí abajo. Si la migración no se puede escribir, el run falla con su coste registrado y NO se abre PR: no hay modo degradado, porque una PR sin su `.sql` es justo el paso manual que D2 elimina. **Tras D2 el único paso del ciclo que sigue exigiendo consola es `generate`** — eso es D3, ya diseñado en `docs/09-incremento-d-cero-consola.md`.
 
 **PRISMA 7.9.1 EN STAGING el 2026-08-21 (D-052)**: subida decidida por Leonardo para absorber el salto con D2 recién cerrada en vez de arrastrarlo a después de D3. Verificada en las tres capas que importan: el **contrato de flags** leyendo el bundle del CLI (`--from-schema`/`--to-schema` siguen siendo los buenos; los `-datamodel` solo quedan para emitir el «was removed»), el **`migrate diff` real en el Mac** con su SQL correcto, y el **`migrate deploy` real** en la CI y en el Deploy contra el `_prisma_migrations` de las dos bases (`9 migrations found` / `5 migrations found`, `No pending migrations to apply`). **El código de D-051 no necesitó ni un cambio.** `origin/main` en `11aa2d2`. Turbo (2.10.11) y pnpm (11.22.0) se dejaron sin subir a propósito: una herramienta a la vez, o el diagnóstico de un Deploy rojo se vuelve ambiguo.
 
@@ -21,30 +23,174 @@
 
 > Única fuente de "qué toca hacer a mano". La reescribe cada tarea al cerrar (regla dura de `CLAUDE.md`).
 > Si está vacía, no hay nada pendiente de manos humanas. **Todos los comandos se pegan desde la raíz
-> del repo** (`cd ~/projects/app-factory`).
+> del repo** (`cd ~/projects/app-factory`), salvo donde diga otra cosa.
 
-**VACÍA: no queda nada pendiente de tus manos.** D2 (D-051) y la subida de Prisma a 7.9.1 (D-052) están
-cerradas, verificadas y desplegadas; `origin/main` va por `11aa2d2`, limpio de andamiaje, con CI y
-Deploy verdes y las dos migraciones corriendo dentro del job de staging.
+**D3 está construido y verificado; falta desplegarlo.** Son 11 pasos: los 3 primeros son el ciclo de
+siempre (commit → CI → deploy) y los 8 restantes montan el worker nuevo en el Lightsail, que es
+infraestructura nueva y por eso no se despliega solo. **Hazlos en este orden**: si el compose con el
+servicio nuevo llega al server antes que sus variables, el `up -d` del Deploy siguiente falla.
 
-Lo único que queda es **un commit de cierre con esta documentación** (este archivo y `DECISIONES.md`),
-que puede ir suelto o junto con el primer commit de D3:
+**Paso 1 · Subir D3 a `main`** (la migración de la Fábrica la aplicará el Deploy en el paso 3).
 
 ```bash
 cd ~/projects/app-factory && \
-git add docs/STATUS.md docs/DECISIONES.md && \
-git commit -m "[docs] cierra D2 y la subida de Prisma 7.9.1 (D-051, D-052)" && \
+git add -A && \
+git commit -m "[factory] D3: generación server-side con reintento y merge verificado (D-053)" && \
 git push origin main && \
-echo "documentación al día"
+echo "D3 empujado a main"
 ```
 
-**Lo siguiente es D3, y es trabajo de una tarea de Cowork, no tuyo.** Abre una tarea nueva y pégale el
-guion que está en «Siguiente (en orden)» punto 0. Con D3 el incremento se cierra y el humano se queda
-con exactamente tres cosas, todas fuera de la terminal: decidir gates, leer el diff de la PR y validar
-el módulo en staging.
+Debe terminar con `D3 empujado a main`. Si sale `Unable to create index.lock: File exists`, es un lock
+huérfano de una tarea de Cowork: `rm ~/projects/app-factory/.git/index.lock` y repite.
+
+**Paso 2 · Esperar a la CI.**
+
+```bash
+cd ~/projects/app-factory && \
+gh run watch "$(gh run list -w CI -L 1 --json databaseId -q '.[0].databaseId')" --exit-status && \
+echo "CI verde"
+```
+
+Debe terminar con `CI verde`. **Si sale roja, LEE EL LOG ANTES de sospechar del código**: el fallo más
+frecuente es GitHub devolviendo 429/503 al bajar sus propias actions (pasó dos veces seguidas en D1) —
+`gh run view "$(gh run list -w CI -L 1 --json databaseId -q '.[0].databaseId')" --log-failed`. Si el
+error está en el paso de *setup*, no es nuestro: relanza con `gh run rerun --failed`.
+
+**Paso 3 · Comprobar que el Deploy aplicó la migración nueva de la Fábrica.**
+
+```bash
+cd ~/projects/app-factory && \
+gh run view "$(gh run list -w Deploy -L 1 --json databaseId -q '.[0].databaseId')" --log | \
+grep -E "migrations found|Applying migration|No pending migrations" | tail -6
+```
+
+Tienen que aparecer `6 migrations found` (la BD de la Fábrica: eran 5) y
+``Applying migration `20260821120000_generation_jobs` ``. La de plataforma sigue en `9 migrations found`
+/ `No pending migrations to apply`, que es correcto: D3 no toca esa base.
+
+**Paso 4 · Protección de rama en `main`** — prerrequisito de la credencial del paso 5: es lo que impide
+que un PAT con `contents:write` empuje a `main` ni por accidente ni por abuso.
+
+```bash
+gh api -X PUT repos/awakelab-dev/app-factory/branches/main/protection --input - <<'JSON' > /dev/null && echo "main protegida: solo se entra por PR"
+{"required_status_checks": null,
+ "enforce_admins": false,
+ "required_pull_request_reviews": {"required_approving_review_count": 0},
+ "restrictions": null,
+ "allow_force_pushes": false,
+ "allow_deletions": false}
+JSON
+```
+
+Debe imprimir `main protegida: solo se entra por PR`. Tres cosas deliberadas: **`required_approving_review_count: 0`**
+(exige PR, pero no reviews de GitHub — con 1 review obligatoria el merge automático de la Fábrica
+fallaría, porque la aprobación vive en el gate `pr_review`, no en GitHub); **`enforce_admins: false`**
+(tú sigues pudiendo empujar docs directo a `main`; el PAT no es admin y sí queda bloqueado); y
+**`required_status_checks: null`** (los checks los espera nuestro propio código con
+`gh pr checks --watch --fail-fast` antes de mergear, y así no dependemos de que el nombre del job
+coincida con una cadena literal). Si a partir de aquí tu `git push origin main` empieza a fallar, es
+esto: `gh api -X DELETE repos/awakelab-dev/app-factory/branches/main/protection` lo revierte.
+
+**Paso 5 · Crear el PAT fine-grained** (es UI, no hay API para crearlos). GitHub → *Settings →
+Developer settings → Personal access tokens → Fine-grained tokens → Generate new token*:
+
+- *Resource owner*: `awakelab-dev` · *Repository access*: **Only select repositories → app-factory**
+- *Permissions → Repository*: **Contents: Read and write** y **Pull requests: Read and write**. Nada más.
+- *Expiration*: 90 días. **Anota la fecha de rotación** — cuando caduque, el worker generador dejará de
+  poder empujar y el síntoma será un trabajo `generation` en error con un 403 de git.
+
+Cópialo: lo pega el paso 7 y no se vuelve a mostrar.
+
+**Paso 6 · Clonar el checkout propio del generador en el Lightsail** (por HTTPS: el PAT no sirve por
+SSH; y separado del de análisis, que hace `reset --hard` antes de cada run y destrozaría la rama de
+trabajo).
+
+```bash
+ssh AWK-Dev "sudo git clone https://github.com/awakelab-dev/app-factory.git /opt/awkfactory/staging/platform-repo-gen && sudo test -f /opt/awkfactory/staging/platform-repo-gen/pnpm-workspace.yaml && echo 'checkout de generación clonado'"
+```
+
+Debe terminar con `checkout de generación clonado`.
+
+**Paso 7 · Añadir las variables de D3 al `.env` de staging.** El PAT se lee sin eco y no queda en el
+historial. (Este paso es el único con dos comandos: el `unset` tiene que ir después del heredoc.)
+
+```bash
+read -rsp "Pega el PAT del paso 5 y pulsa Enter: " AWK_PAT && echo && ssh AWK-Dev "cat >> /opt/awkfactory/staging/.env" <<EOF
+FACTORY_GITHUB_TOKEN=$AWK_PAT
+PLATFORM_REPO_GEN_HOST_PATH=/opt/awkfactory/staging/platform-repo-gen
+PLATFORM_REPO_REMOTE_URL=https://github.com/awakelab-dev/app-factory.git
+FACTORY_PR_CHECKS_TIMEOUT_MS=1800000
+FACTORY_RUNNER_KINDS=analysis,change_analysis
+EOF
+unset AWK_PAT; ssh AWK-Dev "grep -c '^FACTORY_GITHUB_TOKEN=' /opt/awkfactory/staging/.env"
+```
+
+Debe imprimir `1`. Si imprime `2`, ejecutaste el paso dos veces: `ssh AWK-Dev "nano /opt/awkfactory/staging/.env"`
+y borra el bloque duplicado (los valores del `.env` van **sin comillas**, regla de D-012).
+
+**Paso 8 · Copiar el compose nuevo al server** (el del server es una copia, no sale de un clone).
+
+```bash
+cd ~/projects/app-factory && \
+scp deploy/docker-compose.yml AWK-Dev:/opt/awkfactory/staging/docker-compose.yml && \
+ssh AWK-Dev "grep -c 'factory-generator:' /opt/awkfactory/staging/docker-compose.yml"
+```
+
+Debe imprimir `1`.
+
+**Paso 9 · Instalar las dependencias del checkout DESDE DENTRO del contenedor** (para que los binarios
+nativos casen con su glibc, no con la del host). Tarda un par de minutos y ocupa ~1,5 GB.
+
+```bash
+ssh AWK-Dev "cd /opt/awkfactory/staging && docker compose --env-file .env -p awk-staging pull factory-generator && docker compose --env-file .env -p awk-staging run --rm --entrypoint sh factory-generator -c 'cd /platform-repo-gen && pnpm install --frozen-lockfile && test -x apps/api/node_modules/.bin/prisma && echo CLI-PRISMA-OK'"
+```
+
+Tiene que aparecer `CLI-PRISMA-OK` al final: ese binario es el que escribe la migración de cada módulo
+(`assertPrismaCli`, D-051), y sin él el worker no arranca. **Repite este paso cuando `main` cambie
+dependencias** — si no, el primer run posterior falla en el build.
+
+**Paso 10 · Levantar el worker y leer su arranque.**
+
+```bash
+ssh AWK-Dev "cd /opt/awkfactory/staging && docker compose --env-file .env -p awk-staging up -d factory-generator && sleep 10 && docker compose -p awk-staging logs --tail 20 factory-generator"
+```
+
+Tienen que aparecer, en este orden:
+
+1. `Credencial de git configurada vía` `gh auth setup-git` `(push por HTTPS con el PAT).`
+2. `awk-factory worker: entorno OK (checkout /platform-repo-gen, kinds [generation, pr_merge]).`
+3. `Worker de la Fábrica arrancado (...), kinds [generation, pr_merge], poll cada 10000 ms.`
+
+Si en vez de eso sale `awk-factory worker: NO arranca — ...`, el mensaje dice exactamente qué falta
+(PAT, `node_modules`, checkout). Es deliberado que no levante: descubrir eso al final de un run de 25
+minutos cuesta ~8 USD.
+
+**Paso 11 · Prueba de humo de la credencial, coste cero.** Empuja una rama vacía y la borra: verifica
+el PAT, el remoto HTTPS, la identidad de commit y que la protección de `main` no estorba a las ramas
+de trabajo. Es la comprobación que evita descubrir un 403 dentro del primer run real.
+
+```bash
+ssh AWK-Dev "cd /opt/awkfactory/staging && docker compose --env-file .env -p awk-staging exec -T factory-generator sh -c 'cd /platform-repo-gen && git checkout -q -B factory/_smoke-d3 && git commit -q --allow-empty -m \"smoke D3\" && git push -q origin factory/_smoke-d3 && git push -q origin --delete factory/_smoke-d3 && git checkout -q main && git branch -q -D factory/_smoke-d3 && echo PUSH-Y-BORRADO-OK'"
+```
+
+Debe terminar con `PUSH-Y-BORRADO-OK`. Si falla con `403` o `could not read Username`, el PAT no tiene
+`contents:write` o no se aplicó `gh auth setup-git`: revisa el paso 5 y reinicia el contenedor.
 
 ---
 
+**Con esto el incremento D queda cerrado y no vuelve a haber pasos de consola en el ciclo.** Lo
+siguiente es un módulo real: el gerente prototipa y envía desde Cowork, tú decides el gate técnico,
+**lees el diff de la PR** y apruebas `pr_review`; el resto va solo. **Mira estas dos cosas la primera
+vez** (son lo único de D2/D3 que no se ha visto en vivo):
+
+```bash
+ssh AWK-Dev "docker compose -p awk-staging logs --tail 200 factory-generator | grep -E 'Migración generada|mergeada|staging'"
+```
+
+Debe aparecer `Migración generada para "<slug>": <timestamp>_<slug>` (el residual que dejó D2 abierto) y,
+tras aprobar `pr_review`, `PR ... mergeada con squash y rama remota borrada.`
+
+---
 
 ## Hecho
 
@@ -168,7 +314,7 @@ Esperando promoción a producción a criterio de Leonardo (módulos internos, si
 
 ## Siguiente (en orden)
 
-0. **INCREMENTO D — D1 y D2 CERRADAS Y DESPLEGADAS (D-050 y D-051); QUEDA D3, YA DISEÑADO.** El objetivo del incremento (fijado por Leonardo el 2026-08-17) es que el ciclo prototipo → módulo vivo **en staging** no exija una sola orden por terminal; producción y Fase 3 (A2F) quedan fuera. **Hecho en D1**: cableado automático (api y web), siembra + asignación de roles, y `analysis_jobs` visible en `/factory` y en `get_project_status`. **Hecho en D2 (D-051)**: migración generada dentro del run y aplicada por el Deploy de staging, con `migration.extra.sql` para lo que Prisma no sabe declarar. **Queda solo D3**, con diseño aprobado en `docs/09-incremento-d-cero-consola.md`: **D3** — generación server-side en un segundo worker (`factory-generator`, misma imagen, checkout propio, PAT fine-grained con push y protección de rama en `main` como prerrequisito) con reintento clasificado (`retryable` vs `fatal`, backoff 2/10/30 min, `attempts<3`), disparo al aprobar el último gate, y gate `pr_review` **verificado** que mergea con `gh` antes de mover a `staging`. El orden importa: D3 es el bloque que aún exige a Sistemas y el que pierde dinero cuando la API corta (40% del coste de `reserva-salas`, D-048). **Contexto histórico — INCREMENTO C: CERRADO, Y `reserva-salas` TAMBIÉN (D-048 + D-049, 2026-08-16/17).** El caso completo está validado en staging; no queda nada vivo de él salvo promoverlo a producción cuando se decida. **Backlog que dejó por el camino, por orden de coste/beneficio: (a) sembrar los roles de los manifests (hoy un módulo nuevo nace invisible hasta que alguien mete SQL a mano); (b) que el gate `pr_review` verifique con `gh` que la PR está mergeada; (c) alta/baja de roles en `core-admin`. Lo siguiente de verdad: generación server-side CON reintento y reanudación** — es el último paso que exige a Sistemas y el que se come el dinero cuando la API corta (40% del coste de `reserva-salas`). Histórico de la puesta en marcha, ya ejecutada: Puesta en marcha en el Mac/server, en este orden: (a) merge + CI verde en `main` (publica la imagen nueva `awkplatform-factory-runner`); (b) `~/migrate-factory.sh staging latest` para aplicar `20260815120000_analysis_jobs` (SOLO tras CI de main verde — regla del runbook); (c) clonar el checkout dedicado en `/opt/awkfactory/staging/platform-repo` y darle lectura del repo (deploy key sin write, o `FACTORY_WORKER_GIT_SYNC=0` para arrancar sin credenciales); (d) añadir al `.env` del server `PLATFORM_REPO_HOST_PATH`, `PLATFORM_REPO_REF`, `FACTORY_WORKER_GIT_SYNC`, `FACTORY_WORKER_POLL_MS` (plantilla al final de `deploy/staging.env.example`); (e) `docker compose --env-file .env -p awk-staging up -d factory-runner` y comprobar en el log `entorno OK (checkout /platform-repo)` + `Worker de análisis arrancado`; (f) humo real: enviar un prototipo pequeño desde Cowork y ver el proyecto pasar `received → analyzing → pending_approval` sin tocar nada (o `cli -- enqueue-analysis --project <id>`). Runbook completo: `lightsail-deploy.md` §8b. **Después: `generate` server-side** (el último paso que exige Sistemas), replicar el AS a producción y Fase 3 (A2F + rate limiting). Contexto de cómo se llegó aquí — **PRUEBA E2E DESDE COWORK: HECHA (D-046, 2026-08-15)** — recorrida entera con el caso `incidencias-aula`; resultado, bugs, fricciones y costes en D-046 y en `docs/runbooks/prueba-e2e-cowork.md` (§Resultado). De ahí salió el alcance del incremento C, HECHO en D-047: (a) análisis server-side automático al enviar un prototipo; (b) lo mismo para `request_change`, que hoy depende del comando nuevo `analyze-change`; (c) validar `PLATFORM_REPO_PATH` ANTES de transicionar y crear el `Run` (bug pendiente); (d) registrar coste y tokens también en los runs fallidos. Después: replicar el AS a producción y Fase 3 (A2F + rate limiting). Contexto histórico de cómo se llegó aquí — **AUTH DEL CONECTOR — PIVOTE A AS PROPIO (D-041, 2026-07-21)**: la org descartó Entra ID; el spike de D-040 se canceló sin ejecutarse. Vía vigente: **OAuth con AS+RS propio en `apps/factory`** (librería OIDC vetada) y login usuario/contraseña contra `factory_actors`+`passwordHash` (argon2id, CLI `set-password`); A2F posteriormente. Plan por fases y runbook: `docs/08-auth-conector-oauth.md` + `docs/runbooks/oauth-conector-as-propio.md` (`spike-oauth-entra.md` OBSOLETO). **CONECTOR FUNCIONANDO EN COWORK (D-045, 2026-08-12) → lo siguiente es la PRUEBA E2E**: guion completo en `docs/runbooks/prueba-e2e-cowork.md` (crear prototipo con la skill → `submit_prototype` → **analyze por CLI, paso manual pendiente del incremento C** → gates de negocio desde el chat → generación+revisión técnica → validación en staging → `request_change` → monitoreo con la vista `estado-fabrica`). Después de la prueba: **incremento C (análisis server-side automático)**, que elimina el único paso donde el usuario depende de Sistemas; luego replicar el AS a producción y Fase 3 (A2F + rate limiting del login). Contexto: **MODELO OPERATIVO APROBADO POR GERENCIA (D-044, 2026-07-26)**: ~4 cuentas Claude por Centro de Costo (el admin de cada una activa plugins/conectores 1 vez), superficie única **Cowork**, usuarios = perfiles de gestión (gerente/líder/supervisor/analista, todos rol `gerente`), **externos SIN conector** (entregan código fuente a Sistemas, que los ingresa al pipeline), **git solo dentro de Sistemas**. Documentación de rollout HECHA: `docs/04` §Modelo operativo, runbook `docs/runbooks/onboarding-cuenta-claude.md` y one-pager para admins `docs/onboarding/one-pager-admin-cuenta.html` (identidad AWK-2026, imprimible). **Orden de trabajo acordado: (1) docs+one-pager — HECHO; (2) artefacto de status en Cowork; (3) incremento C (análisis server-side automático al enviar) — es el bloqueante del self-service pleno, hoy el análisis lo dispara Sistemas por CLI.** Contexto técnico previo — **Fase 1 CERRADA Y VALIDADA EN STAGING (D-042/D-042b): AS+RS propio con `node-oidc-provider`, login usuario/contraseña, desplegado en `https://staging.apps.awakelab.world/factory-api` y verificado end-to-end (`oauth-smoke.mjs` 6/6 por HTTPS: PRM/ASM/401/AuthCode+PKCE+login/token refresh=true/tools-list 5 tools). El deploy real cazó 6 bugs de runtime/empaquetado, todos arreglados (ver "Última actualización" y D-042b). SIGUIENTE: Fase 2 con el Owner — alta del custom connector (URL del MCP + Client ID `claude`/Secret del `.env`) + Connect de un gerente desde Cowork. Un gerente necesita fila activa en `factory_actors` (`create-actor`) + contraseña (`set-password`).** Todo lo que sigue en este punto es el contexto que llevó aquí: **Incremento B — CONSTRUIDO; prueba real de gerentes BLOQUEADA por auth (D-039, 2026-07-20)**: la prueba end-to-end en Cowork destapó que **la auth por PAT-en-header local es incompatible con el conector de Cowork** (corre desde la nube de Anthropic, no desde el Mac; además la org gestionada exige que un owner habilite el conector y el alta pide OAuth, no bearer). Ver "Última actualización" y D-039. **El PAT sigue válido para técnicos vía Claude Code CLI; el conector de gerentes se replantea a OAuth.** **Auth EVALUADA A FONDO y DIRECCIÓN DECIDIDA (D-040, `docs/08-auth-conector-oauth.md`)**: Enterprise-managed auth descartado (exige IdP integrado con Claude —Okta hoy, no Entra—, beta+waitlist, extensión EMA en el MCP); vía = **OAuth 2.1** por el spec MCP (PRM + `WWW-Authenticate` 401 + ASM + Auth Code/PKCE + resource indicators/audiencia); el conector de gerentes se añade como **custom connector a nivel org por un Owner** (no en el `.mcp.json` del plugin — el plugin queda solo con la skill); IdP corporativo = **Entra ID**; **`factory_actors` sigue siendo la fuente de autorización** (Entra autentica, la Fábrica autoriza); alcance mínimo, sin tocar `dev-login` de la Plataforma. Arquitectura recomendada: **Opción A** (Entra como AS, factory solo resource server que valida JWT de Entra — una rama más en `FactoryAuthGuard`) con un **spike de compatibilidad como gate**; **Opción B** (factory como AS+RS federando a Entra, vía librería OIDC) como fallback. **Siguiente NUEVO: Fase 0 de docs/08 — spike Claude↔Entra en staging; runbook listo `docs/runbooks/spike-oauth-entra.md`** (app registration en Entra con redirect `https://claude.ai/api/mcp/auth_callback` + App ID URI = URL del MCP, pre-registro de Client ID/Secret —Entra no soporta DCR/CIMD—, PRM mínimo + 401 `WWW-Authenticate` + validación JWT de Entra en staging, alta del custom connector por el Owner, Connect de un gerente); el resultado decide A vs B. Esto va antes que C/D porque es lo único que abre el camino gerente→Fábrica sin CLI. **Hand-off al admin/owner: DIFERIDO hasta que Fase 1 (OAuth) esté en producción** (decisión de Leonardo 2026-07-21). Cuando llegue, el paquete al owner NO es el zip actual (su conector `${AWKFACTORY_TOKEN}` no autentica en Cowork): son DOS cosas separadas — (a) el **conector** = URL de producción del MCP + OAuth/Entra, que el owner añade en Organization settings → Connectors (no es un archivo), y (b) la **skill** = plugin SIN el conector (solo la skill), por zip o —mejor, para no recontactar al owner en cada cambio— por marketplace gestionado por el admin. (Artefactos de la sesión, NO commitear: `outputs/awk-prototipo-staging.plugin` y `outputs/awk-staging-marketplace/` — copias con URL de staging usadas en la prueba.) Después de resolver la auth: **incremento C** (análisis server-side async) y **D** (dashboard v2). El texto original de esta línea (ya superado) decía: plugin `awk-prototipo` construido y verificado en sandbox; lo que seguía de B era la prueba real en el Mac (runbook `docs/runbooks/plugin-awk-prototipo.md`, pasos 2–4: token en `~/.claude/settings.json`, instalar copia con URL de staging, prototipar algo pequeño → submission `received` en `/factory`). Después: **incremento C** (análisis server-side async) y **D** (dashboard v2). Contexto del incremento A (mismo día): **Incremento A — DESPLEGADO EN STAGING Y VALIDADO EN VIVO (2026-07-20, mismo día)**: migración `cowork_intake` aplicada, primer PAT emitido (tras el fix del túnel, ver (b)), smoke curl del MCP completo (initialize + tools/list con las 5 tools + `list_modules` real contra la BD: devolvió `focus-flow` y `gestor-proyectos` — correcto: solo los proyectos que pasaron por la Fábrica), y **el riesgo de D-036 queda DESCARTADO**: Claude Code v2.1.215 en el Mac de Leonardo conectó al MCP con un `.mcp.json` que lleva `"Authorization": "Bearer ${AWKFACTORY_TOKEN}"` — la env var SÍ se expande en headers (`/mcp` → connected + authenticated + 5 tools). El plugin del incremento B usa ese patrón tal cual; la única incógnita menor que queda para B es de dónde sale la variable en una sesión de Cowork de un gerente (la app de escritorio no hereda el shell) — se resuelve con la instalación del plugin, no bloquea. **Siguiente: incremento B** (plugin org: skill `awk-prototipo` + conector en el marketplace privado), luego C (análisis server-side async) y D (dashboard v2). El runbook original de la puesta en marcha (ya ejecutado) era: (a) merge/CI y `~/migrate-factory.sh staging latest` (SOLO tras CI de main verde — regla del runbook) para aplicar `20260720120000_cowork_intake`; (b) emitir el primer PAT: `pnpm --filter=@awk/factory run cli -- create-actor --email <gerente> --role gerente` (túnel SSH a la BD como en D-031; el token se imprime una vez; **requiere el fix `[fix] create-actor por túnel SSH` — el primer intento en el Mac falló con "Unable to start a transaction in the given time" porque la conexión perezosa por túnel supera el maxWait de 2s por defecto de Prisma**); (c) smoke del MCP con curl contra `https://staging.apps.awakelab.world/factory-api/mcp` (POST initialize + tools/list con `Authorization: Bearer awkf_...`); (d) **la prueba real desde Cowork**: conector remoto con el PAT y verificar el riesgo señalado en D-036 — que el `.mcp.json` del plugin expanda env vars en headers; si no expande, fallback a evaluar (token en config del conector). Después: **incremento B** (plugin org: skill `awk-prototipo` + conector en el marketplace privado), **C** (análisis server-side async), **D** (dashboard v2).
+0. **INCREMENTO D — CERRADO: D1, D2 y D3 construidas y verificadas (D-050, D-051, D-053).** El objetivo (fijado por Leonardo el 2026-08-17) era que el ciclo prototipo → módulo vivo **en staging** no exigiera una sola orden por terminal; producción y Fase 3 (A2F) quedaban fuera. **Está cumplido en código.** D1: cableado automático, roles y visibilidad de la cola. D2: migración generada en el run y aplicada por el Deploy. D3: la generación la encola aprobar el último gate de spec y la corre el worker `factory-generator` (checkout propio, PAT fine-grained, reintento clasificado con backoff), y aprobar `pr_review` encola un merge que espera los checks y solo entonces mueve el proyecto a `staging`. **Lo único pendiente es de tus manos y está en «Para ejecutar AHORA»**: desplegar el worker nuevo (11 pasos). Después, el primer módulo real que pase por el ciclo completo — hay dos cosas que nunca se han visto en vivo y hay que mirarlas: la línea `Migración generada para "<slug>"` en el log del generador (residual que dejó D2) y el merge automático llevando el proyecto a `staging` con su gate `manager_acceptance` recién abierto.
 
 Tres encargos reales completados + `request_change` validado end-to-end (2026-07-19/20). Lo demás que sigue:
 

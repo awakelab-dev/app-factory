@@ -51,9 +51,34 @@ ENV NODE_ENV=production
 # Debian, `git` solo lo RECOMIENDA, y `--no-install-recommends` lo deja fuera —
 # el primer deploy real (2026-08-16) falló justo así: `git fetch` no arrancaba y
 # el worker analizaba con un checkout que nunca se actualizaba.
+#
+# curl/gnupg: solo para instalar `gh` desde su repositorio oficial (abajo).
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends git openssh-client ca-certificates \
+  && apt-get install -y --no-install-recommends git openssh-client ca-certificates curl gnupg \
   && rm -rf /var/lib/apt/lists/*
+
+# GitHub CLI: lo usa el worker de GENERACIÓN (D3) para abrir la PR, esperar los
+# checks y mergear. Va en ESTA imagen (no en una aparte) porque los dos workers
+# comparten imagen y se diferencian solo por FACTORY_WORKER_KINDS; en el
+# contenedor de análisis simplemente no se invoca.
+#
+# Desde el repo apt oficial y no pinneando un .deb concreto a propósito: una
+# versión fija se queda vieja y, peor, un tag inexistente rompe el build de una
+# imagen que no tiene nada que ver con el cambio que lo destapó.
+RUN mkdir -p -m 755 /etc/apt/keyrings \
+  && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+  && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends gh \
+  && rm -rf /var/lib/apt/lists/*
+
+# pnpm en el RUNTIME (no solo en el build): el agente de generación corre
+# `pnpm exec turbo run build lint typecheck test` dentro del checkout montado.
+# Se "prepara" la versión exacta del monorepo en tiempo de build para que
+# corepack no tenga que descargarla en mitad del primer run —un fallo de red ahí
+# tumbaría una generación de 25 minutos por no tener el gestor de paquetes.
+RUN corepack enable && corepack prepare pnpm@11.11.0 --activate
 WORKDIR /app
 COPY --from=build /out/factory ./
 # El checkout del monorepo NO va dentro de la imagen: se monta como volumen

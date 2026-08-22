@@ -182,15 +182,22 @@ model ChangeRequest {
   @@map("change_requests")
 }
 
-/// Tipo de trabajo encolado (D-047, incremento C). Los dos caminos por los que
-/// un gerente entra al pipeline desde Cowork: `analysis` = spec de intake de un
-/// prototipo nuevo (submit_prototype), `change_analysis` = mini-spec del delta
-/// de una petición de cambio (request_change). La generación NO se encola
-/// todavía (sigue por CLI: necesita toolchain de build y credenciales de git),
-/// pero el enum admite ampliarlo sin rediseñar la cola.
+/// Tipo de trabajo encolado (D-047, ampliado en D3). Los dos primeros son los
+/// caminos por los que un gerente entra al pipeline desde Cowork: `analysis` =
+/// spec de intake de un prototipo nuevo (submit_prototype), `change_analysis` =
+/// mini-spec del delta de una petición de cambio (request_change).
+///
+/// D3 añade los dos que faltaban para cerrar "cero consola" (docs/09):
+/// `generation` (aprobar el último gate de spec encola la generación) y
+/// `pr_merge` (aprobar el gate `pr_review` encola el merge verificado). Los
+/// consume un worker DISTINTO —`factory-generator`, con su propio checkout y
+/// credencial de push— vía `FACTORY_WORKER_KINDS`; el enum ya se diseñó en
+/// D-047 para admitirlos sin rediseñar la cola.
 enum AnalysisJobKind {
   analysis
   change_analysis
+  generation
+  pr_merge
 
   @@map("analysis_job_kind")
 }
@@ -231,12 +238,23 @@ model AnalysisJob {
   /// Obligatorio cuando kind = change_analysis; null en un análisis de intake.
   changeRequestId String?        @db.Uuid
   changeRequest   ChangeRequest? @relation(fields: [changeRequestId], references: [id], onDelete: Cascade)
+  /// Obligatorio cuando kind = generation o pr_merge (D3): la spec aprobada que
+  /// se genera, y la que abre el gate `manager_acceptance` tras el merge. Null
+  /// en los dos kinds de análisis, que son justamente los que la producen.
+  specId          String?        @db.Uuid
+  spec            Spec?          @relation(fields: [specId], references: [id], onDelete: Cascade)
 
   status   AnalysisJobStatus @default(queued)
-  /// Veces que un worker lo ha tomado. Sin reintento automático en D-047 (se
-  /// evaluó y quedó fuera de alcance): sirve para ver de un vistazo si algo se
-  /// reencoló a mano.
+  /// Veces que un worker lo ha tomado. Desde D3 hay reintento automático para
+  /// los fallos de INFRAESTRUCTURA (ver `classifyFailure`): este contador es lo
+  /// que lo acota a 3 intentos. Un 2 sin éxito sigue siendo una señal.
   attempts Int               @default(0)
+  /// Con valor = el trabajo está esperando su reintento y no se puede tomar
+  /// hasta esa hora (backoff de D3). `claimNext` filtra por él. Null = tomable
+  /// ya. Se escribe con el `now()` de la BASE, como el latido: worker y managed
+  /// PG son máquinas distintas y mezclar relojes haría que el backoff durase
+  /// lo que dijera la deriva.
+  nextAttemptAt DateTime?
 
   /// Quién lo pidió (email del actor de Cowork) — auditoría y mensajes.
   requestedBy String
@@ -256,6 +274,7 @@ model AnalysisJob {
 
   @@index([status, createdAt])
   @@index([projectId])
+  @@index([specId])
   @@map("analysis_jobs")
 }
 
@@ -293,6 +312,8 @@ model Spec {
 
   gates Gate[]
   runs  Run[]
+  /// Trabajos de generación / merge de esta spec (D3).
+  analysisJobs AnalysisJob[]
 
   @@unique([projectId, version])
   @@map("specs")

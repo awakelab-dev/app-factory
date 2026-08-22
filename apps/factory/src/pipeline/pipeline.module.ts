@@ -6,6 +6,7 @@ import { AnalysisWorkerService } from './analysis-worker.service';
 import { ChangeRequestsService } from './change-requests.service';
 import { GatesService } from './gates.service';
 import { GenerationRunnerService } from './generation-runner.service';
+import { PrMergeService } from './pr-merge.service';
 import { ProjectsService } from './projects.service';
 import { SpecExportService } from './spec-export.service';
 import { SubmissionsService } from './submissions.service';
@@ -30,6 +31,7 @@ import { SubmissionsService } from './submissions.service';
     GatesService,
     AnalysisRunnerService,
     GenerationRunnerService,
+    PrMergeService,
     ChangeRequestsService,
     SubmissionsService,
     ActorsService,
@@ -42,6 +44,7 @@ import { SubmissionsService } from './submissions.service';
     GatesService,
     AnalysisRunnerService,
     GenerationRunnerService,
+    PrMergeService,
     ChangeRequestsService,
     SubmissionsService,
     ActorsService,

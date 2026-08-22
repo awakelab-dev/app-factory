@@ -28,6 +28,15 @@ const BLOCKED_BASH_PATTERNS: RegExp[] = [
 
 export interface GenerationOptions {
   requiredGates?: GateType[];
+  /**
+   * Se llama en cuanto el `Run` existe (D3). El worker lo usa para enlazar el
+   * Run con su trabajo de la cola ANTES de que el agente empiece: si el proceso
+   * muere a mitad de una generación de 25 minutos, el barrido necesita saber
+   * qué `Run` cerrar. Es la misma mecánica que ya tenía el runner de análisis
+   * (D-047) — sin ella, una generación muerta dejaba el `Run` en `running`
+   * para siempre, que es el bug 1 de D-046 otra vez.
+   */
+  onRunStarted?: (runId: string) => void | Promise<void>;
 }
 
 export interface GenerationRunnerDeps {
@@ -141,6 +150,7 @@ export class GenerationRunnerService {
         branchName
       }
     });
+    await options.onRunStarted?.(run.id);
 
     try {
       await this.createOrReuseBranch(branchName, gitRunner);

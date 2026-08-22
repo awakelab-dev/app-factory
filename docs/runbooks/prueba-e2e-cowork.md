@@ -8,7 +8,8 @@ Objetivo de la prueba: recorrer el ciclo completo con un caso pequeño y confirm
 
 - Conector conectado en Cowork (si pide login: email + contraseña de la Fábrica, NO la cuenta de Claude).
 - Actor propio en staging: `leonardo.barreto@awakelab.dev` (rol `admin` → ve todo) y, para probar la cara de gerente, `prueba.gerente@awakelab.dev` (rol `gerente` → ve solo lo suyo).
-- Túnel SSH a la BD de staging disponible para los pasos de Sistemas (analyze/generate por CLI).
+- Túnel SSH a la BD de staging disponible **solo para diagnóstico**: desde D-053 ningún paso del
+  guion se ejecuta por consola.
 
 ## 1. Crear el prototipo (usuario, en Cowork — lenguaje natural)
 
@@ -78,17 +79,25 @@ El gerente decide `functional` y `manager_acceptance`; los gates `technical` y `
 
 **Qué observar**: si puede leer la spec en lenguaje de negocio desde el chat y decidir sin ayuda.
 
-## 5. Generación + revisión técnica (Sistemas)
+## 5. Generación + revisión técnica (Sistemas, desde `/factory` o el chat — sin consola)
 
-```bash
-pnpm --filter=@awk/factory run cli -- decide-gate <gateIdTecnico> approved --notes "..."
-pnpm --filter=@awk/factory run cli -- generate <specId>
-```
-Abre rama `factory/<slug>` y PR **con su migración ya dentro** (D-051: la escribe el propio run con
-`prisma migrate diff`, no un humano). Revisión de PR según docs/05 — ahora incluye **leer el `.sql`**,
-que es lo que queda de trabajo humano aquí; si hay desviación, **no parchear a mano**: enmendar la nota
-del gate y regenerar, que la migración se reescribe sola (una por PR, sin apilar). Tras el merge, el
-deploy de staging aplica las migraciones antes de levantar el código nuevo — sin SSH.
+El revisor técnico aprueba el gate `technical` en `/factory` (o con `approve_spec` desde el chat).
+**Con eso se dispara la generación**: aprobar el gate que completa `functional`+`technical` encola el
+trabajo y lo corre el worker `factory-generator` (D-053). Nadie lanza `generate`. El progreso se sigue
+en «Cola de la Fábrica» del detalle del proyecto; un corte de red se reintenta solo (2 y 10 min) y se
+ve como tal, con la hora del próximo intento.
+
+El run abre rama `factory/<slug>` y PR **con su migración ya dentro** (D-051: la escribe el propio run
+con `prisma migrate diff`, no un humano). Revisión de PR según docs/05 — incluye **leer el `.sql`**, y
+es lo único que queda de trabajo humano aquí; si hay desviación, **no parchear a mano**: enmendar la
+nota del gate y decidir `changes_requested` en `pr_review`, que encola la regeneración y la migración
+se reescribe sola (una por PR, sin apilar).
+
+**Aprobar el gate `pr_review` mergea la PR de verdad**: el worker espera los checks
+(`gh pr checks --watch`), hace `gh pr merge --squash --delete-branch` y **entonces** pasa el proyecto a
+`staging` y abre el gate `manager_acceptance`. Si la CI está roja o hay conflicto, el proyecto se queda
+en `pr_review` con el motivo visible en `/factory` — el gate ya no puede mentir (D-049). Tras el merge,
+el deploy de staging aplica las migraciones antes de levantar el código nuevo, sin SSH.
 
 ## 6. Validación del usuario en staging + aceptación
 
@@ -128,7 +137,7 @@ chat → generación incremental sobre el módulo vivo.
 |---|---|---|
 | ~~Análisis manual por CLI tras `submit_prototype`~~ | ~~El usuario espera a Sistemas en cada envío~~ | **CERRADA** por D-047 (incremento C): se encola y corre sola |
 | ~~Escribir la migración a mano tras el merge~~ | ~~Un módulo con modelos nuevos no funciona en staging hasta que alguien redacta y aplica el SQL~~ | **CERRADA** por D-051 (D2): se genera dentro del run y el Deploy la aplica |
-| `generate` sigue siendo manual | Tras aprobar los gates, el usuario espera a Sistemas para que el código se escriba | **Único paso de consola que queda.** Diseñado en docs/09 (**D3**): necesita toolchain de build y credencial de git con push en un worker propio |
+| ~~`generate` manual~~ y ~~mergear la PR a mano~~ | ~~Tras aprobar los gates, el usuario espera a Sistemas~~ | **CERRADAS** por D-053 (D3): aprobar el último gate de spec encola la generación; aprobar `pr_review` encola el merge verificado. **No queda ningún paso de consola en el ciclo** |
 | AS OAuth solo en staging | El conector de producción no existe aún | Replicar deploy a producción |
 | `FACTORY_OAUTH_JWKS` sin clave RSA persistente | Se genera una RSA efímera en cada reinicio (warning en el log) | Regenerar con `cli oauth-genkeys` y actualizar `.env` |
 | Sin A2F ni rate limiting en el login del AS | Riesgo de fuerza bruta | **Fase 3** de docs/08 |
@@ -167,8 +176,17 @@ Ejecutada con el caso **`incidencias-aula`** (proyecto `019ffa2c-eb45-70c4-a6a0-
 >   migraciones (plataforma y Fábrica) entre el `pull` y el `up -d`. Si una falla, el deploy se rompe
 >   en ROJO en vez de dejar la API sirviendo 500 contra un esquema viejo.
 >
-> Sigue exigiendo consola, con diseño ya validado en `docs/09-incremento-d-cero-consola.md`: lanzar
-> `generate` (**D3**), que es ya el único paso del ciclo que necesita a Sistemas en una terminal.
+> **Actualización 2026-08-21 (D-053, fase D3) — los DOS últimos, y con esto no queda ninguno:**
+> - **`cli generate <specId>`.** Aprobar el gate que completa `functional`+`technical` encola la
+>   generación; la corre el worker `factory-generator` en su propio checkout. Un corte de red se
+>   reintenta solo (2 y 10 min) en vez de perder el run: el caso de D-048 costaba 3,4 USD y una
+>   petición a Sistemas.
+> - **Mergear la PR.** Aprobar el gate `pr_review` encola el merge: el worker espera los checks y
+>   mergea con squash, y solo entonces el proyecto pasa a `staging`. Lo que queda es **leer el diff**,
+>   que es humano a propósito (D-049) y solo-admin.
+>
+> **El incremento D está cerrado.** Al humano le quedan tres cosas, ninguna en una terminal: decidir
+> gates, leer el diff de la PR y validar el módulo en staging.
 
 **Hallazgos** (detalle en D-046):
 
@@ -180,7 +198,7 @@ Ejecutada con el caso **`incidencias-aula`** (proyecto `019ffa2c-eb45-70c4-a6a0-
 | 4 | El runner necesita su propio `apps/factory/.env`, sin aviso hasta que falla | Documentado arriba |
 | 5 | Puerto del túnel mal documentado (5433 vs 15432 real) | Corregido aquí; pendiente en los otros 3 runbooks |
 | 6 | Un run fallido no registra coste ni tokens (`costUsd: null`) | Incremento C |
-| 7 | Sin reintento ni reanudación: un corte de red tira la generación entera | Diseñado, en el alcance de **D3** (docs/09) — el reintento clasificado va DENTRO de la generación server-side |
+| 7 | Sin reintento ni reanudación: un corte de red tira la generación entera | **Corregido** (D-053): `classifyFailure` distingue infraestructura de error del agente y reencola con backoff (2 y 10 min, 3 intentos). Se apoya en que la REgeneración reanuda (D-048: 4,91 USD frente a rehacerlo) |
 | 8 | Cada módulo nuevo rompe `registry.test.ts` (la generación no puede tocarlo) | **Desaparecido** (D-050): los módulos se descubren, ya no hay lista que editar. El test pasó a asserter invariantes (ids/basePaths únicos, rutas dentro del basePath, cero problemas de descubrimiento) |
 
 **Costes registrados**: 12,64 USD en total — análisis 1,37 (5m46s), generación 8,39 (21m08s), análisis del cambio 0,68 (3m10s), generación del cambio 2,20 (7m29s). No incluye un análisis abortado ni una generación caída a los 23 minutos, ninguno de los dos con coste registrado (hallazgo 6).

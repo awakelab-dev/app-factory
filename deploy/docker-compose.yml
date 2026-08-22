@@ -107,6 +107,10 @@ services:
       # borraría el trabajo, por eso el código lo trae apagado por defecto.
       FACTORY_WORKER_GIT_SYNC: ${FACTORY_WORKER_GIT_SYNC:-1}
       FACTORY_WORKER_POLL_MS: ${FACTORY_WORKER_POLL_MS:-10000}
+      # Kinds que sirve ESTE contenedor (D3). Explícito aunque coincida con el
+      # default del código: lo que hace cada worker se lee aquí, no en el
+      # binario.
+      FACTORY_WORKER_KINDS: ${FACTORY_RUNNER_KINDS:-analysis,change_analysis}
     volumes:
       - ${PLATFORM_REPO_HOST_PATH}:/platform-repo
       # Clave de SOLO LECTURA del repo (deploy key sin write) + known_hosts, para
@@ -122,6 +126,53 @@ services:
     healthcheck:
       # El proceso está vivo si Node sigue corriendo; basta con comprobar que
       # el ejecutable responde (no hay puerto que sondear).
+      test: ['CMD-SHELL', 'node -e "process.exit(0)"']
+      interval: 60s
+      timeout: 5s
+      retries: 3
+
+  # Worker de GENERACIÓN de la Fábrica (D3, docs/09). MISMA imagen que
+  # `factory-runner`; lo que cambia son los kinds, el checkout y la credencial.
+  #
+  # Por qué un segundo contenedor y no más kinds en el primero: el de análisis
+  # hace `fetch + reset --hard origin/main + clean` sobre su checkout antes de
+  # cada run, y la generación vive en la rama `factory/<slug>` con trabajo sin
+  # commitear y `node_modules` instalado. Compartir working copy es garantía de
+  # destrozo. Y con concurrencia 1 compartida, una generación de 25 min
+  # bloquearía un análisis de 3 — justo la espera que el gerente sí nota.
+  #
+  # Coste: +1 contenedor (~50 MB en reposo) y +1 checkout con node_modules
+  # (~1,5 GB de disco) en el Lightsail compartido de 32 GB.
+  factory-generator:
+    image: ghcr.io/awakelab-dev/awkplatform-factory-runner:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV}
+      FACTORY_DATABASE_URL: ${FACTORY_DATABASE_URL}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
+      FACTORY_WORKER_KINDS: generation,pr_merge
+      # Checkout PROPIO, con node_modules y con la rama de trabajo viva.
+      PLATFORM_REPO_PATH: /platform-repo-gen
+      # Cero sincronización: el código IGNORA esta variable para los kinds de
+      # generación (un reset --hard borraría el trabajo del agente), pero se
+      # deja explícita a 0 para que nadie tenga que ir a leerlo.
+      FACTORY_WORKER_GIT_SYNC: '0'
+      FACTORY_WORKER_POLL_MS: ${FACTORY_WORKER_POLL_MS:-10000}
+      # PAT fine-grained del repo con contents:write + pull_requests:write
+      # (decisión de Leonardo, 2026-08-17). Una sola credencial sirve para el
+      # push por HTTPS (`gh auth setup-git`) y para `gh`. PRERREQUISITO:
+      # protección de rama en `main`, para que no pueda empujar ahí ni por
+      # accidente. El contenedor de ANÁLISIS no la recibe.
+      GH_TOKEN: ${FACTORY_GITHUB_TOKEN}
+      # Remoto HTTPS: el PAT no sirve por SSH. Si el checkout ya se clonó por
+      # HTTPS, esto es idempotente.
+      PLATFORM_REPO_REMOTE_URL: ${PLATFORM_REPO_REMOTE_URL:-https://github.com/awakelab-dev/app-factory.git}
+      # Cuánto espera a la CI de la PR antes de dar el intento por perdido (ms).
+      FACTORY_PR_CHECKS_TIMEOUT_MS: ${FACTORY_PR_CHECKS_TIMEOUT_MS:-1800000}
+    volumes:
+      - ${PLATFORM_REPO_GEN_HOST_PATH}:/platform-repo-gen
+    healthcheck:
       test: ['CMD-SHELL', 'node -e "process.exit(0)"']
       interval: 60s
       timeout: 5s

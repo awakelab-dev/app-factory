@@ -1,8 +1,8 @@
 # Incremento D — «cero consola»: del prototipo al módulo vivo en staging
 
 > Diseño validado con Leonardo el 2026-08-17 antes de escribir código (patrón D-036/D-047).
-> **D1 está construido y verificado** (D-050). **D2 también** (D-051, 2026-08-18). **D3 sigue
-> diseñado y aprobado, sin construir.**
+> **D1, D2 y D3 están construidos y verificados** (D-050, D-051 y D-053). **El incremento está
+> CERRADO**: queda verlo correr en vivo con el primer módulo real.
 > Objetivo: que el ciclo prototipo → módulo funcionando **en staging** no exija una sola orden por
 > terminal. Producción y Fase 3 (A2F) quedan fuera a propósito.
 
@@ -16,8 +16,8 @@
 | `docker compose logs` por SSH para saber por qué no avanza | B5 | mirar `/factory` | **hecho (D-050)** |
 | Escribir la migración a mano | B3 | revisar el `.sql` **en la PR** | **hecho (D-051)** |
 | `~/migrate.sh staging latest` por SSH | B3b | nada | **hecho (D-051)** |
-| `cli generate <specId>` en el Mac | B4 | nada | pendiente (D3) |
-| Mergear la PR | B6 | **leer el diff** (gate `pr_review`, humano, admin) | pendiente (D3) |
+| `cli generate <specId>` en el Mac | B4 | nada | **hecho (D-053)** |
+| Mergear la PR | B6 | **leer el diff** (gate `pr_review`, humano, admin) | **hecho (D-053)** |
 
 Al cerrar D3 el humano hace exactamente tres cosas, todas fuera de la terminal: decidir gates en
 `/factory` (o en el chat), **leer el diff de la PR**, y validar el módulo en staging. Eso último no se
@@ -29,11 +29,11 @@ toca: D-049 es la mejor prueba que tenemos de que el gate de PR debe seguir sien
 |---|---|---|---|
 | **D1** | 1 (cableado) + 2 (roles) + 5 (visibilidad) | ninguna | **cerrada, D-050** |
 | **D2** | 3 (migración generada y aplicada) | fragmento de `deploy.yml` | **cerrada, D-051** |
-| **D3** | 4 (generación server-side + reintento) + 6 (merge verificado) | +1 servicio, +1 checkout, +1 credencial | diseñada |
+| **D3** | 4 (generación server-side + reintento) + 6 (merge verificado) | +1 servicio, +1 checkout, +1 credencial | **cerrada, D-053** |
 
 Se decidió trocear así (Leonardo, 2026-08-17) para que un fallo de la credencial de git de D3 no
-contamine el diagnóstico de un cambio de registry. **Mientras D3 no esté, cada `generate` del piloto
-lo lanza Sistemas y un corte de API cuesta ~3,4 USD sin reintento (D-048).**
+contamine el diagnóstico de un cambio de registry. Funcionó: los tres bloques se cerraron por
+separado y ninguno arrastró al siguiente.
 
 ---
 
@@ -155,7 +155,7 @@ a averiguar:
 
 ---
 
-## D3 — Generación server-side con reintento + merge verificado (diseñado, sin construir)
+## D3 — Generación server-side con reintento + merge verificado (CONSTRUIDO, D-053)
 
 ### Dónde corre: **dos workers, misma imagen, checkouts distintos**
 
@@ -234,6 +234,50 @@ rompería la separación que D-047 defendió bien.
 **La propiedad que NO se pierde**: `pr_review` es solo-admin y sigue exigiendo que **una persona lea el
 diff**. Un gerente no puede llevar código a `main` aprobando gates de negocio. Esto es lo que sostiene
 todo lo demás.
+
+---
+
+### Lo que salió al construirlo (D-053, 2026-08-21)
+
+El diseño se sostuvo entero. Estos son los detalles que no estaban escritos y que conviene no volver
+a averiguar:
+
+- **Una contradicción del propio diseño, resuelta.** Arriba dice a la vez `attempts < 3` y
+  «2 → 10 → 30 min», que no pueden ser las dos cosas. Se implementó lo primero: **3 ejecuciones como
+  máximo, 2 reintentos, backoff 2 y 10 min**. Es la regla precisa y la conservadora con el gasto
+  (un tercer reintento de una generación son ~8 USD por un fallo que ya se repitió tres veces).
+  Subirlo son dos constantes en `failure-classifier.ts`.
+- **La guarda del `reset --hard` va en CÓDIGO, no en el `.env`.** `syncRepo` no sincroniza para los
+  kinds de generación *antes* de mirar `FACTORY_WORKER_GIT_SYNC`. El contenedor lo trae a `0`
+  igualmente, pero un despiste en un `.env` del servidor no puede costar un módulo generado a medias.
+- **Tres piezas de fontanería de git que el diseño daba por hechas** porque en el Mac de Leonardo
+  llevan años puestas, y que en un contenedor rompen con mensajes que no se parecen al problema:
+  `user.name`/`user.email` (sin ellos `git commit` falla con «Please tell me who you are» al final de
+  25 min de agente), `safe.directory` (checkout montado del host → «dubious ownership») y el remoto en
+  HTTPS (el PAT no sirve por SSH). Todo en `git-identity.ts`, una vez al arrancar y fallando ruidoso.
+- **`gh pr checks --watch` necesita timeout.** Bloquea hasta que la CI termina; con la CI colgada
+  esperaría para siempre y el worker generador no volvería a tomar nada. 30 min por defecto, y al
+  agotarse el fallo se clasifica como reintentable.
+- **El gate `manager_acceptance` se abre TRAS EL MERGE**, no al aprobar `pr_review` (que es donde
+  estaba desde 2026-07-19). Antes del merge no hay staging que validar, y si el merge falla el gate
+  abierto sería una invitación a aceptar algo que no existe.
+- **Hay que limpiar el checkout de generación después de mergear.** `/platform-repo-gen` es
+  persistente y nunca se resetea: sin `reset --hard origin/main` + `branch -D`, el próximo
+  `request_change` del mismo módulo reutilizaría (`createOrReuseBranch` reutiliza a propósito) una
+  rama anclada a un `main` de hace semanas.
+- **`onRunStarted` faltaba en la generación.** Lo tenía el análisis desde D-047; sin él, una
+  generación muerta a los 20 minutos dejaba su `Run` en `running` para siempre — el bug 1 de D-046
+  otra vez, por la puerta que quedaba abierta.
+- **`changes_requested` en `manager_acceptance` no encola nada, y es deliberado.** El feedback del
+  gerente tras validar en staging es texto NUEVO: regenerar desde la spec vieja con una nota de gate
+  daría código que no describe lo que pidió. El camino correcto es `request_change` (validado en
+  D-035), que sí está automatizado entero. Queda un pendiente de PRODUCTO, no de consola: que
+  `/factory` lo diga ahí, en vez de dejar el proyecto en `changes_requested` sin salida visible.
+- **Lo que NO se pudo ejercitar en el sandbox**, y por tanto es el paso 0 del siguiente encargo: el
+  ciclo real contra GitHub (push con PAT, PR, checks, merge) y una generación real de agente. Llegan
+  con el primer módulo que genere D3. Qué mirar en el log del generador: `Migración generada para
+  "<slug>"` (el residual que D2 dejó abierto) y el proyecto pasando a `staging` con su gate
+  `manager_acceptance` recién abierto.
 
 ---
 

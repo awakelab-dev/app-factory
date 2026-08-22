@@ -13,6 +13,7 @@ import { GatesService } from './pipeline/gates.service';
 import { GenerationRunnerService } from './pipeline/generation-runner.service';
 import { ProjectsService } from './pipeline/projects.service';
 import { SpecExportService } from './pipeline/spec-export.service';
+import { PrismaService } from './prisma/prisma.service';
 import type { FactoryActorRole, GateDecision, ProjectStatus } from './pipeline/types';
 
 /**
@@ -43,6 +44,9 @@ import type { FactoryActorRole, GateDecision, ProjectStatus } from './pipeline/t
  *   # en error, o meter en la cola algo creado por otra vía):
  *   pnpm --filter=@awk/factory run cli -- enqueue-analysis --project <projectId> \
  *     [--change-request <changeRequestId>] [--requested-by x@y.com]
+ *   # encolar una generación (o el merge de su PR) para el worker generador (D3):
+ *   pnpm --filter=@awk/factory run cli -- enqueue-generation --spec <specId> \
+ *     [--kind pr_merge] [--requested-by x@y.com]
  *   # volcar las specs de la BD al checkout local (docs/pipeline/<slug>/):
  *   pnpm --filter=@awk/factory run cli -- export-spec <projectId> [--out /ruta/checkout]
  *   # enmendar la nota de un gate ya decidido sin re-decidirlo (D-033):
@@ -227,6 +231,34 @@ async function main(): Promise<void> {
       }
 
       /**
+       * Encola una GENERACIÓN (o el merge de su PR) sin ejecutarla: la recoge
+       * el worker `factory-generator` (D3). El camino normal es aprobar los
+       * gates en /factory o en el chat, que ya encola solo; esto es la
+       * escotilla de Sistemas para el caso que `classifyFailure` dio por fatal
+       * y que, mirado el motivo, sí merecía otra vuelta.
+       */
+      case 'enqueue-generation': {
+        const flags = parseFlags(rest);
+        const specId = requiredFlag(flags, 'spec');
+        const kind = flags.kind ?? 'generation';
+        if (kind !== 'generation' && kind !== 'pr_merge') {
+          throw new Error(`--kind inválido: "${kind}" (valores: generation, pr_merge)`);
+        }
+        const spec = await app.get(PrismaService).spec.findUniqueOrThrow({ where: { id: specId } });
+        const result = await app.get(AnalysisJobsService).enqueue({
+          kind,
+          projectId: spec.projectId,
+          specId,
+          requestedBy: flags['requested-by'] ?? 'leonardo.barreto@awakelab.dev'
+        });
+        console.log(JSON.stringify(result.job, null, 2));
+        if (result.alreadyQueued) {
+          console.log('\nYa había un trabajo activo para ese proyecto — se devuelve ESE (no se encola un segundo).');
+        }
+        break;
+      }
+
+      /**
        * Vuelca las specs de un proyecto desde la BD a docs/pipeline/<slug>/
        * del checkout local. Desde D-047 el análisis corre en el servidor y su
        * checkout es efímero, así que los .md ya no llegan solos al repo: la
@@ -338,7 +370,7 @@ async function main(): Promise<void> {
 
       default:
         console.error(
-          `Comando desconocido: "${command ?? ''}". Comandos: create-project, analyze, decide-gate, generate, request-change, analyze-change, enqueue-analysis, export-spec, amend-gate, create-actor, revoke-actor, set-password, oauth-genkeys, advance, status (ver el comentario al inicio de src/cli.ts).`
+          `Comando desconocido: "${command ?? ''}". Comandos: create-project, analyze, decide-gate, generate, request-change, analyze-change, enqueue-analysis, enqueue-generation, export-spec, amend-gate, create-actor, revoke-actor, set-password, oauth-genkeys, advance, status (ver el comentario al inicio de src/cli.ts).`
         );
         process.exitCode = 1;
     }

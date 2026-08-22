@@ -20,7 +20,11 @@ prototipos/
 # (`.github/workflows/*`) y se dejan aquí para copiarlos a mano.
 # `_to_delete/`: lo que hay que borrar y el bridge no puede (`rm` está prohibido
 # en el mount, así que se mueve aquí y lo borra Leonardo).
-# Se ignoran porque el commit de D2 se los llevó a `main` —incluido un .tgz de
-# 928 KB— por dejar la limpieza DESPUÉS del commit en el guion.
+# `.awk-transfer/`: el `.tgz` con el que cada tarea se lleva el repo al sandbox
+# para verificarlo fuera del mount (D-023). Es la misma clase de andamiaje y por
+# el mismo motivo: en D2 un tar de 928 KB acabó en `main`.
+# Se ignoran porque el commit de D2 se los llevó a `main` por dejar la limpieza
+# DESPUÉS del commit en el guion.
 _entrega-*/
 _to_delete/
+.awk-transfer/

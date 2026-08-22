@@ -98,7 +98,9 @@ function buildDetail(overrides: Partial<FactoryProjectDetail> = {}): FactoryProj
         finishedAt: '2026-07-15T09:07:24.000Z',
         runId: 'run-1',
         errorMessage: null,
-        changeRequestId: null
+        changeRequestId: null,
+        specId: null,
+        nextAttemptAt: null
       }
     ],
     ...overrides
@@ -273,7 +275,9 @@ describe('FactoryProjectDetailPage (rol admin, D-030)', () => {
             finishedAt: '2026-07-15T09:19:45.000Z',
             runId: 'run-1',
             errorMessage: 'API Error: Connection closed mid-response',
-            changeRequestId: 'cr-1'
+            changeRequestId: 'cr-1',
+            specId: null,
+            nextAttemptAt: null
           }
         ]
       })
@@ -287,6 +291,39 @@ describe('FactoryProjectDetailPage (rol admin, D-030)', () => {
     expect(within(queue).getByText(/runner-1:42/)).toBeInTheDocument();
     expect(within(queue).getByText('API Error: Connection closed mid-response')).toBeInTheDocument();
     expect(screen.queryByTestId('factory-queue-active')).not.toBeInTheDocument();
+  });
+
+  it('un trabajo reintentable avisa de que vuelve solo, en vez de parecer un fallo definitivo (D3)', async () => {
+    window.history.replaceState({}, '', '/factory/proj-1');
+    mockApi({
+      detail: buildDetail({
+        status: 'error',
+        analysisJobs: [
+          {
+            id: 'job-9',
+            createdAt: '2026-07-15T09:05:00.000Z',
+            kind: 'generation',
+            status: 'queued',
+            attempts: 1,
+            requestedBy: 'gerente@awakelab.world',
+            workerId: null,
+            claimedAt: null,
+            heartbeatAt: null,
+            finishedAt: null,
+            runId: 'run-1',
+            errorMessage: 'Intento 1 fallido por un problema de infraestructura; se reintenta en 2 min.',
+            changeRequestId: null,
+            specId: 'spec-1',
+            nextAttemptAt: '2026-07-15T09:07:00.000Z'
+          }
+        ]
+      })
+    });
+    render(<App />);
+
+    const queue = await screen.findByTestId('factory-queue');
+    expect(within(queue).getByText('Generación del módulo')).toBeInTheDocument();
+    expect(within(queue).getByTestId('factory-queue-retry-job-9')).toHaveTextContent(/se reintenta solo/);
   });
 
   it('con un trabajo en cola lo dice explícitamente — "avanza solo, no hace falta lanzar nada"', async () => {
@@ -309,7 +346,9 @@ describe('FactoryProjectDetailPage (rol admin, D-030)', () => {
             finishedAt: null,
             runId: null,
             errorMessage: null,
-            changeRequestId: null
+            changeRequestId: null,
+            specId: null,
+            nextAttemptAt: null
           }
         ]
       })

@@ -1,11 +1,15 @@
-import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { assertProjectVisibleToActor } from './actor-scope';
+import { AnalysisJobsService } from './analysis-jobs.service';
 import { ProjectsService } from './projects.service';
 import type { FactoryActorContext, GateDecision, GateType, ProjectStatus } from './types';
 
 /** Gates que un `gerente` puede decidir (D-036): los de negocio. `technical`/`pr_review` son solo-admin. */
 const MANAGER_GATE_TYPES: readonly GateType[] = ['functional', 'manager_acceptance'];
+
+/** Gates de SPEC que hay que tener aprobados para poder generar (docs/05). */
+const REQUIRED_SPEC_GATES: readonly GateType[] = ['functional', 'technical'];
 
 export interface GateDecisionInput {
   gateId: string;
@@ -34,16 +38,28 @@ export interface GateAmendInput {
  * `spec_ready` para que un dev edite los archivos y corra `analyze` de
  * nuevo (crea la siguiente versión de spec + gates frescos).
  *
- * Fase 1 (docs/06: "lanzado por un dev", sin cola de trabajos): aprobar los
- * gates funcional+técnico NO dispara la generación automáticamente — eso lo
- * decide un dev explícitamente con el comando `generate`, que a su vez exige
- * (`GenerationRunnerService`) que ambos gates estén `approved`.
+ * **Desde D3, decidir un gate ENCOLA trabajo** (docs/09). Es el fin de la
+ * fricción de D-048 ("aprobé los dos gates y no pasa nada", con la generación
+ * esperando a que Sistemas la lanzara desde una terminal):
+ *
+ *  - aprobar el gate que deja `functional` + `technical` en verde → encola
+ *    `generation` para esa spec;
+ *  - `changes_requested` en `pr_review` → encola una REGENERACIÓN;
+ *  - aprobar `pr_review` → encola `pr_merge`, y **no** transiciona a `staging`:
+ *    eso lo hace el worker cuando ha visto la PR mergeada de verdad (D-049,
+ *    "los gates son declarativos").
+ *
+ * Se respeta D-030: el HTTP encola, otro proceso ejecuta. Aquí no corre ningún
+ * agente ni ningún `git`.
  */
 @Injectable()
 export class GatesService {
+  private readonly logger = new Logger(GatesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
-    private readonly projects: ProjectsService
+    private readonly projects: ProjectsService,
+    private readonly jobs: AnalysisJobsService
   ) {}
 
   /** Abre un gate por cada tipo pedido para una spec recién creada (ver AnalysisRunnerService). */
@@ -90,7 +106,11 @@ export class GatesService {
             ? 'changes_requested'
             : 'spec_ready'
           : gate.gateType === 'pr_review'
-            ? 'staging'
+            ? // D3: aprobar `pr_review` NO lleva el proyecto a `staging`. Encola
+              // `pr_merge` y es el worker quien transiciona, DESPUÉS de haber
+              // visto la PR mergeada. Mientras tanto el proyecto se queda aquí,
+              // que es la verdad: hay código aprobado y todavía no está en main.
+              undefined
             : gate.gateType === 'manager_acceptance'
               ? // Aceptar al gerente deja el proyecto EN `manager_acceptance`
                 // (estado de reposo: aceptado en staging, esperando promoción a
@@ -124,14 +144,67 @@ export class GatesService {
       }
     });
 
-    // Aprobar el PR abre el gate de aceptación del gerente sobre la MISMA spec
-    // (gate de primera clase, 2026-07-19): el gerente valida en staging y lo
-    // decide en /factory, en vez de un `advance` manual sin fila auditable.
-    if (input.decision === 'approved' && gate.gateType === 'pr_review') {
-      await this.openGatesForSpec(gate.specId, ['manager_acceptance']);
-    }
+    await this.enqueueFollowUpWork(gate.specId, projectId, gate.gateType as GateType, input);
 
     return updated;
+  }
+
+  /**
+   * Trabajo que dispara una decisión de gate (D3). Se hace DESPUÉS de escribir
+   * el gate: si encolar falla, la decisión ya está registrada y el trabajo se
+   * repone con `cli enqueue-generation` — al revés dejaría un trabajo en la
+   * cola para un gate que nadie decidió.
+   *
+   * Encolar es idempotente por diseño (`enqueueIn` devuelve el trabajo activo
+   * que ya hubiera para el proyecto en vez de crear otro), así que dos
+   * aprobaciones seguidas no producen dos generaciones.
+   */
+  private async enqueueFollowUpWork(
+    specId: string,
+    projectId: string,
+    gateType: GateType,
+    input: GateDecisionInput
+  ): Promise<void> {
+    // Aprobar el gate que completa functional+technical dispara la generación.
+    // Antes de D3 el proyecto se quedaba en `pending_approval` esperando a que
+    // alguien corriera `cli generate <specId>` (D-048).
+    if (input.decision === 'approved' && (gateType === 'functional' || gateType === 'technical')) {
+      if (await this.areSpecGatesApproved(specId, [...REQUIRED_SPEC_GATES])) {
+        await this.enqueue('generation', specId, projectId, input.reviewer, 'gates de spec aprobados');
+      }
+      return;
+    }
+
+    if (gateType !== 'pr_review') return;
+
+    // Aprobar la PR: el merge lo hace el worker, que tiene `gh` y credencial.
+    // El gate `manager_acceptance` NO se abre aquí — lo abre el merge, cuando
+    // ya hay algo en staging que el gerente pueda validar.
+    if (input.decision === 'approved') {
+      await this.enqueue('pr_merge', specId, projectId, input.reviewer, 'PR aprobada');
+      return;
+    }
+
+    // "Complementar" sobre la PR = regenerar sobre la misma rama con las notas
+    // del revisor (que `GenerationRunnerService` lee de los gates aprobados).
+    if (input.decision === 'changes_requested') {
+      await this.enqueue('generation', specId, projectId, input.reviewer, 'la revisión de PR pidió cambios');
+    }
+  }
+
+  private async enqueue(
+    kind: 'generation' | 'pr_merge',
+    specId: string,
+    projectId: string,
+    requestedBy: string,
+    motivo: string
+  ): Promise<void> {
+    const { job, alreadyQueued } = await this.jobs.enqueue({ kind, projectId, specId, requestedBy });
+    this.logger.log(
+      alreadyQueued
+        ? `Ya había un trabajo activo para el proyecto ${projectId} (${job.kind} ${job.id}): no se encola ${kind}.`
+        : `Encolado ${kind} para la spec ${specId} (${motivo}): trabajo ${job.id}.`
+    );
   }
 
   /**

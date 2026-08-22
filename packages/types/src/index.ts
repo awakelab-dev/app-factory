@@ -430,7 +430,12 @@ export const factoryProjectsResponseSchema = z.array(factoryProjectSummarySchema
  * desde `/factory` y desde el chat el proyecto simplemente "no avanzaba", sin
  * ninguna señal de por qué.
  */
-export const factoryAnalysisJobKindSchema = z.enum(['analysis', 'change_analysis']);
+/**
+ * `generation` y `pr_merge` entran en D3 (docs/09): la cola dejó de ser solo de
+ * análisis. La tabla se sigue llamando `analysis_jobs` a propósito —
+ * renombrarla cuesta una migración destructiva y no aporta nada.
+ */
+export const factoryAnalysisJobKindSchema = z.enum(['analysis', 'change_analysis', 'generation', 'pr_merge']);
 export type FactoryAnalysisJobKind = z.infer<typeof factoryAnalysisJobKindSchema>;
 
 export const factoryAnalysisJobStatusSchema = z.enum(['queued', 'running', 'success', 'error']);
@@ -452,7 +457,15 @@ export const factoryAnalysisJobSchema = z.object({
   finishedAt: z.iso.datetime().nullable(),
   runId: z.string().nullable(),
   errorMessage: z.string().nullable(),
-  changeRequestId: z.string().nullable()
+  changeRequestId: z.string().nullable(),
+  /** Spec que genera (kind `generation`/`pr_merge`); null en los análisis. */
+  specId: z.string().nullable(),
+  /**
+   * Con valor = el trabajo falló por infraestructura y está esperando su
+   * reintento automático (D3). Es la diferencia visible entre "se cayó y ahí
+   * se queda" y "se cayó y vuelve solo a las 22:14".
+   */
+  nextAttemptAt: z.iso.datetime().nullable()
 });
 export type FactoryAnalysisJob = z.infer<typeof factoryAnalysisJobSchema>;
 

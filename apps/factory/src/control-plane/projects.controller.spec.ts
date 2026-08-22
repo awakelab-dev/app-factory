@@ -150,7 +150,11 @@ describe('ProjectsController.detail', () => {
       finishedAt: NOW,
       runId: 'run-1',
       errorMessage: 'API Error: Connection closed mid-response',
-      changeRequestId: null
+      changeRequestId: null,
+      specId: null,
+      // Reintento programado (D3): es la diferencia entre "se cayó" y "se cayó
+      // y vuelve solo a las 22:14".
+      nextAttemptAt: NOW
     };
     const projects = {
       getFullStatus: vi
@@ -174,7 +178,9 @@ describe('ProjectsController.detail', () => {
         finishedAt: NOW.toISOString(),
         runId: 'run-1',
         errorMessage: 'API Error: Connection closed mid-response',
-        changeRequestId: null
+        changeRequestId: null,
+        specId: null,
+        nextAttemptAt: NOW.toISOString()
       }
     ]);
   });

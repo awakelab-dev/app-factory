@@ -49,10 +49,37 @@ export async function runGit(args: string[], cwd: string): Promise<GitCommandRes
   }
 }
 
-export async function runGh(args: string[], cwd: string): Promise<GitCommandResult> {
+export interface GhOptions {
+  /**
+   * Corta el comando pasado este tiempo. Existe por `gh pr checks --watch`
+   * (D3): espera a que la CI termine, y si la CI se cuelga esperaría PARA
+   * SIEMPRE, dejando al worker de generación sin tomar nada más. Con timeout,
+   * el trabajo cae, se clasifica como reintentable y vuelve solo.
+   */
+  timeoutMs?: number;
+  /** Salida máxima a capturar; `gh pr checks --watch` repinta mucho. */
+  maxBuffer?: number;
+}
+
+export async function runGh(args: string[], cwd: string, options: GhOptions = {}): Promise<GitCommandResult> {
   try {
-    return await execFileAsync('gh', args, { cwd });
+    return await execFileAsync('gh', args, {
+      cwd,
+      timeout: options.timeoutMs ?? 0,
+      maxBuffer: options.maxBuffer ?? 8 * 1024 * 1024
+    });
   } catch (error) {
+    // `killed` = lo matamos NOSOTROS por timeout. Sin este caso aparte, el
+    // mensaje sería "Command failed" a secas y `classifyFailure` lo daría por
+    // fatal (su default), cuando una CI que tarda de más es justo lo que hay
+    // que reintentar.
+    if ((error as { killed?: boolean }).killed && options.timeoutMs) {
+      const timeoutError = new Error(
+        `gh ${args.join(' ')} superó el tiempo máximo de ${Math.round(options.timeoutMs / 60000)} min (ETIMEDOUT).`
+      );
+      timeoutError.name = 'GhTimeoutError';
+      throw timeoutError;
+    }
     throw commandErrorWithStderr(error, 'gh', args);
   }
 }

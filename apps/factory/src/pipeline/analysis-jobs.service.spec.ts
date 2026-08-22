@@ -93,7 +93,7 @@ describe('AnalysisJobsService.claimNext', () => {
     const { service, queryRaw } = buildService();
     queryRaw.mockResolvedValueOnce([{ id: 'job-1', kind: 'analysis', projectId: 'proj-1' }]);
 
-    const job = await service.claimNext('host:123');
+    const job = await service.claimNext('host:123', ['analysis', 'change_analysis']);
 
     const sql = queryRaw.mock.calls[0]?.[0]?.join?.('') ?? '';
     expect(sql).toContain('FOR UPDATE SKIP LOCKED');
@@ -105,7 +105,49 @@ describe('AnalysisJobsService.claimNext', () => {
     const { service, queryRaw } = buildService();
     queryRaw.mockResolvedValueOnce([]);
 
-    expect(await service.claimNext('host:123')).toBeNull();
+    expect(await service.claimNext('host:123', ['analysis'])).toBeNull();
+  });
+
+  it('filtra por los kinds del worker y por el backoff (D3: dos checkouts, dos colas lógicas)', async () => {
+    const { service, queryRaw } = buildService();
+    queryRaw.mockResolvedValueOnce([]);
+
+    await service.claimNext('host:123', ['generation', 'pr_merge']);
+
+    const [template, ...params] = queryRaw.mock.calls[0] ?? [];
+    const sql = (template as unknown as string[])?.join?.('') ?? '';
+    // El filtro por kind es lo que impide que el worker de análisis (que hace
+    // `reset --hard` sobre su checkout) tome una generación viva en una rama.
+    expect(sql).toContain('kind::text = ANY(');
+    expect(params).toContainEqual(['generation', 'pr_merge']);
+    // Un trabajo esperando su reintento no es tomable hasta su hora.
+    expect(sql).toContain('"nextAttemptAt" IS NULL OR "nextAttemptAt" <= now()');
+  });
+
+  it('sin kinds no toca la BD (un worker mal configurado no vacía la cola)', async () => {
+    const { service, queryRaw } = buildService();
+
+    expect(await service.claimNext('host:123', [])).toBeNull();
+    expect(queryRaw).not.toHaveBeenCalled();
+  });
+});
+
+describe('AnalysisJobsService.requeueForRetry', () => {
+  it('devuelve el trabajo a queued con el backoff calculado en la BASE y sin tocar attempts', async () => {
+    const { service, executeRaw } = buildService();
+
+    await service.requeueForRetry('job-1', 10, 'Connection closed mid-response');
+
+    const [template, ...params] = executeRaw.mock.calls[0] ?? [];
+    const sql = (template as unknown as string[])?.join?.('') ?? '';
+    expect(sql).toContain("status = 'queued'");
+    // El reloj tiene que ser el de la base: es contra now() de la base que
+    // `claimNext` compara después.
+    expect(sql).toContain('now() + make_interval');
+    // attempts lo incrementa el claim siguiente, no el reencolado: así el
+    // contador cuenta EJECUCIONES, no reintentos programados.
+    expect(sql).not.toContain('attempts');
+    expect(params).toContain(10);
   });
 });
 

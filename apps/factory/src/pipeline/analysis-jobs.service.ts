@@ -17,6 +17,8 @@ export interface EnqueueInput {
   projectId: string;
   /** Obligatorio para `change_analysis`. */
   changeRequestId?: string;
+  /** Obligatorio para `generation` y `pr_merge` (D3). */
+  specId?: string;
   requestedBy: string;
 }
 
@@ -80,18 +82,33 @@ export class AnalysisJobsService {
         kind: input.kind,
         projectId: input.projectId,
         changeRequestId: input.changeRequestId,
+        specId: input.specId,
         requestedBy: input.requestedBy
       }
     });
-    this.logger.log(`Trabajo de análisis encolado (${input.kind}) para el proyecto ${input.projectId}: ${job.id}`);
+    this.logger.log(`Trabajo encolado (${input.kind}) para el proyecto ${input.projectId}: ${job.id}`);
     return { job: job as AnalysisJobRow, alreadyQueued: false };
   }
 
   /**
-   * Toma el trabajo `queued` más antiguo y lo marca `running`, atómicamente.
-   * `SKIP LOCKED` deja el camino abierto a varios workers sin cambiar nada.
+   * Toma el trabajo `queued` más antiguo DE LOS KINDS QUE ESTE WORKER SIRVE y
+   * lo marca `running`, atómicamente. `SKIP LOCKED` permite varios workers
+   * sobre la misma tabla.
+   *
+   * `kinds` es el filtro de D3: `factory-runner` sirve
+   * `analysis,change_analysis` y `factory-generator` sirve
+   * `generation,pr_merge`. No es preferencia — son dos checkouts distintos
+   * (uno se resetea a main antes de cada run, el otro vive en la rama
+   * `factory/<slug>` con trabajo sin commitear), así que un worker que tome un
+   * kind ajeno destrozaría el trabajo del otro. Una línea de SQL: la cola
+   * sigue siendo una tabla.
+   *
+   * `nextAttemptAt` implementa el backoff del reintento: un trabajo reencolado
+   * no es tomable hasta su hora. La comparación se hace contra el `now()` de la
+   * BASE, igual que el latido — worker y managed PG son máquinas distintas.
    */
-  async claimNext(workerId: string): Promise<AnalysisJobRow | null> {
+  async claimNext(workerId: string, kinds: readonly AnalysisJobKind[]): Promise<AnalysisJobRow | null> {
+    if (kinds.length === 0) return null;
     const rows = await this.prisma.$queryRaw<AnalysisJobRow[]>`
       UPDATE analysis_jobs SET
         status = 'running'::analysis_job_status,
@@ -99,16 +116,44 @@ export class AnalysisJobsService {
         "claimedAt" = now(),
         "heartbeatAt" = now(),
         "updatedAt" = now(),
+        "nextAttemptAt" = NULL,
         attempts = attempts + 1
       WHERE id = (
         SELECT id FROM analysis_jobs
         WHERE status = 'queued'::analysis_job_status
+          AND kind::text = ANY(${kinds as string[]})
+          AND ("nextAttemptAt" IS NULL OR "nextAttemptAt" <= now())
         ORDER BY "createdAt" ASC
         FOR UPDATE SKIP LOCKED
         LIMIT 1
       )
       RETURNING *`;
     return rows[0] ?? null;
+  }
+
+  /**
+   * Devuelve un trabajo a la cola con backoff, tras un fallo que
+   * `classifyFailure` dio por REINTENTABLE (D3). El `nextAttemptAt` se calcula
+   * en la base (`now() + make_interval`) por el mismo motivo que el umbral del
+   * barrido: los dos lados de la comparación tienen que salir del mismo reloj.
+   *
+   * `attempts` NO se toca aquí — lo incrementa `claimNext` en la toma
+   * siguiente, que es lo que hace que el contador cuente ejecuciones reales y
+   * no reencolados.
+   */
+  async requeueForRetry(jobId: string, delayMinutes: number, errorMessage: string): Promise<void> {
+    await this.prisma.$executeRaw`
+      UPDATE analysis_jobs SET
+        status = 'queued'::analysis_job_status,
+        "workerId" = NULL,
+        "claimedAt" = NULL,
+        "heartbeatAt" = NULL,
+        "finishedAt" = NULL,
+        "updatedAt" = now(),
+        "nextAttemptAt" = now() + make_interval(mins => ${delayMinutes}),
+        "errorMessage" = ${errorMessage}
+      WHERE id = ${jobId}::uuid`;
+    this.logger.warn(`Trabajo ${jobId} reencolado: reintento en ${delayMinutes} min.`);
   }
 
   /**
@@ -154,8 +199,9 @@ export class AnalysisJobsService {
     const staleAfterSeconds = Math.round(staleAfterMs / 1000);
     const minutes = Math.max(1, Math.round(staleAfterMs / 60000));
     const message =
-      `El proceso que corría este análisis dejó de dar señales de vida (sin latido en ${minutes} min) — ` +
-      'se da por muerto. El proyecto queda en error; se puede volver a encolar con `cli enqueue-analysis`.';
+      `El proceso que corría este trabajo dejó de dar señales de vida (sin latido en ${minutes} min) — ` +
+      'se da por muerto. El proyecto queda en error; se puede volver a encolar con `cli enqueue-analysis` ' +
+      '(análisis) o `cli enqueue-generation` (generación).';
     // El umbral se calcula EN LA BASE (`now() - make_interval`), no en Node:
     // el latido también lo escribe la base, así que los dos lados de la
     // comparación salen del mismo reloj.

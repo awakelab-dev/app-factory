@@ -79,7 +79,9 @@ export const RUN_STATUS_LABEL: Record<FactoryRunStatus, string> = {
  */
 export const ANALYSIS_JOB_KIND_LABEL: Record<FactoryAnalysisJobKind, string> = {
   analysis: 'Análisis del prototipo',
-  change_analysis: 'Análisis del cambio'
+  change_analysis: 'Análisis del cambio',
+  generation: 'Generación del módulo',
+  pr_merge: 'Merge de la PR'
 };
 
 export const ANALYSIS_JOB_STATUS_LABEL: Record<FactoryAnalysisJobStatus, string> = {

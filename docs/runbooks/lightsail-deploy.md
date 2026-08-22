@@ -318,6 +318,76 @@ pnpm --filter=@awk/factory run cli -- enqueue-analysis --project <projectId>
 **Coste**: cada análisis ronda 1,4 USD (D-046). El worker corre de uno en uno a
 propósito — es lo que acota el gasto y la RAM del Lightsail, que es compartido.
 
+### Worker de GENERACIÓN `factory-generator` (D-053, fase D3)
+
+Misma imagen que el runner. Lo que cambia: **checkout propio con dependencias**,
+**PAT con permiso de push** y `FACTORY_WORKER_KINDS=generation,pr_merge`.
+
+**0 · Prerrequisito, y no es opcional: protección de rama en `main`.** El PAT de
+abajo puede empujar; la protección es lo que impide que empuje a `main` ni por
+accidente ni por abuso.
+
+```bash
+gh api -X PUT repos/awakelab-dev/app-factory/branches/main/protection \
+  --input - <<'JSON'
+{"required_status_checks":{"strict":true,"contexts":["build · lint · typecheck · test"]},
+ "enforce_admins":false,
+ "required_pull_request_reviews":null,
+ "restrictions":null,
+ "allow_force_pushes":false,
+ "allow_deletions":false}
+JSON
+```
+
+**1 · PAT fine-grained** (GitHub → *Settings → Developer settings → Personal
+access tokens → Fine-grained*), acotado a ESTE repo, permisos **Contents: Read
+and write** y **Pull requests: Read and write**, con caducidad y fecha de
+rotación anotada. Va a `FACTORY_GITHUB_TOKEN` en el `.env` del entorno, y **solo
+lo ve este contenedor** (el de análisis sigue con su deploy key de solo lectura).
+
+**2 · Checkout propio, clonado por HTTPS** (el PAT no sirve por SSH) y con las
+dependencias instaladas **desde dentro del contenedor**, para que los binarios
+nativos casen con su glibc:
+
+```bash
+sudo git clone https://github.com/awakelab-dev/app-factory.git \
+  /opt/awkfactory/staging/platform-repo-gen
+cd /opt/awkfactory/staging
+docker compose --env-file .env -p awk-staging run --rm --entrypoint sh \
+  factory-generator -c "cd /platform-repo-gen && pnpm install --frozen-lockfile"
+```
+
+Esto sí necesita `pnpm install` (a diferencia del de análisis): el agente corre
+`build`/`lint`/`typecheck`/`test`, y `apps/api/node_modules/.bin/prisma` es lo
+que escribe la migración (`assertPrismaCli`, D-051). Ocupa ~1,5 GB. **Repetir
+este `pnpm install` cuando `main` cambie dependencias** — si no, el primer run
+posterior falla en el build.
+
+**3 · Variables** nuevas en `/opt/awkfactory/staging/.env`:
+`FACTORY_GITHUB_TOKEN`, `PLATFORM_REPO_GEN_HOST_PATH`,
+`PLATFORM_REPO_REMOTE_URL`, `FACTORY_PR_CHECKS_TIMEOUT_MS`. Y **copia el compose
+nuevo** desde el Mac, que trae el servicio: `scp deploy/docker-compose.yml
+AWK-Dev:/opt/awkfactory/staging/docker-compose.yml`.
+
+**4 · Arranque**:
+
+```bash
+cd /opt/awkfactory/staging
+docker compose --env-file .env -p awk-staging up -d factory-generator
+docker compose -p awk-staging logs -f factory-generator
+```
+
+Debe aparecer `entorno OK (checkout /platform-repo-gen, kinds [generation,
+pr_merge])` y `Credencial de git configurada vía \`gh auth setup-git\``. Si
+falta el PAT o el `node_modules`, el contenedor **sale con código 1 y lo dice**:
+esas dos cosas se descubren en el segundo cero, no al final de un run de 25
+minutos y ~8 USD.
+
+**Coste**: una generación ronda 8 USD (D-049). Igual que el de análisis, corre de
+uno en uno. Los dos workers son procesos separados a propósito: comparten la
+tabla de la cola pero no el checkout — el de análisis hace `reset --hard` antes
+de cada run y destrozaría la rama de trabajo del generador.
+
 ## 9 · Verificación final (cerrar solo cuando todo ✅)
 
 - [ ] `https://staging.apps.awakelab.world/api/hello` responde 200 por HTTPS.

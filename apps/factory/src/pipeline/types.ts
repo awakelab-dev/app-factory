@@ -36,8 +36,19 @@ export type RunStatus = 'pending' | 'running' | 'success' | 'error';
 
 export type FactoryActorRole = 'gerente' | 'admin';
 
-/** Tipo de trabajo encolado (D-047). Ver `AnalysisJob` en schema.prisma. */
-export type AnalysisJobKind = 'analysis' | 'change_analysis';
+/**
+ * Tipo de trabajo encolado (D-047, ampliado en D3). Ver `AnalysisJob` en
+ * schema.prisma. Los dos primeros los consume el worker de análisis; los dos
+ * últimos, el de generación (`FACTORY_WORKER_KINDS`).
+ */
+export type AnalysisJobKind = 'analysis' | 'change_analysis' | 'generation' | 'pr_merge';
+
+/** Los kinds que exigen un checkout con toolchain y credencial de push (D3). */
+export const GENERATION_JOB_KINDS: readonly AnalysisJobKind[] = ['generation', 'pr_merge'];
+
+export function isGenerationKind(kind: AnalysisJobKind): boolean {
+  return GENERATION_JOB_KINDS.includes(kind);
+}
 
 export type AnalysisJobStatus = 'queued' | 'running' | 'success' | 'error';
 
@@ -54,8 +65,12 @@ export interface AnalysisJobRow {
   kind: AnalysisJobKind;
   projectId: string;
   changeRequestId: string | null;
+  /** Spec a generar/mergear (kinds de D3); null en los kinds de análisis. */
+  specId: string | null;
   status: AnalysisJobStatus;
   attempts: number;
+  /** Hora a partir de la cual el trabajo vuelve a ser tomable (backoff, D3). */
+  nextAttemptAt: Date | null;
   requestedBy: string;
   workerId: string | null;
   claimedAt: Date | null;

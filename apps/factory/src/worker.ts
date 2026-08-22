@@ -2,30 +2,50 @@ import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { CliModule } from './cli.module';
 import { AnalysisWorkerService } from './pipeline/analysis-worker.service';
+import { configureGitForGeneration } from './pipeline/git-identity';
+import { assertPrismaCli } from './pipeline/prisma-client';
 import { assertRunnerEnv } from './pipeline/runner-env';
+import { isGenerationKind } from './pipeline/types';
+import { parseWorkerKinds } from './pipeline/worker-kinds';
 
 /**
- * Proceso worker de la Fábrica (D-047, incremento C de Fase 2).
+ * Proceso worker de la Fábrica (D-047, incremento C; ampliado en D3).
  *
  *   pnpm --filter=@awk/factory run worker     # local, contra el .env del paquete
- *   node dist/worker.js                       # contenedor `factory-runner`
+ *   node dist/worker.js                       # contenedores factory-runner / factory-generator
  *
- * Consume `analysis_jobs`: los trabajos que encolan `submit_prototype` y
- * `request_change` desde Cowork. Es el único proceso que necesita
- * `PLATFORM_REPO_PATH` (checkout del monorepo) y `ANTHROPIC_API_KEY` — el
- * contenedor `factory` que sirve el HTTP/OAuth sigue sin verlos.
+ * Consume `analysis_jobs`. Qué kinds sirve lo dice `FACTORY_WORKER_KINDS`, y de
+ * ahí salen los dos contenedores del compose sobre la MISMA imagen:
+ *
+ *   factory-runner     analysis,change_analysis   checkout efímero, deploy key RO
+ *   factory-generator  generation,pr_merge        checkout con node_modules, PAT con push
+ *
+ * Es el único proceso que necesita `PLATFORM_REPO_PATH` y `ANTHROPIC_API_KEY` —
+ * el contenedor `factory` que sirve el HTTP/OAuth sigue sin verlos.
  *
  * Usa `CliModule` (sin HTTP, sin JWT, sin Authorization Server): el worker no
  * escucha en ningún puerto, solo habla con la BD y con la API de Anthropic.
  *
  * Arranca comprobando el entorno y sale con código 1 si falta algo: más vale
  * que el contenedor no levante y lo grite en los logs, a que se coma los
- * trabajos de la cola marcándolos en error de uno en uno.
+ * trabajos de la cola marcándolos en error de uno en uno. Para el worker de
+ * generación esa comprobación incluye el CLI de Prisma y la credencial de git,
+ * porque descubrir que faltan al final de un run cuesta ~8 USD y 25 minutos.
  */
 async function bootstrap(): Promise<void> {
   try {
     const { repoPath } = assertRunnerEnv();
-    console.log(`awk-factory worker: entorno OK (checkout ${repoPath}).`);
+    const kinds = parseWorkerKinds(process.env.FACTORY_WORKER_KINDS);
+    const generating = kinds.some(isGenerationKind);
+
+    if (generating) {
+      // Mismo criterio que D-047/D-051: todo lo que el run va a necesitar se
+      // valida ANTES, no a mitad.
+      assertPrismaCli(repoPath);
+      await configureGitForGeneration(repoPath);
+    }
+
+    console.log(`awk-factory worker: entorno OK (checkout ${repoPath}, kinds [${kinds.join(', ')}]).`);
   } catch (error) {
     console.error(`awk-factory worker: NO arranca — ${error instanceof Error ? error.message : String(error)}`);
     process.exitCode = 1;
