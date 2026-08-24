@@ -16,7 +16,7 @@ generator client {
 // y el runtime recibe el adapter (@prisma/adapter-pg) en el constructor.
 datasource db {
   provider = "postgresql"
-  schemas  = ["core", "moodle", "orientador", "proyectos", "focus", "incidencias", "reservas"]
+  schemas  = ["core", "moodle", "orientador", "proyectos", "focus", "incidencias", "reservas", "mesa_ayuda"]
 }
 
 /// Usuario de la plataforma. La identidad vendrá del IdP (SSO pendiente,
@@ -742,4 +742,222 @@ model Reserva {
   @@index([userId])
   @@map("reservas")
   @@schema("reservas")
+}
+
+// ---------------------------------------------------------------------------
+// Módulo mesa-ayuda (Mesa de Ayuda Awakelab): sistema de gestión de tickets
+// de soporte técnico con SLA, asignación de agentes, base de conocimiento
+// (KB) y respuestas preformuladas. Flujo público (solicitar ticket), privado
+// (agente/admin gestiona tickets), admin (configuración de departamentos, SLA,
+// temas, agentes, respuestas preformuladas y KB).
+// ---------------------------------------------------------------------------
+
+enum TicketStatus {
+  abierto
+  en_proceso
+  resuelto
+  cerrado
+  reabierto
+
+  @@schema("mesa_ayuda")
+}
+
+enum TicketPriority {
+  baja
+  media
+  alta
+  urgente
+
+  @@schema("mesa_ayuda")
+}
+
+/// Departamento de soporte técnico. Agrupa tickets por área de negocio.
+model MesaAyudaDepartment {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  name         String   @unique
+  description  String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  slas         MesaAyudaSLA[]
+  topics       MesaAyudaHelpTopic[]
+  agents       MesaAyudaAgent[]
+  tickets      MesaAyudaTicket[]
+
+  @@map("departments")
+  @@schema("mesa_ayuda")
+}
+
+/// Acuerdo de nivel de servicio (SLA). Define tiempos de respuesta y resolución
+/// por prioridad dentro de cada departamento.
+model MesaAyudaSLA {
+  id                  String   @id @default(uuid(7)) @db.Uuid
+  departmentId        String   @db.Uuid
+  department          MesaAyudaDepartment @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  priority            TicketPriority
+  responseTimeMinutes Int      // Tiempo máximo para primera respuesta
+  resolutionTimeMinutes Int    // Tiempo máximo para resolución
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@unique([departmentId, priority])
+  @@map("slas")
+  @@schema("mesa_ayuda")
+}
+
+/// Tema/categoría de soporte (p. ej. "Problemas de acceso", "Facturación", etc.)
+model MesaAyudaHelpTopic {
+  id              String   @id @default(uuid(7)) @db.Uuid
+  departmentId    String   @db.Uuid
+  department      MesaAyudaDepartment @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  name            String   @unique
+  description     String?
+  isActive        Boolean  @default(true)
+  displayOrder    Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  tickets         MesaAyudaTicket[]
+  kbArticles      MesaAyudaKBArticle[]
+
+  @@index([departmentId])
+  @@map("help_topics")
+  @@schema("mesa_ayuda")
+}
+
+/// Ticket de soporte abierto por un solicitante. El token de sesión permite
+/// al solicitante ver su ticket sin login.
+model MesaAyudaTicket {
+  id                  String   @id @default(uuid(7)) @db.Uuid
+  ticket_number       Int      @unique @default(autoincrement()) // Número correlativo para referencia humana
+  departmentId        String   @db.Uuid
+  department          MesaAyudaDepartment @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  topicId             String   @db.Uuid
+  topic               MesaAyudaHelpTopic @relation(fields: [topicId], references: [id], onDelete: Restrict)
+  status              TicketStatus @default(abierto)
+  priority            TicketPriority @default(media)
+  subject             String   @db.VarChar(300)
+  requestorEmail      String
+  requestorName       String
+  sessionToken        String   @unique @db.Uuid // UUID que identifica al solicitante (sin login)
+  description         String
+  assignedToAgentId   String?  @db.Uuid // core.users.id, sin FK cross-schema (agente asignado)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  slaVencimientoAt    DateTime? // Calculado desde priority + SLA del departamento
+  slaCongeladoAt      DateTime? // Timestamp cuando se pausó el SLA
+  messages            MesaAyudaTicketMessage[]
+  statusHistory       MesaAyudaTicketStatusHistory[]
+  assignmentHistory   MesaAyudaTicketAssignmentHistory[]
+
+  @@index([departmentId])
+  @@index([status])
+  @@index([assignedToAgentId])
+  @@index([sessionToken])
+  @@map("tickets")
+  @@schema("mesa_ayuda")
+}
+
+/// Mensaje dentro de un ticket (público para solicitante, interno para agentes).
+model MesaAyudaTicketMessage {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  ticketId     String   @db.Uuid
+  ticket       MesaAyudaTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  senderEmail  String   // Puede ser solicitante o agente
+  senderName   String
+  content      String
+  isPublic     Boolean  @default(true) // true = visible para solicitante, false = nota interna
+  createdAt    DateTime @default(now())
+
+  @@index([ticketId])
+  @@index([createdAt])
+  @@map("ticket_messages")
+  @@schema("mesa_ayuda")
+}
+
+/// Historial de cambios de estado del ticket.
+model MesaAyudaTicketStatusHistory {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  ticketId      String   @db.Uuid
+  ticket        MesaAyudaTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  fromStatus    TicketStatus
+  toStatus      TicketStatus
+  changedByAgentId String? @db.Uuid // core.users.id, sin FK cross-schema
+  reason        String?
+  createdAt     DateTime @default(now())
+
+  @@index([ticketId])
+  @@index([createdAt])
+  @@map("ticket_status_history")
+  @@schema("mesa_ayuda")
+}
+
+/// Historial de asignaciones del ticket a agentes.
+model MesaAyudaTicketAssignmentHistory {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  ticketId      String   @db.Uuid
+  ticket        MesaAyudaTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  fromAgentId   String?  @db.Uuid // null = sin asignar
+  toAgentId     String?  @db.Uuid // null = desasignado
+  assignedByAgentId String? @db.Uuid // core.users.id, sin FK cross-schema
+  reason        String?
+  createdAt     DateTime @default(now())
+
+  @@index([ticketId])
+  @@index([createdAt])
+  @@map("ticket_assignment_history")
+  @@schema("mesa_ayuda")
+}
+
+/// Respuesta preformulada para uso rápido por agentes.
+model MesaAyudaCannedResponse {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  name         String   @unique
+  content      String   @db.Text
+  category     String   // Categoría/etiqueta para organizar respuestas
+  isActive     Boolean  @default(true)
+  usageCount   Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([category])
+  @@map("canned_responses")
+  @@schema("mesa_ayuda")
+}
+
+/// Artículo de base de conocimiento (KB) público para solicitantes.
+model MesaAyudaKBArticle {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  topicId      String   @db.Uuid
+  topic        MesaAyudaHelpTopic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  title        String   @unique
+  content      String   @db.Text
+  excerpt      String?  // Resumen corto para listados
+  isPublished  Boolean  @default(true)
+  viewCount    Int      @default(0)
+  upvotes      Int      @default(0)
+  downvotes    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([topicId])
+  @@index([isPublished])
+  @@map("kb_articles")
+  @@schema("mesa_ayuda")
+}
+
+/// Agente de soporte. Asignación de agentes a departamentos.
+model MesaAyudaAgent {
+  id              String   @id @default(uuid(7)) @db.Uuid
+  departmentId    String   @db.Uuid
+  department      MesaAyudaDepartment @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  agentUserId     String   @db.Uuid // core.users.id, sin FK cross-schema
+  agentEmail      String
+  isActive        Boolean  @default(true)
+  maxConcurrentTickets Int @default(10)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([departmentId, agentUserId])
+  @@map("agents")
+  @@schema("mesa_ayuda")
 }
