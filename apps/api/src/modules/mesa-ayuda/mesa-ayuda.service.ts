@@ -39,10 +39,10 @@ export class MesaAyudaService {
   // ---------------------------------------------------------------------------
 
   /**
-   * Crear un ticket (endpoint público).
-   * El solicitante NO necesita login; se identifica por sessionToken (UUID).
+   * Crear un ticket. El solicitante va autenticado: su nombre y su correo salen
+   * del JWT, nunca de datos que él teclee.
    */
-  async createTicket(body: CreateTicketRequest): Promise<TicketDetail> {
+  async createTicket(user: AuthUser, body: CreateTicketRequest): Promise<TicketDetail> {
     // Validar que el departamento existe
     const department = await this.prisma.mesaAyudaDepartment.findUnique({
       where: { id: body.departmentId }
@@ -69,6 +69,10 @@ export class MesaAyudaService {
       }
     });
 
+    // La columna `sessionToken` sigue existiendo en el esquema y es NOT NULL /
+    // UNIQUE, así que se rellena con un UUID interno. Ya no es una credencial:
+    // no se acepta por la API ni se devuelve al cliente. La retirada de la
+    // columna va en la migración del cambio de acceso.
     const sessionToken = crypto.randomUUID();
     const now = new Date();
     const slaVencimientoAt = sla
@@ -80,8 +84,8 @@ export class MesaAyudaService {
         departmentId: body.departmentId,
         topicId: body.topicId,
         subject: body.subject,
-        requestorEmail: body.requestorEmail,
-        requestorName: body.requestorName,
+        requestorEmail: user.email,
+        requestorName: user.displayName,
         sessionToken,
         description: body.description,
         priority: body.priority,
@@ -89,8 +93,8 @@ export class MesaAyudaService {
         slaVencimientoAt,
         messages: {
           create: {
-            senderEmail: body.requestorEmail,
-            senderName: body.requestorName,
+            senderEmail: user.email,
+            senderName: user.displayName,
             content: body.description,
             isPublic: true
           }
@@ -110,7 +114,8 @@ export class MesaAyudaService {
       entity: 'ticket',
       entityId: ticket.id,
       metadata: {
-        email: body.requestorEmail,
+        userId: user.id,
+        email: user.email,
         subject: body.subject
       }
     });
@@ -119,9 +124,10 @@ export class MesaAyudaService {
   }
 
   /**
-   * Obtener ticket por ID (acceso público con sessionToken o privado con auth).
+   * Obtener un ticket. Siempre con usuario autenticado: el solicitante solo
+   * accede a los suyos; agentes y administradores, a cualquiera.
    */
-  async getTicket(id: string, sessionToken?: string): Promise<TicketDetail> {
+  async getTicket(id: string, user: AuthUser): Promise<TicketDetail> {
     const ticket = await this.prisma.mesaAyudaTicket.findUnique({
       where: { id },
       include: {
@@ -138,9 +144,12 @@ export class MesaAyudaService {
       throw new NotFoundException('Ticket no encontrado');
     }
 
-    // Validar acceso público
-    if (sessionToken && ticket.sessionToken !== sessionToken) {
-      throw new ForbiddenException('Token de sesión inválido');
+    // El solicitante solo puede abrir sus propios tickets. Antes bastaba con
+    // omitir el token para leer cualquiera: la comprobación era condicional.
+    const esPersonalDeSoporte =
+      user.roles.includes('mesa_ayuda_agente') || user.roles.includes('mesa_ayuda_admin');
+    if (!esPersonalDeSoporte && ticket.requestorEmail !== user.email) {
+      throw new ForbiddenException('No tienes acceso a esta petición');
     }
 
     return this.mapTicketToDetail(ticket);
@@ -509,7 +518,6 @@ export class MesaAyudaService {
       subject: ticket.subject,
       requestorEmail: ticket.requestorEmail,
       requestorName: ticket.requestorName,
-      sessionToken: ticket.sessionToken,
       description: ticket.description,
       assignedToAgentId: ticket.assignedToAgentId,
       createdAt: ticket.createdAt,

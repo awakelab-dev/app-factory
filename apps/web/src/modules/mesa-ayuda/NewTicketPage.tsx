@@ -4,9 +4,9 @@ import { createTicketRequestSchema, type Department, type HelpTopic } from './me
 import { createTicket, listDepartments, listHelpTopics } from './mesa-ayuda-api';
 
 /**
- * Página pública para crear un nuevo ticket de soporte (sin login).
- * El solicitante proporciona email, nombre, tema y descripción.
- * Recibe un sessionToken para ver su ticket sin login.
+ * Alta de una petición de soporte. Va tras el login: el nombre y el correo del
+ * solicitante los pone el backend a partir del usuario autenticado, así que el
+ * formulario solo pide el tema y el problema.
  */
 export function NewTicketPage() {
   const navigate = useNavigate();
@@ -16,14 +16,11 @@ export function NewTicketPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const [sessionToken, setSessionToken] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     departmentId: '',
     topicId: '',
     subject: '',
-    requestorEmail: '',
-    requestorName: '',
     description: '',
     priority: 'media' as const
   });
@@ -78,11 +75,10 @@ export function NewTicketPage() {
       const result = await createTicket(validData as any);
 
       setSuccess(true);
-      setSessionToken(result.sessionToken);
 
       // Redirigir a vista del ticket después de 2s
       setTimeout(() => {
-        navigate(`/mesa-ayuda/tickets/${result.id}?sessionToken=${result.sessionToken}`);
+        navigate(`/mesa-ayuda/tickets/${result.id}`);
       }, 2000);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
@@ -92,16 +88,14 @@ export function NewTicketPage() {
     }
   };
 
-  if (success && sessionToken) {
+  if (success) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
         <div className="rounded-lg bg-white p-8 shadow-md">
-          <h2 className="mb-4 text-2xl font-semibold text-green-600">Ticket Creado Exitosamente</h2>
-          <p className="mb-4 text-gray-700">
-            Tu ticket ha sido creado. Te estamos redirigiendo a la página de detalles...
+          <h2 className="mb-4 text-2xl font-semibold text-green-600">Petición creada</h2>
+          <p className="text-gray-700">
+            Ya la tenemos. Te llevamos al detalle para que sigas su estado…
           </p>
-          <p className="text-sm text-gray-500">Guarda tu token de sesión para referencias futuras:</p>
-          <code className="mt-2 block rounded bg-gray-100 p-2 text-xs text-gray-800">{sessionToken}</code>
         </div>
       </div>
     );
@@ -119,32 +113,6 @@ export function NewTicketPage() {
           {error && <div className="mb-4 rounded bg-red-100 p-4 text-red-700">{error}</div>}
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Datos del solicitante */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Nombre *</label>
-                <input
-                  type="text"
-                  name="requestorName"
-                  value={formData.requestorName}
-                  onChange={handleChange}
-                  className="mt-1 block w-full rounded border border-gray-300 px-3 py-2"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Email *</label>
-                <input
-                  type="email"
-                  name="requestorEmail"
-                  value={formData.requestorEmail}
-                  onChange={handleChange}
-                  className="mt-1 block w-full rounded border border-gray-300 px-3 py-2"
-                  required
-                />
-              </div>
-            </div>
-
             {/* Categorización */}
             <div className="grid grid-cols-2 gap-4">
               <div>

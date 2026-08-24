@@ -28,12 +28,12 @@ const BASE_PATH = '/api/mesa-ayuda';
  */
 
 // ---------------------------------------------------------------------------
-// Endpoints públicos (sin auth)
+// Endpoints del solicitante (autenticado, como el resto del módulo)
 // ---------------------------------------------------------------------------
 
 /**
- * Crear un ticket (sin login requerido).
- * Devuelve un sessionToken que el solicitante puede guardar para seguimiento.
+ * Crear una petición. El nombre y el correo del solicitante los pone el backend
+ * a partir del usuario autenticado.
  */
 export async function createTicket(data: CreateTicketRequest): Promise<TicketDetail> {
   return apiFetch(`${BASE_PATH}/tickets`, ticketDetailSchema, {
@@ -43,11 +43,11 @@ export async function createTicket(data: CreateTicketRequest): Promise<TicketDet
 }
 
 /**
- * Obtener ticket por ID con sessionToken (sin login).
- * El solicitante solo ve mensajes públicos.
+ * Obtener un ticket por su id. El backend decide qué se ve según el rol: el
+ * solicitante, solo los suyos y sin notas internas.
  */
-export async function getTicketPublic(id: string, sessionToken: string): Promise<TicketDetail> {
-  return apiFetch(`${BASE_PATH}/tickets/${id}?sessionToken=${sessionToken}`, ticketDetailSchema);
+export async function getTicket(id: string): Promise<TicketDetail> {
+  return apiFetch(`${BASE_PATH}/tickets/${id}`, ticketDetailSchema);
 }
 
 /**

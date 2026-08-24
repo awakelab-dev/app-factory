@@ -7,14 +7,18 @@ import { TicketDetailPage } from './TicketDetailPage';
 import { AdminPage } from './AdminPage';
 
 /**
- * Registro del módulo `mesa-ayuda`: rutas públicas (crear/ver ticket)
- * y rutas autenticadas (panel de agente, admin).
+ * Registro del módulo `mesa-ayuda`. Todas las rutas van tras el login: el
+ * solicitante entra con su cuenta de la plataforma, no por un enlace público.
  */
 export const mesaAyuda: ModuleRegistration = {
   manifest: mesaAyudaManifest,
 
   // Rutas autenticadas (requieren login + roles filtrados por manifest)
   routes: [
+    {
+      path: '/mesa-ayuda/nuevo',
+      element: <NewTicketPage />
+    },
     {
       path: '/mesa-ayuda/panel',
       element: <DashboardPage />
@@ -30,18 +34,6 @@ export const mesaAyuda: ModuleRegistration = {
     {
       path: '/mesa-ayuda/admin',
       element: <AdminPage />
-    }
-  ],
-
-  // Rutas públicas (sin login requerido)
-  publicRoutes: [
-    {
-      path: '/mesa-ayuda/nuevo',
-      element: <NewTicketPage />
-    },
-    {
-      path: '/mesa-ayuda/tickets/:id',
-      element: <TicketDetailPage />
     }
   ]
 };

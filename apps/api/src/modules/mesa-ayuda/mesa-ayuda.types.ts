@@ -109,7 +109,6 @@ export const ticketSchema = z.object({
   subject: z.string(),
   requestorEmail: z.string().email(),
   requestorName: z.string(),
-  sessionToken: z.string().uuid(),
   description: z.string(),
   assignedToAgentId: z.string().uuid().nullable(),
   createdAt: z.coerce.date(),
@@ -119,12 +118,15 @@ export const ticketSchema = z.object({
 });
 export type Ticket = z.infer<typeof ticketSchema>;
 
+/**
+ * Alta de una petición. El solicitante va autenticado, así que su nombre y su
+ * correo se toman del JWT: aceptarlos en el cuerpo permitiría suplantar a otra
+ * persona.
+ */
 export const createTicketRequestSchema = z.object({
   departmentId: z.string().uuid(),
   topicId: z.string().uuid(),
   subject: z.string().min(1).max(300),
-  requestorEmail: z.string().email().max(255),
-  requestorName: z.string().min(1).max(150),
   description: z.string().min(1),
   priority: ticketPriorityEnum.optional().default('media')
 });

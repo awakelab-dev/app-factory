@@ -59,7 +59,6 @@ export const ticketSchema = z.object({
   subject: z.string(),
   requestorEmail: z.string().email(),
   requestorName: z.string(),
-  sessionToken: z.string().uuid(),
   description: z.string(),
   assignedToAgentId: z.string().uuid().nullable(),
   createdAt: z.coerce.date(),

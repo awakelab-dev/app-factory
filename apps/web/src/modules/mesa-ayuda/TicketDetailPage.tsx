@@ -1,17 +1,16 @@
 import { useEffect, useState } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
-import { getTicketPublic, addTicketMessage, updateTicket } from './mesa-ayuda-api';
+import { useParams } from 'react-router-dom';
+import { getTicket, addTicketMessage, updateTicket } from './mesa-ayuda-api';
 import type { TicketDetail } from './mesa-ayuda.types';
 import { useAuth } from '../../auth/auth-context';
 
 /**
- * Página de detalle de ticket: accesible públicamente (con sessionToken)
- * o por agentes/admin autenticados.
+ * Página de detalle de ticket. Siempre tras el login: el backend decide qué se
+ * ve según el rol — el solicitante, solo sus propias peticiones y sin notas
+ * internas.
  */
 export function TicketDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const [searchParams] = useSearchParams();
-  const sessionToken = searchParams.get('sessionToken');
   const { user } = useAuth();
 
   const [ticket, setTicket] = useState<TicketDetail | null>(null);
@@ -24,18 +23,9 @@ export function TicketDetailPage() {
     const loadTicket = async () => {
       if (!id) return;
       try {
-        // Si tenemos sessionToken, cargar como público
-        if (sessionToken) {
-          const data = await getTicketPublic(id, sessionToken);
-          setTicket(data);
-          setNewStatus(data.status);
-        } else if (user) {
-          // Usar método autenticado (requiere que exista en API)
-          // Por ahora, asumimos que getTicketPublic funciona para ambos casos
-          const data = await getTicketPublic(id, sessionToken || '');
-          setTicket(data);
-          setNewStatus(data.status);
-        }
+        const data = await getTicket(id);
+        setTicket(data);
+        setNewStatus(data.status);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (err: any) {
         setError(err.message || 'Error al cargar el ticket');
@@ -44,7 +34,7 @@ export function TicketDetailPage() {
       }
     };
     loadTicket();
-  }, [id, sessionToken, user]);
+  }, [id, user]);
 
   const handleAddMessage = async () => {
     if (!id || !messageText.trim()) return;
@@ -188,7 +178,7 @@ export function TicketDetailPage() {
         </div>
 
         {/* Nuevo mensaje */}
-        {(!sessionToken || user) && (
+        {user && (
           <div className="mt-6 border-t border-gray-200 pt-4">
             <label className="block text-sm font-medium text-gray-700">Agregar comentario</label>
             <textarea

@@ -8,7 +8,7 @@ import {
   Query
 } from '@nestjs/common';
 import type { AuthUser } from '@awk/auth';
-import { Public, CurrentUser, Roles } from '../../core/auth/auth.decorators';
+import { CurrentUser, Roles } from '../../core/auth/auth.decorators';
 import { ZodValidationPipe } from '../../common/zod-validation.pipe';
 import { MesaAyudaService } from './mesa-ayuda.service';
 import {
@@ -35,54 +35,56 @@ import {
 /**
  * Mesa de Ayuda (spec-tecnica.md `mesa-ayuda`): gestión de tickets de soporte
  * técnico con SLA, asignación de agentes, base de conocimiento (KB) y respuestas
- * preformuladas. Patrón de acceso: endpoints públicos sin auth (crear ticket,
- * ver ticket por token), endpoints privados para agentes/admin.
+ * preformuladas.
  *
- * Roles nuevos de manifest: `mesa_ayuda_agente` (puede ver/actualizar tickets)
- * y `mesa_ayuda_admin` (configuración completa).
+ * Patrón de acceso: TODO el módulo va tras el login de la plataforma. El
+ * solicitante se autentica con su propia cuenta (rol `mesa_ayuda_solicitante`)
+ * y su identidad sale del JWT, no de datos que él teclee. No hay endpoints
+ * `@Public()` ni token de sesión por enlace.
+ *
+ * Roles de manifest: `mesa_ayuda_solicitante` (abre y consulta sus propias
+ * peticiones), `mesa_ayuda_agente` (puede ver/actualizar tickets de sus
+ * departamentos) y `mesa_ayuda_admin` (configuración completa).
  */
 @Controller('mesa-ayuda')
 export class MesaAyudaController {
   constructor(private readonly service: MesaAyudaService) {}
 
   // ---------------------------------------------------------------------------
-  // ENDPOINT PÚBLICO: Crear ticket (sin login)
+  // ENDPOINTS DEL SOLICITANTE (autenticado)
   // ---------------------------------------------------------------------------
 
   /**
    * POST /mesa-ayuda/tickets
-   * Endpoint público: crear un ticket de soporte.
-   * El solicitante se identifica por email/nombre; recibe un sessionToken para
-   * recuperar su ticket sin login.
+   * Crear una petición. El solicitante va autenticado: su nombre y su correo
+   * se derivan del JWT, nunca del cuerpo de la petición.
    */
-  @Public()
+  @Roles('mesa_ayuda_solicitante', 'mesa_ayuda_agente', 'mesa_ayuda_admin')
   @Post('tickets')
   createTicket(
+    @CurrentUser() user: AuthUser,
     @Body(new ZodValidationPipe(createTicketRequestSchema))
     body: CreateTicketRequest
   ) {
-    return this.service.createTicket(body);
+    return this.service.createTicket(user, body);
   }
 
   /**
-   * GET /mesa-ayuda/tickets/:id?sessionToken=<uuid>
-   * Endpoint público: recuperar ticket por ID + sessionToken (sin login).
-   * El solicitante solo ve sus propios datos y mensajes públicos.
+   * GET /mesa-ayuda/tickets/:id
+   * Recuperar un ticket. El solicitante solo accede a los suyos y solo ve los
+   * mensajes públicos; agentes y administradores ven además las notas internas.
    */
-  @Public()
+  @Roles('mesa_ayuda_solicitante', 'mesa_ayuda_agente', 'mesa_ayuda_admin')
   @Get('tickets/:id')
-  getTicketPublic(
-    @Param('id') id: string,
-    @Query('sessionToken') sessionToken?: string
-  ) {
-    return this.service.getTicket(id, sessionToken);
+  getTicket(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.service.getTicket(id, user);
   }
 
   /**
    * GET /mesa-ayuda/help-topics?departmentId=<uuid>
-   * Endpoint público: listar temas de soporte (para dropdown en formulario).
+   * Listar temas de soporte (para el desplegable del formulario).
    */
-  @Public()
+  @Roles('mesa_ayuda_solicitante', 'mesa_ayuda_agente', 'mesa_ayuda_admin')
   @Get('help-topics')
   listHelpTopics(@Query('departmentId') departmentId?: string) {
     return this.service.listHelpTopics(departmentId);
@@ -90,9 +92,9 @@ export class MesaAyudaController {
 
   /**
    * GET /mesa-ayuda/kb?topicId=<uuid>
-   * Endpoint público: listar artículos de KB (base de conocimiento).
+   * Listar artículos de la base de conocimiento.
    */
-  @Public()
+  @Roles('mesa_ayuda_solicitante', 'mesa_ayuda_agente', 'mesa_ayuda_admin')
   @Get('kb')
   listKBArticles(@Query('topicId') topicId?: string) {
     return this.service.listKBArticles(topicId);
@@ -100,16 +102,16 @@ export class MesaAyudaController {
 
   /**
    * GET /mesa-ayuda/departments
-   * Endpoint público: listar departamentos activos (para dropdown).
+   * Listar departamentos activos (para el desplegable del formulario).
    */
-  @Public()
+  @Roles('mesa_ayuda_solicitante', 'mesa_ayuda_agente', 'mesa_ayuda_admin')
   @Get('departments')
   listDepartments() {
     return this.service.listDepartments();
   }
 
   // ---------------------------------------------------------------------------
-  // ENDPOINTS PRIVADOS: Agentes/Admin
+  // ENDPOINTS DE AGENTES Y ADMINISTRACIÓN
   // ---------------------------------------------------------------------------
 
   /**
