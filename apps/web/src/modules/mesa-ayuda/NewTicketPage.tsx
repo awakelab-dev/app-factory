@@ -30,7 +30,9 @@ export function NewTicketPage() {
     const loadDepartments = async () => {
       try {
         const depts = await listDepartments();
-        setDepartments(depts);
+        // Un departamento dado de baja sigue existiendo para los tickets
+        // antiguos, pero no debe ofrecerse para abrir peticiones nuevas.
+        setDepartments(depts.filter((d) => d.isActive));
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
       } catch (_err) {
         setError('Error al cargar departamentos');
@@ -111,6 +113,21 @@ export function NewTicketPage() {
           </p>
 
           {error && <div className="mb-4 rounded bg-red-100 p-4 text-red-700">{error}</div>}
+
+          {departments.length === 0 && (
+            <div className="mb-4 rounded border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">
+              Todavía no hay departamentos configurados, así que no se puede abrir una petición.
+              Un administrador de la Mesa de Ayuda tiene que crear al menos un departamento y un
+              tema de ayuda desde <strong>Mesa de Ayuda · Administración</strong>.
+            </div>
+          )}
+
+          {departments.length > 0 && formData.departmentId !== '' && topics.length === 0 && (
+            <div className="mb-4 rounded border border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">
+              Este departamento no tiene todavía ningún tema de ayuda. Elige otro o pide a un
+              administrador que dé de alta uno.
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Categorización */}

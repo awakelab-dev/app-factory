@@ -154,3 +154,47 @@ export const dashboardSchema = z.object({
   allTickets: z.number().int()
 });
 export type Dashboard = z.infer<typeof dashboardSchema>;
+
+// ---------------------------------------------------------------------------
+// SLA y altas de catálogo (espejo de los DTO de la API)
+// ---------------------------------------------------------------------------
+
+export const slaSchema = z.object({
+  id: z.string().uuid(),
+  departmentId: z.string().uuid(),
+  priority: ticketPriorityEnum,
+  responseTimeMinutes: z.number().int().positive(),
+  resolutionTimeMinutes: z.number().int().positive(),
+  createdAt: z.coerce.date(),
+  updatedAt: z.coerce.date()
+});
+export type SLA = z.infer<typeof slaSchema>;
+
+export const createDepartmentRequestSchema = z.object({
+  name: z.string().min(1).max(100),
+  description: z.string().max(500).optional()
+});
+export type CreateDepartmentRequest = z.infer<typeof createDepartmentRequestSchema>;
+
+export const updateDepartmentRequestSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  description: z.string().max(500).nullable().optional(),
+  isActive: z.boolean().optional()
+});
+export type UpdateDepartmentRequest = z.infer<typeof updateDepartmentRequestSchema>;
+
+export const createHelpTopicRequestSchema = z.object({
+  departmentId: z.string().uuid(),
+  name: z.string().min(1).max(100),
+  description: z.string().max(500).optional(),
+  displayOrder: z.number().int().nonnegative().default(0)
+});
+export type CreateHelpTopicRequest = z.infer<typeof createHelpTopicRequestSchema>;
+
+export const createSLARequestSchema = z.object({
+  departmentId: z.string().uuid(),
+  priority: ticketPriorityEnum,
+  responseTimeMinutes: z.number().int().positive(),
+  resolutionTimeMinutes: z.number().int().positive()
+});
+export type CreateSLARequest = z.infer<typeof createSLARequestSchema>;

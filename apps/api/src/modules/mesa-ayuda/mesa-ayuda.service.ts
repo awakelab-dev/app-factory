@@ -422,6 +422,13 @@ export class MesaAyudaService {
     });
   }
 
+  async listSLAs(departmentId?: string): Promise<SLA[]> {
+    return this.prisma.mesaAyudaSLA.findMany({
+      where: departmentId ? { departmentId } : undefined,
+      orderBy: [{ departmentId: 'asc' }, { priority: 'asc' }]
+    });
+  }
+
   async createSLA(user: AuthUser, body: CreateSLARequest): Promise<SLA> {
     const sla = await this.prisma.mesaAyudaSLA.create({
       data: {

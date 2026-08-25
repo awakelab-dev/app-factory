@@ -8,14 +8,20 @@ import type {
   TicketDetail,
   Department,
   HelpTopic,
+  SLA,
   Dashboard,
-  KBArticle
+  KBArticle,
+  CreateDepartmentRequest,
+  UpdateDepartmentRequest,
+  CreateHelpTopicRequest,
+  CreateSLARequest
 } from './mesa-ayuda.types';
 import {
   ticketDetailSchema,
   ticketSchema,
   departmentSchema,
   helpTopicSchema,
+  slaSchema,
   dashboardSchema,
   kbArticleSchema
 } from './mesa-ayuda.types';
@@ -123,6 +129,51 @@ export async function addTicketMessage(
   data: CreateTicketMessageRequest
 ): Promise<Ticket> {
   return apiFetch(`${BASE_PATH}/tickets/${id}/messages`, ticketSchema, {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Administración de catálogos (rol mesa_ayuda_admin)
+// ---------------------------------------------------------------------------
+
+/** Alta de departamento. */
+export async function createDepartment(data: CreateDepartmentRequest): Promise<Department> {
+  return apiFetch(`${BASE_PATH}/admin/departments`, departmentSchema, {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+}
+
+/** Edición de departamento (nombre, descripción, alta/baja). */
+export async function updateDepartment(
+  id: string,
+  data: UpdateDepartmentRequest
+): Promise<Department> {
+  return apiFetch(`${BASE_PATH}/admin/departments/${id}`, departmentSchema, {
+    method: 'PATCH',
+    body: JSON.stringify(data)
+  });
+}
+
+/** Alta de tema de ayuda dentro de un departamento. */
+export async function createHelpTopic(data: CreateHelpTopicRequest): Promise<HelpTopic> {
+  return apiFetch(`${BASE_PATH}/admin/help-topics`, helpTopicSchema, {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+}
+
+/** Los SLA configurados, para poder verlos antes de crear otro. */
+export async function listSLAs(departmentId?: string): Promise<SLA[]> {
+  const params = departmentId ? `?departmentId=${departmentId}` : '';
+  return apiFetch(`${BASE_PATH}/admin/slas${params}`, z.array(slaSchema));
+}
+
+/** Alta de SLA para un departamento y una prioridad. */
+export async function createSLA(data: CreateSLARequest): Promise<SLA> {
+  return apiFetch(`${BASE_PATH}/admin/slas`, slaSchema, {
     method: 'POST',
     body: JSON.stringify(data)
   });
