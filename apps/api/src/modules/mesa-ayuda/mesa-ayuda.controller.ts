@@ -223,6 +223,16 @@ export class MesaAyudaController {
   }
 
   /**
+   * GET /mesa-ayuda/admin/slas?departmentId=<uuid>
+   * Listar los SLA configurados.
+   */
+  @Roles('mesa_ayuda_admin')
+  @Get('admin/slas')
+  listSLAs(@Query('departmentId') departmentId?: string) {
+    return this.service.listSLAs(departmentId);
+  }
+
+  /**
    * POST /mesa-ayuda/admin/slas
    * Crear SLA para un departamento + prioridad.
    */
