@@ -237,14 +237,15 @@ export function UsersPage() {
         )}
 
         {state.status === 'ok' && (
+          <div className="overflow-x-auto">
           <table className="w-full bg-awk-navy-800 text-left text-sm" data-testid="users-table">
             <thead>
               <tr className="border-b border-awk-blue-700 text-awk-blue-300">
                 <th className="px-4 py-3 font-medium">Usuario</th>
                 <th className="px-4 py-3 font-medium">Email</th>
-                <th className="px-4 py-3 font-medium">Roles</th>
-                <th className="px-4 py-3 font-medium">Estado</th>
-                <th className="px-4 py-3 font-medium sr-only">Acciones</th>
+                <th className="w-full px-4 py-3 font-medium">Roles</th>
+                <th className="w-px whitespace-nowrap px-4 py-3 font-medium">Estado</th>
+                <th className="w-px whitespace-nowrap px-4 py-3 font-medium sr-only">Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -276,24 +277,26 @@ export function UsersPage() {
                           ))}
                         </div>
                       ) : user.roles.length > 0 ? (
-                        user.roles.map((role) => (
-                          <span
-                            key={role}
-                            className="mr-1 rounded-full bg-awk-blue-800 px-2 py-0.5 text-xs text-awk-cyan-300"
-                          >
-                            {role}
-                          </span>
-                        ))
+                        <div className="flex flex-wrap gap-1">
+                          {user.roles.map((role) => (
+                            <span
+                              key={role}
+                              className="rounded-full bg-awk-blue-800 px-2 py-0.5 text-xs text-awk-cyan-300"
+                            >
+                              {role}
+                            </span>
+                          ))}
+                        </div>
                       ) : (
                         <span className="text-xs text-awk-blue-400">sin roles</span>
                       )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="w-px whitespace-nowrap px-4 py-3">
                       <span className={user.isActive ? 'text-awk-cyan-400' : 'text-awk-blue-400'}>
                         {user.isActive ? 'activo' : 'inactivo'}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="w-px whitespace-nowrap px-4 py-3 text-right">
                       {isEditing ? (
                         <div className="flex justify-end gap-2">
                           <Button
@@ -345,6 +348,7 @@ export function UsersPage() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </section>
 
