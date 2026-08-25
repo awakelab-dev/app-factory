@@ -2,7 +2,7 @@
 
 > Actualizar al cerrar CADA sesión de trabajo. Este archivo es lo primero que lee cualquier tarea nueva.
 
-**Última actualización**: 2026-08-21 (**INCREMENTO D CERRADO: FASE D3 CONSTRUIDA Y VERIFICADA — «cero consola» (D-053)**. Aprobar el gate que completa `functional`+`technical` **encola la generación** y la corre un segundo worker, `factory-generator` (misma imagen, checkout propio con `node_modules`, PAT fine-grained con push, `FACTORY_WORKER_KINDS=generation,pr_merge`); un corte de red **se reintenta solo** con backoff en vez de perder el run (`classifyFailure`: infraestructura sí, error del agente no, y **por defecto fatal**); y aprobar el gate `pr_review` **encola el merge de verdad** — el worker espera los checks, hace `gh pr merge --squash --delete-branch` y SOLO ENTONCES pasa el proyecto a `staging` y abre el gate `manager_acceptance`. El gate deja de mentir (D-049): el estado lo mueve quien comprobó la realidad. **Ya no queda ningún paso del ciclo en una terminal**: al humano le quedan tres cosas y ninguna es consola — decidir gates, **leer el diff de la PR** y validar el módulo en staging. Verificado fuera del mount: 25/25 tareas de turbo, cadena de migraciones de la Fábrica sobre PostgreSQL real **y dentro de una transacción** (como la corre Prisma), ciclo de cola completo contra esa BD (filtro por kind, backoff, cascada, FIFO) y `PrMergeService` contra un repositorio git REAL con stub de `gh`. **Pendiente de ver en vivo**: el ciclo real contra GitHub y una generación real de agente — llegan con el primer módulo que genere D3.)
+**Última actualización**: 2026-08-23 (**INCREMENTO D CERRADO Y DESPLEGADO: FASE D3 EN STAGING — «cero consola» (D-053)**. Aprobar el gate que completa `functional`+`technical` **encola la generación** y la corre un segundo worker, `factory-generator` (misma imagen, checkout propio con `node_modules`, PAT fine-grained con push, `FACTORY_WORKER_KINDS=generation,pr_merge`); un corte de red **se reintenta solo** con backoff en vez de perder el run (`classifyFailure`: infraestructura sí, error del agente no, y **por defecto fatal**); y aprobar el gate `pr_review` **encola el merge de verdad** — el worker espera los checks, hace `gh pr merge --squash --delete-branch` y SOLO ENTONCES pasa el proyecto a `staging` y abre el gate `manager_acceptance`. El gate deja de mentir (D-049): el estado lo mueve quien comprobó la realidad. **Ya no queda ningún paso del ciclo en una terminal**: al humano le quedan tres cosas y ninguna es consola — decidir gates, **leer el diff de la PR** y validar el módulo en staging. Verificado fuera del mount: 25/25 tareas de turbo, cadena de migraciones de la Fábrica sobre PostgreSQL real **y dentro de una transacción** (como la corre Prisma), ciclo de cola completo contra esa BD (filtro por kind, backoff, cascada, FIFO) y `PrMergeService` contra un repositorio git REAL con stub de `gh`. **DESPLEGADO EN STAGING el 2026-08-23**: el worker `factory-generator` arrancó a la primera y la prueba de humo de la credencial (empujar una rama vacía y borrarla desde dentro del contenedor) dio `PUSH-Y-BORRADO-OK` — PAT con `contents:write`, remoto HTTPS, identidad de commit y protección de `main` validados de una sentada y a coste cero. **Pendiente de ver en vivo**: una generación real de agente de punta a punta — llega con el primer módulo que pase por el ciclo.)
 
 **Sesión anterior (2026-08-20, D-051/D-052, contexto)**: **INCREMENTO D, FASE D2 CERRADA Y VERIFICADA: «cero SQL a mano y cero SSH para migrar» (D-051)**. La migración de un módulo la **escribe el propio run de generación** con `prisma migrate diff` entre el `schema.prisma` de `origin/main` y el que deja el agente, y entra en la MISMA PR —revisable en el gate técnico— sin que el agente gane ni un permiso: `apps/api/prisma/migrations/` sigue fuera de su guardarraíl. Una migración por PR: en una regeneración se borra la de la vuelta anterior y se reescribe; en un `request_change` sobre un módulo ya en `main` el diff es solo el delta y la carpeta se llama `_change<n>`. Lo que Prisma no sabe declarar —índice único PARCIAL, CHECK, exclusion— lo escribe el agente en `apps/api/src/modules/<slug>/migration.extra.sql` y nuestro código lo anexa al final con su comentario de procedencia: cierra el hallazgo de D-049 sin ampliar el guardarraíl. **Y el Deploy la aplica**: el job `staging` corre `~/migrate.sh` y `~/migrate-factory.sh` entre el `pull` y el `up -d`, con `set -euo pipefail`, así que un fallo de migración **rompe el deploy en ROJO** en vez de dejar código nuevo contra un esquema viejo — el 500 silencioso documentado dos veces aquí abajo. Si la migración no se puede escribir, el run falla con su coste registrado y NO se abre PR: no hay modo degradado, porque una PR sin su `.sql` es justo el paso manual que D2 elimina. **Tras D2 el único paso del ciclo que sigue exigiendo consola es `generate`** — eso es D3, ya diseñado en `docs/09-incremento-d-cero-consola.md`.
 
@@ -23,172 +23,58 @@
 
 > Única fuente de "qué toca hacer a mano". La reescribe cada tarea al cerrar (regla dura de `CLAUDE.md`).
 > Si está vacía, no hay nada pendiente de manos humanas. **Todos los comandos se pegan desde la raíz
-> del repo** (`cd ~/projects/app-factory`), salvo donde diga otra cosa.
+> del repo** (`cd ~/projects/app-factory`), salvo donde diga otra cosa, y están escritos para **zsh**,
+> que es el shell por defecto del Mac. Nada de `read -p` ni otros bash-ismos: en zsh `-p` significa
+> "leer del coproceso" y el comando falla con `read: -p: no coprocess` (pasó el 2026-08-23).
 
-**D3 está construido y verificado; falta desplegarlo.** Son 11 pasos: los 3 primeros son el ciclo de
-siempre (commit → CI → deploy) y los 8 restantes montan el worker nuevo en el Lightsail, que es
-infraestructura nueva y por eso no se despliega solo. **Hazlos en este orden**: si el compose con el
-servicio nuevo llega al server antes que sus variables, el `up -d` del Deploy siguiente falla.
+**D3 está desplegado y verificado en staging. No queda ningún paso de consola en el ciclo.** Los 11
+pasos del despliegue se ejecutaron el 2026-08-23 y el último cerró con `PUSH-Y-BORRADO-OK`.
 
-**Paso 1 · Subir D3 a `main`** (la migración de la Fábrica la aplicará el Deploy en el paso 3).
+Solo queda **un commit de cierre con esta documentación**:
 
-```bash
+```zsh
 cd ~/projects/app-factory && \
-git add -A && \
-git commit -m "[factory] D3: generación server-side con reintento y merge verificado (D-053)" && \
+git add docs/STATUS.md docs/DECISIONES.md docs/09-incremento-d-cero-consola.md docs/runbooks/prueba-e2e-cowork.md docs/onboarding/one-pager-gerente-prototipo.html && \
+git commit -m "[docs] cierra D3: desplegado en staging y prueba de humo verde (D-053)" && \
 git push origin main && \
-echo "D3 empujado a main"
+echo "documentación al día"
 ```
 
-Debe terminar con `D3 empujado a main`. Si sale `Unable to create index.lock: File exists`, es un lock
-huérfano de una tarea de Cowork: `rm ~/projects/app-factory/.git/index.lock` y repite.
+Debe terminar con `documentación al día`. Incluye el one-pager nuevo para gerentes
+(`docs/onboarding/one-pager-gerente-prototipo.html`, hermano del de administradores de cuenta): las
+frases que el gerente escribe en Cowork para prototipar, enviar y hacer seguimiento. **Si ya hiciste
+el commit de cierre antes de que existiera**, va suelto:
 
-**Paso 2 · Esperar a la CI.**
-
-```bash
+```zsh
 cd ~/projects/app-factory && \
-gh run watch "$(gh run list -w CI -L 1 --json databaseId -q '.[0].databaseId')" --exit-status && \
-echo "CI verde"
+git add docs/onboarding/one-pager-gerente-prototipo.html docs/STATUS.md && \
+git commit -m "[docs] one-pager de onboarding para gerentes" && \
+git push origin main && \
+echo "one-pager al día"
 ```
-
-Debe terminar con `CI verde`. **Si sale roja, LEE EL LOG ANTES de sospechar del código**: el fallo más
-frecuente es GitHub devolviendo 429/503 al bajar sus propias actions (pasó dos veces seguidas en D1) —
-`gh run view "$(gh run list -w CI -L 1 --json databaseId -q '.[0].databaseId')" --log-failed`. Si el
-error está en el paso de *setup*, no es nuestro: relanza con `gh run rerun --failed`.
-
-**Paso 3 · Comprobar que el Deploy aplicó la migración nueva de la Fábrica.**
-
-```bash
-cd ~/projects/app-factory && \
-gh run view "$(gh run list -w Deploy -L 1 --json databaseId -q '.[0].databaseId')" --log | \
-grep -E "migrations found|Applying migration|No pending migrations" | tail -6
-```
-
-Tienen que aparecer `6 migrations found` (la BD de la Fábrica: eran 5) y
-``Applying migration `20260821120000_generation_jobs` ``. La de plataforma sigue en `9 migrations found`
-/ `No pending migrations to apply`, que es correcto: D3 no toca esa base.
-
-**Paso 4 · Protección de rama en `main`** — prerrequisito de la credencial del paso 5: es lo que impide
-que un PAT con `contents:write` empuje a `main` ni por accidente ni por abuso.
-
-```bash
-gh api -X PUT repos/awakelab-dev/app-factory/branches/main/protection --input - <<'JSON' > /dev/null && echo "main protegida: solo se entra por PR"
-{"required_status_checks": null,
- "enforce_admins": false,
- "required_pull_request_reviews": {"required_approving_review_count": 0},
- "restrictions": null,
- "allow_force_pushes": false,
- "allow_deletions": false}
-JSON
-```
-
-Debe imprimir `main protegida: solo se entra por PR`. Tres cosas deliberadas: **`required_approving_review_count: 0`**
-(exige PR, pero no reviews de GitHub — con 1 review obligatoria el merge automático de la Fábrica
-fallaría, porque la aprobación vive en el gate `pr_review`, no en GitHub); **`enforce_admins: false`**
-(tú sigues pudiendo empujar docs directo a `main`; el PAT no es admin y sí queda bloqueado); y
-**`required_status_checks: null`** (los checks los espera nuestro propio código con
-`gh pr checks --watch --fail-fast` antes de mergear, y así no dependemos de que el nombre del job
-coincida con una cadena literal). Si a partir de aquí tu `git push origin main` empieza a fallar, es
-esto: `gh api -X DELETE repos/awakelab-dev/app-factory/branches/main/protection` lo revierte.
-
-**Paso 5 · Crear el PAT fine-grained** (es UI, no hay API para crearlos). GitHub → *Settings →
-Developer settings → Personal access tokens → Fine-grained tokens → Generate new token*:
-
-- *Resource owner*: `awakelab-dev` · *Repository access*: **Only select repositories → app-factory**
-- *Permissions → Repository*: **Contents: Read and write** y **Pull requests: Read and write**. Nada más.
-- *Expiration*: 90 días. **Anota la fecha de rotación** — cuando caduque, el worker generador dejará de
-  poder empujar y el síntoma será un trabajo `generation` en error con un 403 de git.
-
-Cópialo: lo pega el paso 7 y no se vuelve a mostrar.
-
-**Paso 6 · Clonar el checkout propio del generador en el Lightsail** (por HTTPS: el PAT no sirve por
-SSH; y separado del de análisis, que hace `reset --hard` antes de cada run y destrozaría la rama de
-trabajo).
-
-```bash
-ssh AWK-Dev "sudo git clone https://github.com/awakelab-dev/app-factory.git /opt/awkfactory/staging/platform-repo-gen && sudo test -f /opt/awkfactory/staging/platform-repo-gen/pnpm-workspace.yaml && echo 'checkout de generación clonado'"
-```
-
-Debe terminar con `checkout de generación clonado`.
-
-**Paso 7 · Añadir las variables de D3 al `.env` de staging.** El PAT se lee sin eco y no queda en el
-historial. (Este paso es el único con dos comandos: el `unset` tiene que ir después del heredoc.)
-
-```bash
-read -rsp "Pega el PAT del paso 5 y pulsa Enter: " AWK_PAT && echo && ssh AWK-Dev "cat >> /opt/awkfactory/staging/.env" <<EOF
-FACTORY_GITHUB_TOKEN=$AWK_PAT
-PLATFORM_REPO_GEN_HOST_PATH=/opt/awkfactory/staging/platform-repo-gen
-PLATFORM_REPO_REMOTE_URL=https://github.com/awakelab-dev/app-factory.git
-FACTORY_PR_CHECKS_TIMEOUT_MS=1800000
-FACTORY_RUNNER_KINDS=analysis,change_analysis
-EOF
-unset AWK_PAT; ssh AWK-Dev "grep -c '^FACTORY_GITHUB_TOKEN=' /opt/awkfactory/staging/.env"
-```
-
-Debe imprimir `1`. Si imprime `2`, ejecutaste el paso dos veces: `ssh AWK-Dev "nano /opt/awkfactory/staging/.env"`
-y borra el bloque duplicado (los valores del `.env` van **sin comillas**, regla de D-012).
-
-**Paso 8 · Copiar el compose nuevo al server** (el del server es una copia, no sale de un clone).
-
-```bash
-cd ~/projects/app-factory && \
-scp deploy/docker-compose.yml AWK-Dev:/opt/awkfactory/staging/docker-compose.yml && \
-ssh AWK-Dev "grep -c 'factory-generator:' /opt/awkfactory/staging/docker-compose.yml"
-```
-
-Debe imprimir `1`.
-
-**Paso 9 · Instalar las dependencias del checkout DESDE DENTRO del contenedor** (para que los binarios
-nativos casen con su glibc, no con la del host). Tarda un par de minutos y ocupa ~1,5 GB.
-
-```bash
-ssh AWK-Dev "cd /opt/awkfactory/staging && docker compose --env-file .env -p awk-staging pull factory-generator && docker compose --env-file .env -p awk-staging run --rm --entrypoint sh factory-generator -c 'cd /platform-repo-gen && pnpm install --frozen-lockfile && test -x apps/api/node_modules/.bin/prisma && echo CLI-PRISMA-OK'"
-```
-
-Tiene que aparecer `CLI-PRISMA-OK` al final: ese binario es el que escribe la migración de cada módulo
-(`assertPrismaCli`, D-051), y sin él el worker no arranca. **Repite este paso cuando `main` cambie
-dependencias** — si no, el primer run posterior falla en el build.
-
-**Paso 10 · Levantar el worker y leer su arranque.**
-
-```bash
-ssh AWK-Dev "cd /opt/awkfactory/staging && docker compose --env-file .env -p awk-staging up -d factory-generator && sleep 10 && docker compose -p awk-staging logs --tail 20 factory-generator"
-```
-
-Tienen que aparecer, en este orden:
-
-1. `Credencial de git configurada vía` `gh auth setup-git` `(push por HTTPS con el PAT).`
-2. `awk-factory worker: entorno OK (checkout /platform-repo-gen, kinds [generation, pr_merge]).`
-3. `Worker de la Fábrica arrancado (...), kinds [generation, pr_merge], poll cada 10000 ms.`
-
-Si en vez de eso sale `awk-factory worker: NO arranca — ...`, el mensaje dice exactamente qué falta
-(PAT, `node_modules`, checkout). Es deliberado que no levante: descubrir eso al final de un run de 25
-minutos cuesta ~8 USD.
-
-**Paso 11 · Prueba de humo de la credencial, coste cero.** Empuja una rama vacía y la borra: verifica
-el PAT, el remoto HTTPS, la identidad de commit y que la protección de `main` no estorba a las ramas
-de trabajo. Es la comprobación que evita descubrir un 403 dentro del primer run real.
-
-```bash
-ssh AWK-Dev "cd /opt/awkfactory/staging && docker compose --env-file .env -p awk-staging exec -T factory-generator sh -c 'cd /platform-repo-gen && git checkout -q -B factory/_smoke-d3 && git commit -q --allow-empty -m \"smoke D3\" && git push -q origin factory/_smoke-d3 && git push -q origin --delete factory/_smoke-d3 && git checkout -q main && git branch -q -D factory/_smoke-d3 && echo PUSH-Y-BORRADO-OK'"
-```
-
-Debe terminar con `PUSH-Y-BORRADO-OK`. Si falla con `403` o `could not read Username`, el PAT no tiene
-`contents:write` o no se aplicó `gh auth setup-git`: revisa el paso 5 y reinicia el contenedor.
 
 ---
 
-**Con esto el incremento D queda cerrado y no vuelve a haber pasos de consola en el ciclo.** Lo
-siguiente es un módulo real: el gerente prototipa y envía desde Cowork, tú decides el gate técnico,
-**lees el diff de la PR** y apruebas `pr_review`; el resto va solo. **Mira estas dos cosas la primera
-vez** (son lo único de D2/D3 que no se ha visto en vivo):
+**Lo siguiente NO es un paso, es usar la Fábrica.** Prototipa desde Cowork con la skill
+`awk-prototipo` y envíalo; a partir de ahí tú solo haces tres cosas, ninguna en una terminal:
 
-```bash
+1. Decidir el gate **técnico** en `/factory` (el funcional lo decide el gerente). Al aprobar el que
+   completa `functional`+`technical`, **la generación se encola sola**.
+2. **Leer el diff de la PR** y decidir el gate `pr_review`. Aprobarlo mergea de verdad: el worker
+   espera los checks, hace `gh pr merge --squash` y solo entonces el proyecto pasa a `staging`.
+3. Validar el módulo en staging y decidir `manager_acceptance`.
+
+**Hay dos cosas que nunca se han visto en vivo y conviene mirarlas la primera vez.** Esto no hay que
+ejecutarlo ahora — no devolvería nada — sino **cuando el primer módulo real esté generándose**:
+
+```zsh
 ssh AWK-Dev "docker compose -p awk-staging logs --tail 200 factory-generator | grep -E 'Migración generada|mergeada|staging'"
 ```
 
-Debe aparecer `Migración generada para "<slug>": <timestamp>_<slug>` (el residual que dejó D2 abierto) y,
-tras aprobar `pr_review`, `PR ... mergeada con squash y rama remota borrada.`
+Debe aparecer `Migración generada para "<slug>": <timestamp>_<slug>` (el residual que dejó D2 abierto,
+D-051) y, tras aprobar `pr_review`, `PR ... mergeada con squash y rama remota borrada.` Si el run se
+cae por un corte de red, no hagas nada: el trabajo vuelve solo a la cola con backoff y `/factory` te
+dice a qué hora reintenta.
 
 ---
 

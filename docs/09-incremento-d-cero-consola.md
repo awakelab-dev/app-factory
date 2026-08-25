@@ -237,7 +237,7 @@ todo lo demás.
 
 ---
 
-### Lo que salió al construirlo (D-053, 2026-08-21)
+### Lo que salió al construirlo (D-053, 2026-08-23)
 
 El diseño se sostuvo entero. Estos son los detalles que no estaban escritos y que conviene no volver
 a averiguar:

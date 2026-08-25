@@ -176,7 +176,7 @@ Ejecutada con el caso **`incidencias-aula`** (proyecto `019ffa2c-eb45-70c4-a6a0-
 >   migraciones (plataforma y Fábrica) entre el `pull` y el `up -d`. Si una falla, el deploy se rompe
 >   en ROJO en vez de dejar la API sirviendo 500 contra un esquema viejo.
 >
-> **Actualización 2026-08-21 (D-053, fase D3) — los DOS últimos, y con esto no queda ninguno:**
+> **Actualización 2026-08-23 (D-053, fase D3) — los DOS últimos, y con esto no queda ninguno:**
 > - **`cli generate <specId>`.** Aprobar el gate que completa `functional`+`technical` encola la
 >   generación; la corre el worker `factory-generator` en su propio checkout. Un corte de red se
 >   reintenta solo (2 y 10 min) en vez de perder el run: el caso de D-048 costaba 3,4 USD y una

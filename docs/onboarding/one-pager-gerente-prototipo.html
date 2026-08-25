@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>De la idea al módulo · Guía para gerentes · Fábrica AwkFactory</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --azul-01192:#011932; --azul-01264:#01264C; --azul-03260:#003260; --azul-27334:#27334F;
+    --azul-31446:#314668; --azul-34547:#34547A; --cian:#19F7F1; --cian-2:#0ABCC9; --cian-3:#0B93AA;
+    --cian-pale:#D9FBFF; --claro:#F0F3FC; --gris:#E2E6F2; --tenue:#72A3C4;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'Poppins',system-ui,-apple-system,sans-serif;background:var(--gris);
+       color:var(--azul-01192);-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .page{max-width:900px;margin:0 auto;background:#fff;}
+  header{background:linear-gradient(135deg,var(--azul-01264),var(--azul-01192));color:var(--claro);padding:32px 40px 28px;}
+  .logo{height:34px;margin-bottom:20px;display:block;}
+  header h1{margin:0 0 6px;font-size:25px;font-weight:600;line-height:1.25;text-wrap:balance;}
+  header p{margin:0;color:var(--tenue);font-size:14px;}
+  .badge{display:inline-block;margin-top:14px;background:rgba(25,247,241,.14);border:1px solid var(--cian-2);
+         color:var(--cian-pale);border-radius:999px;padding:5px 13px;font-size:12.5px;font-weight:500;}
+  main{padding:30px 40px 36px;}
+  .lead{font-size:14.5px;line-height:1.6;margin:0 0 26px;color:var(--azul-27334);max-width:66ch;}
+  .lead strong{color:var(--azul-01192);}
+
+  .pre{background:var(--claro);border:1px solid var(--gris);border-radius:11px;padding:16px 18px;margin:0 0 30px;}
+  .pre h2{margin:0 0 6px;font-size:12px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--cian-3);}
+  .pre p{margin:0 0 10px;font-size:13.4px;line-height:1.6;color:var(--azul-27334);}
+  .pre ul{margin:0;padding-left:18px;font-size:13.4px;line-height:1.75;color:var(--azul-27334);}
+  .pre li strong{color:var(--azul-01192);font-weight:600;}
+
+  .step{display:flex;gap:16px;margin-bottom:22px;padding-bottom:22px;border-bottom:1px solid var(--gris);}
+  .step:last-of-type{border-bottom:none;}
+  .num{flex:0 0 34px;height:34px;border-radius:50%;background:var(--cian);color:var(--azul-01192);
+       display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;}
+  .body{flex:1;min-width:0;}
+  .step h2{margin:4px 0 8px;font-size:16px;font-weight:600;}
+  .step p{margin:0 0 8px;font-size:13.7px;line-height:1.6;color:var(--azul-27334);}
+  .step p:last-child{margin-bottom:0;}
+
+  /* Lo que el gerente ESCRIBE va como mensaje de chat, no como comando:
+     la diferencia es el punto entero de la Fábrica. */
+  .di{background:var(--azul-01192);color:var(--cian-pale);border-radius:14px 14px 14px 4px;
+      padding:11px 15px;margin:10px 0;font-size:13.6px;line-height:1.5;max-width:60ch;position:relative;}
+  .di::before{content:"Tú escribes";position:absolute;top:-9px;left:14px;background:var(--cian);
+      color:var(--azul-01192);font-size:9.5px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;
+      padding:1.5px 7px;border-radius:999px;}
+  .di + .di{margin-top:16px;}
+  .resp{border-left:3px solid var(--cian-2);background:var(--claro);border-radius:0 8px 8px 0;
+        padding:9px 13px;margin:10px 0;font-size:13.2px;line-height:1.55;color:var(--azul-31446);}
+  .resp strong{color:var(--azul-01264);}
+  .path{font-size:13px;background:var(--claro);border-left:3px solid var(--azul-34547);padding:9px 12px;
+        border-radius:0 7px 7px 0;margin:8px 0;color:var(--azul-31446);}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;background:var(--azul-01192);
+       color:var(--cian-pale);padding:2.5px 7px;border-radius:5px;word-break:break-word;}
+
+  .always{margin-top:30px;border-top:2px solid var(--azul-01192);padding-top:22px;}
+  .always > h2{margin:0 0 4px;font-size:17px;font-weight:600;}
+  .always > p{margin:0 0 18px;font-size:13.7px;line-height:1.6;color:var(--azul-27334);max-width:66ch;}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;}
+  .card{border:1px solid var(--gris);border-radius:11px;padding:15px 16px;background:#fff;}
+  .card h3{margin:0 0 7px;font-size:14px;font-weight:600;color:var(--azul-01264);}
+  .card p{margin:0;font-size:13.1px;line-height:1.55;color:var(--azul-27334);}
+  .card .di{font-size:13px;padding:9px 13px;margin:9px 0 0;}
+
+  .note{background:var(--cian-pale);border:1px solid var(--cian-2);border-radius:9px;padding:13px 16px;
+        font-size:13.2px;line-height:1.55;color:var(--azul-01264);margin:26px 0 0;}
+  .note strong{color:var(--azul-01192);}
+  .warn{background:#fff;border:1px solid var(--gris);border-left:4px solid var(--azul-34547);
+        border-radius:0 9px 9px 0;padding:13px 16px;font-size:13.2px;line-height:1.55;
+        color:var(--azul-27334);margin:14px 0 0;}
+  .warn strong{color:var(--azul-01192);}
+
+  footer{background:var(--azul-01192);color:var(--tenue);padding:18px 40px;font-size:12.3px;
+         display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+  footer strong{color:var(--cian-pale);font-weight:500;}
+  @media (max-width:640px){
+    header,main,footer{padding-left:22px;padding-right:22px;}
+    .step{gap:12px;}
+  }
+  @media print{
+    body{background:#fff;} .page{max-width:none;}
+    header{padding:26px 30px 22px;} main{padding:24px 30px;}
+    .step{break-inside:avoid;} .card{break-inside:avoid;}
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <img class="logo" src="https://media.awakelab.world/MARCA_AWK26/awakelab_logo_fondo-oscuro_transparente.png" alt="Awakelab" />
+    <h1>De tu idea a un módulo de la plataforma</h1>
+    <p>Guía para gerentes, líderes y analistas · Fábrica de Aplicaciones (AwkFactory)</p>
+    <span class="badge">Todo se hace conversando en Cowork · cero comandos</span>
+  </header>
+
+  <main>
+    <p class="lead">
+      Describes la herramienta que necesitas, la ves funcionando en pantalla y la envías a la Fábrica.
+      A partir de ahí, el equipo de Sistemas y la Fábrica la convierten en un módulo real de la
+      plataforma. <strong>No hay que escribir comandos ni instalar nada en tu computador</strong>:
+      todo son mensajes normales en el chat de Cowork.
+    </p>
+
+    <div class="pre">
+      <h2>Antes de empezar · lo prepara Sistemas, una sola vez</h2>
+      <p>Si algo de esto falta, escríbele a Sistemas antes de seguir. No es trabajo tuyo.</p>
+      <ul>
+        <li><strong>Tu acceso a la Fábrica</strong>: un email y una contraseña propios de la Fábrica (no son los de tu cuenta de Claude).</li>
+        <li><strong>El conector habilitado</strong> en la organización de Claude de tu centro de costo.</li>
+        <li><strong>Tu usuario de la plataforma</strong>, para poder entrar después a probar el módulo terminado.</li>
+      </ul>
+    </div>
+
+    <div class="step">
+      <div class="num">1</div>
+      <div class="body">
+        <h2>Instalar la guía de prototipado y conectarte</h2>
+        <p>Una sola vez. Instala el plugin <strong>awk-prototipo</strong> en Cowork. La primera vez que lo uses, Claude abrirá el navegador para que inicies sesión.</p>
+        <div class="path">Usa el email y la contraseña que te dio Sistemas, no los de tu cuenta de Claude.</div>
+        <div class="resp"><strong>Sabes que quedó bien</strong> si al pedirle «muéstrame qué módulos ya existen» te responde con una lista en vez de un error.</div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="num">2</div>
+      <div class="body">
+        <h2>Contarle tu idea</h2>
+        <p>Con que digas lo que quieres, en tus palabras, basta:</p>
+        <div class="di">Quiero prototipar una herramienta para llevar el control de las prácticas profesionales de los alumnos. Hoy lo hacemos en un Excel compartido.</div>
+        <div class="resp">
+          <strong>Primero comprueba si ya existe algo parecido</strong> y te lo muestra: muchas veces la respuesta correcta es
+          mejorar un módulo que ya está vivo en vez de crear uno nuevo. Después te hará unas pocas preguntas de negocio
+          —quién lo usa, qué datos maneja, qué tan sensible es cada uno, qué proceso reemplaza— y esas respuestas
+          viajan con el prototipo.
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="num">3</div>
+      <div class="body">
+        <h2>Verlo y pedir cambios hasta que te guste</h2>
+        <p>Recibirás una página que puedes abrir y usar como si fuera la herramienta real, con datos de ejemplo. Pide los ajustes que quieras, tantas veces como haga falta:</p>
+        <div class="di">El listado debería poder filtrarse por empresa, y falta un aviso cuando la práctica está por vencer.</div>
+        <div class="warn"><strong>Nunca pegues datos reales de personas</strong> (nombres, correos, notas, informes). El prototipo se construye siempre con datos inventados; los reales llegan después, ya dentro de la plataforma y con sus permisos.</div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="num">4</div>
+      <div class="body">
+        <h2>Enviarlo a la Fábrica</h2>
+        <p>Cuando el prototipo te convenza:</p>
+        <div class="di">Ya está como quiero. Envíalo a la Fábrica.</div>
+        <div class="resp">Te confirmará que quedó <strong>recibido</strong> y te dará un <strong>código de proyecto</strong>. Guárdalo: es con lo que preguntas por él más adelante. La Fábrica empieza sola a analizarlo, sin que nadie tenga que lanzar nada.</div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="num">5</div>
+      <div class="body">
+        <h2>Aprobar la propuesta funcional</h2>
+        <p>El análisis produce una descripción de lo que se va a construir. Pídesela y decide:</p>
+        <div class="di">Resúmeme la propuesta de mi proyecto y dime qué tengo que decidir.</div>
+        <div class="di">Apruebo la parte funcional.</div>
+        <div class="resp">
+          Si algo no cuadra, no apruebes: <strong>pide cambios explicando el porqué</strong> —«pide cambios: el tutor
+          de la empresa también tiene que poder ver el informe»—. Con tu aprobación y la del revisor técnico,
+          <strong>la construcción arranca sola</strong>.
+        </div>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="num">6</div>
+      <div class="body">
+        <h2>Probarlo en la plataforma y aceptarlo</h2>
+        <p>Cuando el módulo esté publicado en el entorno de pruebas, entra con tu usuario de la plataforma, úsalo de verdad y, si responde a lo que pediste:</p>
+        <div class="di">Ya lo probé y funciona como esperaba. Apruebo la aceptación.</div>
+        <div class="resp">Ese es el último paso que te corresponde. La puesta en producción la coordina Sistemas.</div>
+      </div>
+    </div>
+
+    <div class="always">
+      <h2>En cualquier momento</h2>
+      <p>Estas tres no son pasos de una secuencia: sirven cuando las necesites, antes o después de cualquiera de los anteriores.</p>
+      <div class="cards">
+        <div class="card">
+          <h3>Saber cómo va</h3>
+          <p>Te responde en qué fase está, si hay algo esperando una decisión tuya y, si algo falló, qué fue.</p>
+          <div class="di">¿Cómo va mi proyecto?</div>
+        </div>
+        <div class="card">
+          <h3>Ver qué existe ya</h3>
+          <p>El catálogo de módulos de la plataforma. Úsalo antes de pedir algo nuevo: quizá ya está hecho.</p>
+          <div class="di">¿Qué módulos tiene ya la plataforma?</div>
+        </div>
+        <div class="card">
+          <h3>Pedir un cambio</h3>
+          <p>Sobre un módulo que ya está funcionando. Cuanto más concreto, mejor sale.</p>
+          <div class="di">En el módulo de prácticas, el informe final debería poder firmarlo también el tutor de la empresa.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="note">
+      <strong>Si algo se cae, no hace falta que hagas nada.</strong> Cuando falla la red o el servicio está saturado,
+      el trabajo vuelve solo a la cola y se reintenta; al preguntar «¿cómo va mi proyecto?» verás a qué hora lo
+      reintenta. Solo avisa a Sistemas si el proyecto queda en error y ahí se queda.
+    </div>
+
+    <div class="warn">
+      <strong>Hay dos decisiones que no son tuyas y es a propósito:</strong> la revisión técnica y la revisión del
+      código antes de publicarlo las hace Sistemas. Si intentas decidirlas, el sistema te lo impedirá — no es un
+      fallo. Tú decides lo que es de negocio: si la propuesta responde a tu necesidad y si el módulo terminado
+      te sirve.
+    </div>
+  </main>
+
+  <footer>
+    <span>Awakelab · Fábrica de Aplicaciones</span>
+    <span><strong>¿Dudas o algo no funciona?</strong> Sistemas y Desarrollo</span>
+  </footer>
+</div>
+</body>
+</html>
