@@ -5,7 +5,9 @@ import {
   Post,
   Patch,
   Param,
-  Query
+  Query,
+  Headers,
+  UnauthorizedException
 } from '@nestjs/common';
 import type { AuthUser } from '@awk/auth';
 import { Public, CurrentUser, Roles } from '../../core/auth/auth.decorators';
@@ -21,6 +23,10 @@ import {
   createSLARequestSchema,
   createKBArticleRequestSchema,
   createCannedResponseRequestSchema,
+  loginExternalSchema,
+  changePasswordSchema,
+  createExternalUserSchema,
+  updateExternalUserActiveSchema,
   type CreateTicketRequest,
   type CreateTicketMessageRequest,
   type UpdateTicketRequest,
@@ -29,7 +35,11 @@ import {
   type CreateHelpTopicRequest,
   type CreateSLARequest,
   type CreateKBArticleRequest,
-  type CreateCannedResponseRequest
+  type CreateCannedResponseRequest,
+  type LoginExternalRequest,
+  type ChangePasswordRequest,
+  type CreateExternalUserRequest,
+  type UpdateExternalUserActiveRequest
 } from './mesa-ayuda.types';
 
 /**
@@ -44,6 +54,57 @@ import {
 @Controller('mesa-ayuda')
 export class MesaAyudaController {
   constructor(private readonly service: MesaAyudaService) {}
+
+  // ---------------------------------------------------------------------------
+  // ENDPOINTS PÚBLICOS: Auth de usuarios externos (change-2)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * POST /api/mesa-ayuda/auth/login
+   * Endpoint público: login de usuario externo (email + contraseña).
+   * Retorna sessionToken o requiere cambio de contraseña si es temporal.
+   */
+  @Public()
+  @Post('auth/login')
+  loginExternal(
+    @Body(new ZodValidationPipe(loginExternalSchema))
+    body: LoginExternalRequest
+  ) {
+    return this.service.loginExternal(body);
+  }
+
+  /**
+   * POST /api/mesa-ayuda/auth/change-password
+   * Endpoint público: cambiar contraseña (requiere token provisional).
+   * Header: Authorization: Bearer <provisional_token>
+   */
+  @Public()
+  @Post('auth/change-password')
+  changePassword(
+    @Headers('authorization') authHeader: string,
+    @Body(new ZodValidationPipe(changePasswordSchema))
+    body: ChangePasswordRequest
+  ) {
+    if (!authHeader?.startsWith('Bearer ')) {
+      throw new UnauthorizedException('Token provisional requerido');
+    }
+    const token = authHeader.slice(7);
+    return this.service.changePassword(token, body);
+  }
+
+  /**
+   * GET /api/mesa-ayuda/auth/verify-session
+   * Endpoint público: verificar si un sessionToken es válido.
+   * Query: token=<sessionToken>
+   */
+  @Public()
+  @Get('auth/verify-session')
+  verifySession(@Query('token') token?: string) {
+    if (!token) {
+      throw new UnauthorizedException('Token requerido');
+    }
+    return this.service.verifySession(token);
+  }
 
   // ---------------------------------------------------------------------------
   // ENDPOINT PÚBLICO: Crear ticket (sin login)
@@ -270,5 +331,83 @@ export class MesaAyudaController {
   @Get('admin/canned-responses')
   listCannedResponses(@Query('category') category?: string) {
     return this.service.listCannedResponses(category);
+  }
+
+  // ---------------------------------------------------------------------------
+  // ENDPOINTS ADMIN: Gestión de usuarios externos (change-2)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * GET /api/mesa-ayuda/admin/external-users
+   * Listar usuarios externos con búsqueda y filtros.
+   */
+  @Roles('mesa_ayuda_admin')
+  @Get('admin/external-users')
+  listExternalUsers(
+    @CurrentUser() user: AuthUser,
+    @Query('search') search?: string,
+    @Query('status') status?: string,
+    @Query('sortBy') sortBy?: string
+  ) {
+    return this.service.listExternalUsers({
+      search,
+      status: status as 'active' | 'inactive' | undefined,
+      sortBy: sortBy as 'createdAt' | 'email' | 'organization' | undefined
+    });
+  }
+
+  /**
+   * POST /api/mesa-ayuda/admin/external-users
+   * Crear nuevo usuario externo.
+   */
+  @Roles('mesa_ayuda_admin')
+  @Post('admin/external-users')
+  createExternalUser(
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(createExternalUserSchema))
+    body: CreateExternalUserRequest
+  ) {
+    return this.service.createExternalUser(user, body);
+  }
+
+  /**
+   * PATCH /api/mesa-ayuda/admin/external-users/:id/active
+   * Activar o desactivar usuario externo.
+   */
+  @Roles('mesa_ayuda_admin')
+  @Patch('admin/external-users/:id/active')
+  updateExternalUserActive(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(updateExternalUserActiveSchema))
+    body: UpdateExternalUserActiveRequest
+  ) {
+    return this.service.updateExternalUserActive(user, id, body);
+  }
+
+  /**
+   * PATCH /api/mesa-ayuda/admin/external-users/:id/password-reset
+   * Resetear contraseña a una temporal nueva.
+   */
+  @Roles('mesa_ayuda_admin')
+  @Patch('admin/external-users/:id/password-reset')
+  resetExternalUserPassword(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string
+  ) {
+    return this.service.resetExternalUserPassword(user, id);
+  }
+
+  /**
+   * GET /api/mesa-ayuda/admin/external-users/:id/audit
+   * Ver historial de auditoría del usuario externo.
+   */
+  @Roles('mesa_ayuda_admin')
+  @Get('admin/external-users/:id/audit')
+  getExternalUserAudit(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string
+  ) {
+    return this.service.getExternalUserAudit(user, id);
   }
 }

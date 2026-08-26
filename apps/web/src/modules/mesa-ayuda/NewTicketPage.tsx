@@ -84,9 +84,9 @@ export function NewTicketPage() {
       setTimeout(() => {
         navigate(`/mesa-ayuda/tickets/${result.id}?sessionToken=${result.sessionToken}`);
       }, 2000);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (err: any) {
-      setError(err.message || 'Error al crear ticket');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message || 'Error al crear ticket');
     } finally {
       setLoading(false);
     }

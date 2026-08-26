@@ -59,7 +59,8 @@ export const ticketSchema = z.object({
   subject: z.string(),
   requestorEmail: z.string().email(),
   requestorName: z.string(),
-  sessionToken: z.string().uuid(),
+  sessionToken: z.string().uuid().nullable().optional(),
+  requesterId: z.string().uuid().nullable().optional(),
   description: z.string(),
   assignedToAgentId: z.string().uuid().nullable(),
   createdAt: z.coerce.date(),
@@ -155,3 +156,45 @@ export const dashboardSchema = z.object({
   allTickets: z.number().int()
 });
 export type Dashboard = z.infer<typeof dashboardSchema>;
+
+// ---------------------------------------------------------------------------
+// Auth externa (change-2)
+// ---------------------------------------------------------------------------
+
+export const loginResponseSchema = z.object({
+  requiresPasswordChange: z.boolean(),
+  sessionToken: z.string().optional(),
+  redirectTo: z.string()
+});
+export type LoginResponse = z.infer<typeof loginResponseSchema>;
+
+export const verifySessionSchema = z.object({
+  valid: z.boolean(),
+  userId: z.string().uuid().optional(),
+  email: z.string().email().optional(),
+  requesterOrganization: z.string().nullable().optional(),
+  displayName: z.string().optional(),
+  error: z.string().optional()
+});
+export type VerifySessionResponse = z.infer<typeof verifySessionSchema>;
+
+// ---------------------------------------------------------------------------
+// Usuarios externos (change-2)
+// ---------------------------------------------------------------------------
+
+export const externalUserSchema = z.object({
+  id: z.string().uuid(),
+  email: z.string().email(),
+  displayName: z.string(),
+  requesterOrganization: z.string().nullable(),
+  isActive: z.boolean(),
+  createdAt: z.coerce.date(),
+  lastExternalLoginAt: z.coerce.date().nullable(),
+  externalMesaAyudaUser: z.literal(true)
+});
+export type ExternalUser = z.infer<typeof externalUserSchema>;
+
+export const externalUsersListSchema = z.object({
+  users: z.array(externalUserSchema)
+});
+export type ExternalUsersList = z.infer<typeof externalUsersListSchema>;

@@ -9,6 +9,7 @@ allowBuilds:
   '@prisma/engines': true
   '@swc/core': true
   '@tailwindcss/oxide': true
+  bcrypt: true
   core-js: false
   esbuild: true
   prisma: true

@@ -32,7 +32,15 @@ describe('MesaAyudaController', () => {
       createSLA: () => {},
       createKBArticle: () => {},
       createCannedResponse: () => {},
-      listCannedResponses: () => {}
+      listCannedResponses: () => {},
+      loginExternal: () => {},
+      changePassword: () => {},
+      verifySession: () => {},
+      listExternalUsers: () => {},
+      createExternalUser: () => {},
+      updateExternalUserActive: () => {},
+      resetExternalUserPassword: () => {},
+      getExternalUserAudit: () => {}
     };
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

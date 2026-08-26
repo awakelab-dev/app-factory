@@ -2,6 +2,23 @@
 -- (índices únicos parciales, CHECK, exclusión, etc.)
 -- Anexado por el generador al final de la migración generada.
 
+-- change-2: Índice único parcial en core.users para usuarios externos de mesa-ayuda
+-- Asegura que no hay duplicados de email entre usuarios externos
+-- (los internos siguen con UNIQUE global; ambos índices coexisten)
+CREATE UNIQUE INDEX idx_external_mesa_ayuda_users_email
+  ON core.users (email)
+  WHERE "externalMesaAyudaUser" = true;
+
+-- Índice para búsqueda rápida de usuarios externos
+CREATE INDEX idx_external_users_active
+  ON core.users ("externalMesaAyudaUser", email)
+  WHERE "externalMesaAyudaUser" = true;
+
+-- Índice para búsquedas de cuentas bloqueadas temporalmente (limpieza periódica)
+CREATE INDEX idx_users_locked_until
+  ON core.users ("lockedUntil")
+  WHERE "lockedUntil" > now();
+
 -- Índice único parcial: un solo ticket ABIERTO/EN_PROCESO por solicitante
 -- (evita que un solicitante tenga múltiples tickets activos simultáneamente)
 CREATE UNIQUE INDEX idx_tickets_open_per_requestor

@@ -21,6 +21,10 @@ datasource db {
 
 /// Usuario de la plataforma. La identidad vendrá del IdP (SSO pendiente,
 /// ver STATUS); mientras tanto se crea por seed y se autentica con dev-login.
+///
+/// Extensión para Mesa de Ayuda (change-2): usuarios externos pueden autenticarse
+/// con email+contraseña. Los campos new-prefixed con "external" son para usuarios
+/// externos; los internos NO los usan (null o default).
 model User {
   id          String       @id @default(uuid(7)) @db.Uuid
   email       String       @unique
@@ -31,6 +35,18 @@ model User {
   roles       UserRole[]
   auditEvents AuditEvent[] @relation("actor")
 
+  // Campos nuevos para usuarios externos de Mesa de Ayuda (change-2)
+  externalMesaAyudaUser     Boolean         @default(false)
+  requesterOrganization     String?         @db.VarChar(200)
+  passwordHash              String?         @db.VarChar(255)
+  passwordExpiresAt         DateTime?
+  lockedUntil               DateTime?
+  failedLoginAttempts       Int             @default(0)
+  lastExternalLoginAt       DateTime?
+  sessionRevokedAt          DateTime?       // Para invalidar todas las sesiones al dar de baja
+
+  @@index([externalMesaAyudaUser, email])
+  @@index([lockedUntil])
   @@map("users")
   @@schema("core")
 }
@@ -825,7 +841,8 @@ model MesaAyudaHelpTopic {
 }
 
 /// Ticket de soporte abierto por un solicitante. El token de sesión permite
-/// al solicitante ver su ticket sin login.
+/// al solicitante ver su ticket sin login. Con change-2, puede crearse también
+/// por usuario externo autenticado de mesa-ayuda (requester_id no null).
 model MesaAyudaTicket {
   id                  String   @id @default(uuid(7)) @db.Uuid
   ticket_number       Int      @unique @default(autoincrement()) // Número correlativo para referencia humana
@@ -838,7 +855,8 @@ model MesaAyudaTicket {
   subject             String   @db.VarChar(300)
   requestorEmail      String
   requestorName       String
-  sessionToken        String   @unique @db.Uuid // UUID que identifica al solicitante (sin login)
+  sessionToken        String?  @unique @db.Uuid // UUID que identifica al solicitante (sin login); nullable con change-2
+  requesterId         String?  @db.Uuid // core.users.id si es usuario externo autenticado; sin FK cross-schema
   description         String
   assignedToAgentId   String?  @db.Uuid // core.users.id, sin FK cross-schema (agente asignado)
   createdAt           DateTime @default(now())
@@ -853,6 +871,7 @@ model MesaAyudaTicket {
   @@index([status])
   @@index([assignedToAgentId])
   @@index([sessionToken])
+  @@index([requesterId])
   @@map("tickets")
   @@schema("mesa_ayuda")
 }

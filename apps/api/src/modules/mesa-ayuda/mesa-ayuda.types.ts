@@ -109,7 +109,8 @@ export const ticketSchema = z.object({
   subject: z.string(),
   requestorEmail: z.string().email(),
   requestorName: z.string(),
-  sessionToken: z.string().uuid(),
+  sessionToken: z.string().uuid().nullable().optional(),
+  requesterId: z.string().uuid().nullable().optional(),
   description: z.string(),
   assignedToAgentId: z.string().uuid().nullable(),
   createdAt: z.coerce.date(),
@@ -224,3 +225,98 @@ export const createCannedResponseRequestSchema = z.object({
   category: z.string().min(1).max(50)
 });
 export type CreateCannedResponseRequest = z.infer<typeof createCannedResponseRequestSchema>;
+
+// ---------------------------------------------------------------------------
+// Auth de usuarios externos (change-2)
+// ---------------------------------------------------------------------------
+
+export const loginExternalSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1)
+});
+export type LoginExternalRequest = z.infer<typeof loginExternalSchema>;
+
+export const changePasswordSchema = z.object({
+  newPassword: z.string()
+    .min(12, 'Mínimo 12 caracteres')
+    .regex(/[A-Z]/, 'Debe contener al menos una mayúscula')
+    .regex(/\d/, 'Debe contener al menos un número')
+    .regex(/[!@#$%^&*]/, 'Debe contener al menos un carácter especial')
+});
+export type ChangePasswordRequest = z.infer<typeof changePasswordSchema>;
+
+export const loginResponseSchema = z.object({
+  requiresPasswordChange: z.boolean(),
+  sessionToken: z.string().optional(),
+  redirectTo: z.string()
+});
+export type LoginResponse = z.infer<typeof loginResponseSchema>;
+
+export const verifySessionSchema = z.object({
+  valid: z.boolean(),
+  userId: z.string().uuid().optional(),
+  email: z.string().email().optional(),
+  requesterOrganization: z.string().nullable().optional(),
+  displayName: z.string().optional(),
+  error: z.string().optional()
+});
+export type VerifySessionResponse = z.infer<typeof verifySessionSchema>;
+
+// ---------------------------------------------------------------------------
+// Admin: Gestión de usuarios externos (change-2)
+// ---------------------------------------------------------------------------
+
+export const createExternalUserSchema = z.object({
+  email: z.string().email(),
+  displayName: z.string().min(2).max(100),
+  requesterOrganization: z.string().max(200).optional()
+});
+export type CreateExternalUserRequest = z.infer<typeof createExternalUserSchema>;
+
+export const createExternalUserResponseSchema = z.object({
+  id: z.string().uuid(),
+  email: z.string().email(),
+  displayName: z.string(),
+  temporaryPassword: z.string(),
+  requesterOrganization: z.string().nullable(),
+  createdAt: z.coerce.date()
+});
+export type CreateExternalUserResponse = z.infer<typeof createExternalUserResponseSchema>;
+
+export const updateExternalUserActiveSchema = z.object({
+  isActive: z.boolean()
+});
+export type UpdateExternalUserActiveRequest = z.infer<typeof updateExternalUserActiveSchema>;
+
+export const externalUserSchema = z.object({
+  id: z.string().uuid(),
+  email: z.string().email(),
+  displayName: z.string(),
+  requesterOrganization: z.string().nullable(),
+  isActive: z.boolean(),
+  createdAt: z.coerce.date(),
+  lastExternalLoginAt: z.coerce.date().nullable(),
+  externalMesaAyudaUser: z.literal(true)
+});
+export type ExternalUser = z.infer<typeof externalUserSchema>;
+
+export const externalUsersListSchema = z.object({
+  users: z.array(externalUserSchema)
+});
+export type ExternalUsersList = z.infer<typeof externalUsersListSchema>;
+
+export const auditEventSchema = z.object({
+  id: z.string().uuid(),
+  action: z.string(),
+  createdAt: z.coerce.date(),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  details: z.record(z.string(), z.any()).optional()
+});
+export type AuditEvent = z.infer<typeof auditEventSchema>;
+
+export const externalUserAuditSchema = z.object({
+  userId: z.string().uuid(),
+  email: z.string().email(),
+  auditEvents: z.array(auditEventSchema)
+});
+export type ExternalUserAudit = z.infer<typeof externalUserAuditSchema>;

@@ -7,6 +7,16 @@ CREATE TYPE "mesa_ayuda"."TicketStatus" AS ENUM ('abierto', 'en_proceso', 'resue
 -- CreateEnum
 CREATE TYPE "mesa_ayuda"."TicketPriority" AS ENUM ('baja', 'media', 'alta', 'urgente');
 
+-- AlterTable
+ALTER TABLE "core"."users" ADD COLUMN     "externalMesaAyudaUser" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "failedLoginAttempts" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN     "lastExternalLoginAt" TIMESTAMP(3),
+ADD COLUMN     "lockedUntil" TIMESTAMP(3),
+ADD COLUMN     "passwordExpiresAt" TIMESTAMP(3),
+ADD COLUMN     "passwordHash" VARCHAR(255),
+ADD COLUMN     "requesterOrganization" VARCHAR(200),
+ADD COLUMN     "sessionRevokedAt" TIMESTAMP(3);
+
 -- CreateTable
 CREATE TABLE "mesa_ayuda"."departments" (
     "id" UUID NOT NULL,
@@ -57,7 +67,8 @@ CREATE TABLE "mesa_ayuda"."tickets" (
     "subject" VARCHAR(300) NOT NULL,
     "requestorEmail" TEXT NOT NULL,
     "requestorName" TEXT NOT NULL,
-    "sessionToken" UUID NOT NULL,
+    "sessionToken" UUID,
+    "requesterId" UUID,
     "description" TEXT NOT NULL,
     "assignedToAgentId" UUID,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -183,6 +194,9 @@ CREATE INDEX "tickets_assignedToAgentId_idx" ON "mesa_ayuda"."tickets"("assigned
 CREATE INDEX "tickets_sessionToken_idx" ON "mesa_ayuda"."tickets"("sessionToken");
 
 -- CreateIndex
+CREATE INDEX "tickets_requesterId_idx" ON "mesa_ayuda"."tickets"("requesterId");
+
+-- CreateIndex
 CREATE INDEX "ticket_messages_ticketId_idx" ON "mesa_ayuda"."ticket_messages"("ticketId");
 
 -- CreateIndex
@@ -218,6 +232,12 @@ CREATE INDEX "kb_articles_isPublished_idx" ON "mesa_ayuda"."kb_articles"("isPubl
 -- CreateIndex
 CREATE UNIQUE INDEX "agents_departmentId_agentUserId_key" ON "mesa_ayuda"."agents"("departmentId", "agentUserId");
 
+-- CreateIndex
+CREATE INDEX "users_externalMesaAyudaUser_email_idx" ON "core"."users"("externalMesaAyudaUser", "email");
+
+-- CreateIndex
+CREATE INDEX "users_lockedUntil_idx" ON "core"."users"("lockedUntil");
+
 -- AddForeignKey
 ALTER TABLE "mesa_ayuda"."slas" ADD CONSTRAINT "slas_departmentId_fkey" FOREIGN KEY ("departmentId") REFERENCES "mesa_ayuda"."departments"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
@@ -251,6 +271,23 @@ ALTER TABLE "mesa_ayuda"."agents" ADD CONSTRAINT "agents_departmentId_fkey" FORE
 -- Constraints adicionales para mesa_ayuda que Prisma no expresa
 -- (índices únicos parciales, CHECK, exclusión, etc.)
 -- Anexado por el generador al final de la migración generada.
+
+-- change-2: Índice único parcial en core.users para usuarios externos de mesa-ayuda
+-- Asegura que no hay duplicados de email entre usuarios externos
+-- (los internos siguen con UNIQUE global; ambos índices coexisten)
+CREATE UNIQUE INDEX idx_external_mesa_ayuda_users_email
+  ON core.users (email)
+  WHERE "externalMesaAyudaUser" = true;
+
+-- Índice para búsqueda rápida de usuarios externos
+CREATE INDEX idx_external_users_active
+  ON core.users ("externalMesaAyudaUser", email)
+  WHERE "externalMesaAyudaUser" = true;
+
+-- Índice para búsquedas de cuentas bloqueadas temporalmente (limpieza periódica)
+CREATE INDEX idx_users_locked_until
+  ON core.users ("lockedUntil")
+  WHERE "lockedUntil" > now();
 
 -- Índice único parcial: un solo ticket ABIERTO/EN_PROCESO por solicitante
 -- (evita que un solicitante tenga múltiples tickets activos simultáneamente)

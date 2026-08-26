@@ -5,14 +5,15 @@ import { useState } from 'react';
  * SLAs, temas, agentes, respuestas preformuladas y KB (stub funcional).
  */
 export function AdminPage() {
-  const [activeTab, setActiveTab] = useState<'departments' | 'slas' | 'topics' | 'agents' | 'kb'>('departments');
+  const [activeTab, setActiveTab] = useState<'departments' | 'slas' | 'topics' | 'agents' | 'kb' | 'external-users'>('departments');
 
   const tabs = [
     { id: 'departments', label: 'Departamentos' },
     { id: 'slas', label: 'SLAs' },
     { id: 'topics', label: 'Temas' },
     { id: 'agents', label: 'Agentes' },
-    { id: 'kb', label: 'Base de Conocimiento' }
+    { id: 'kb', label: 'Base de Conocimiento' },
+    { id: 'external-users', label: 'Usuarios Externos' }
   ];
 
   return (
@@ -100,6 +101,23 @@ export function AdminPage() {
               <p className="text-center text-gray-500">
                 Formulario y listado de KB estará aquí
               </p>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'external-users' && (
+          <div>
+            <h2 className="mb-4 text-xl font-bold text-gray-900">Usuarios Externos</h2>
+            <p className="text-gray-600">Gestión de solicitantes externos de Mesa de Ayuda (change-2)</p>
+            <div className="mt-4 space-y-4">
+              <button className="bg-cyan-500 hover:bg-cyan-600 text-white px-4 py-2 rounded-lg font-medium transition">
+                + Nuevo Usuario Externo
+              </button>
+              <div className="rounded border border-dashed border-gray-300 bg-gray-50 p-8">
+                <p className="text-center text-gray-500">
+                  Tabla de usuarios externos con acciones (activar/desactivar, reset de contraseña, auditoría) estará aquí
+                </p>
+              </div>
             </div>
           </div>
         )}
