@@ -2,7 +2,6 @@ import { Injectable, BadRequestException, NotFoundException } from '@nestjs/comm
 import { PrismaService } from '../../core/prisma/prisma.service';
 import type { AuthUser } from '@awk/auth';
 import type { ScheduleWeek, ScheduleGrid } from './panel-prioridades.types';
-import { PanelPrioritiesMappers } from './panel-prioridades.mappers';
 
 /**
  * Servicio de gestión de bloques de agenda semanal (lunes–viernes, 8–17).

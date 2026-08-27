@@ -1,144 +1,135 @@
-'use client';
-
-import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { AlertCircle, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@awk/ui';
-import { listTeamMembers, addTeamMember, removeTeamMember } from './panel-prioridades-api';
-import type { PanelTeamMember } from './panel-prioridades.types';
+import { apiFetch } from '../../lib/api';
+import type { PanelTeamMember, CreateTeamMemberRequest } from '../panel-prioridades.types';
 
-/**
- * TeamPage: gestión del equipo local para delegaciones.
- * CRUD: crear, editar, activar/desactivar miembros.
- */
 export function TeamPage() {
   const [members, setMembers] = useState<PanelTeamMember[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [formData, setFormData] = useState<CreateTeamMemberRequest>({ name: '', email: '' });
 
   useEffect(() => {
-    listTeamMembers()
-      .then(setMembers)
-      .catch(() => {})
-      .finally(() => setIsLoading(false));
+    loadTeam();
   }, []);
 
-  const handleAdd = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim() || !email.trim()) {
-      alert('Nombre y email son obligatorios');
+  async function loadTeam() {
+    try {
+      setLoading(true);
+      const response = await apiFetch('/api/panel-prioridades/team', {
+        expectedType: 'json'
+      });
+      setMembers(response || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al cargar equipo');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function addMember() {
+    if (!formData.name || !formData.email) {
+      alert('Rellena nombre y email');
       return;
     }
-
     try {
-      await addTeamMember({ name, email });
-      setName('');
-      setEmail('');
+      await apiFetch('/api/panel-prioridades/team', {
+        method: 'POST',
+        body: JSON.stringify(formData),
+        expectedType: 'json'
+      });
+      setFormData({ name: '', email: '' });
       setShowForm(false);
-      // Reload
-      const updated = await listTeamMembers();
-      setMembers(updated);
-    } catch (err: any) {
-      alert(`Error: ${err.message}`);
+      await loadTeam();
+    } catch (err) {
+      alert('Error al añadir miembro: ' + (err instanceof Error ? err.message : String(err)));
     }
-  };
+  }
 
-  const handleRemove = async (memberId: string) => {
-    if (confirm('¿Desactivar este miembro?')) {
-      try {
-        await removeTeamMember(memberId);
-        // Reload
-        const updated = await listTeamMembers();
-        setMembers(updated);
-      } catch (err: any) {
-        alert(`Error: ${err.message}`);
-      }
+  async function removeMember(id: string) {
+    if (!confirm('¿Desactivar este miembro?')) return;
+    try {
+      await apiFetch(`/api/panel-prioridades/team/${id}`, {
+        method: 'DELETE',
+        expectedType: 'json'
+      });
+      await loadTeam();
+    } catch (err) {
+      alert('Error al desactivar: ' + (err instanceof Error ? err.message : String(err)));
     }
-  };
+  }
 
   return (
-    <div className="space-y-4 p-4">
-      <div className="flex items-center justify-between">
+    <div className="space-y-8">
+      <header className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Mi Equipo</h1>
-          <p className="text-gray-600">Gestiona personas para delegar tareas</p>
+          <h1 className="text-3xl font-semibold text-white">
+            Mi equipo <span className="text-awk-cyan-400">·</span> delegaciones
+          </h1>
+          <p className="mt-2 text-sm text-awk-blue-300">
+            Personas a quienes delegas tareas (solo visible para ti)
+          </p>
         </div>
-        <Link to="/panel-prioridades">
-          <Button variant="outline">← Volver a Matriz</Button>
-        </Link>
-      </div>
+        <Button onClick={() => setShowForm(!showForm)}>
+          <Plus className="h-4 w-4" />
+          Añadir miembro
+        </Button>
+      </header>
 
-      {/* Formulario de añadir miembro */}
-      <div className="rounded-lg border border-gray-200 p-4">
-        {showForm ? (
-          <form onSubmit={handleAdd} className="space-y-3">
-            <input
-              type="text"
-              placeholder="Nombre"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              maxLength={100}
-              className="w-full rounded border border-gray-300 px-3 py-2"
-            />
-            <input
-              type="email"
-              placeholder="Email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded border border-gray-300 px-3 py-2"
-            />
-            <div className="flex gap-2">
-              <Button type="submit" disabled={addMember.isPending}>
-                Añadir
-              </Button>
-              <Button type="button" onClick={() => setShowForm(false)} variant="outline">
-                Cancelar
-              </Button>
-            </div>
-          </form>
-        ) : (
-          <Button onClick={() => setShowForm(true)} className="w-full">
-            + Añadir miembro al equipo
-          </Button>
-        )}
-      </div>
+      {error && (
+        <div className="flex items-start gap-3 rounded-lg border border-red-800 bg-red-900/20 p-4">
+          <AlertCircle className="h-5 w-5 text-red-400 flex-shrink-0" />
+          <p className="text-sm text-red-200">{error}</p>
+        </div>
+      )}
 
-      {/* Lista de miembros */}
-      <div className="rounded-lg border border-gray-200 p-4">
-        {isLoading ? (
-          <p className="text-gray-600">Cargando equipo...</p>
-        ) : members.length === 0 ? (
-          <p className="text-gray-600">Sin miembros aún. Añade tu primer compañero.</p>
-        ) : (
-          <div className="space-y-2">
-            {members.map((member) => (
-              <div key={member.id} className="flex items-center justify-between border-b p-2">
-                <div>
-                  <p className="font-medium">{member.name}</p>
-                  <p className="text-sm text-gray-600">{member.email}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  {!member.active && (
-                    <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
-                      Inactivo
-                    </span>
-                  )}
-                  {member.active && (
-                    <Button
-                      onClick={() => handleRemove(member.id)}
-                      disabled={removeMember.isPending}
-                      variant="outline"
-                    >
-                      Desactivar
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ))}
+      {showForm && (
+        <div className="rounded-lg border border-awk-blue-700 bg-awk-navy-800 p-4 space-y-3">
+          <input
+            type="text"
+            placeholder="Nombre"
+            value={formData.name}
+            onChange={e => setFormData({ ...formData, name: e.target.value })}
+            className="w-full rounded border border-awk-blue-600 bg-awk-blue-900 px-3 py-2 text-white placeholder-awk-blue-500"
+          />
+          <input
+            type="email"
+            placeholder="Email"
+            value={formData.email}
+            onChange={e => setFormData({ ...formData, email: e.target.value })}
+            className="w-full rounded border border-awk-blue-600 bg-awk-blue-900 px-3 py-2 text-white placeholder-awk-blue-500"
+          />
+          <div className="flex gap-2">
+            <Button onClick={addMember} className="bg-awk-cyan-400">Guardar</Button>
+            <Button onClick={() => setShowForm(false)} className="bg-awk-blue-700">Cancelar</Button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {loading ? (
+        <p className="text-awk-blue-300">Cargando equipo…</p>
+      ) : members.length === 0 ? (
+        <p className="text-awk-blue-400">Sin miembros en el equipo aún</p>
+      ) : (
+        <div className="space-y-2">
+          {members.filter(m => m.active).map(m => (
+            <div key={m.id} className="flex items-center justify-between rounded-lg border border-awk-blue-700 bg-awk-navy-800 p-4">
+              <div>
+                <p className="font-medium text-white">{m.name}</p>
+                <p className="text-xs text-awk-blue-400">{m.email}</p>
+              </div>
+              <button
+                onClick={() => removeMember(m.id)}
+                className="text-red-400 hover:text-red-300"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

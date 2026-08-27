@@ -76,7 +76,11 @@ export class PanelPrioritiesKpisService {
   /**
    * Genera diagnósticos automáticos basados en la distribución de tiempo.
    */
-  private generateDiagnostics(weekTotalMinutes: number, q2Minutes: number, tasks: any[]): Diagnostic[] {
+  private generateDiagnostics(
+    weekTotalMinutes: number,
+    q2Minutes: number,
+    tasks: Array<{ quadrant: number; estimatedMinutes: number; delegation?: { delegatedToName?: string } }>
+  ): Diagnostic[] {
     const diagnostics: Diagnostic[] = [];
 
     if (weekTotalMinutes === 0) {
@@ -132,7 +136,10 @@ export class PanelPrioritiesKpisService {
   /**
    * Calcula minutos totales para un cuadrante (desde tareas abiertas).
    */
-  private getMinutesByQuadrant(tasks: any[], quadrant: number): number {
+  private getMinutesByQuadrant(
+    tasks: Array<{ quadrant: number; estimatedMinutes: number }>,
+    quadrant: number
+  ): number {
     return tasks.filter(t => t.quadrant === quadrant).reduce((sum, t) => sum + t.estimatedMinutes, 0);
   }
 }

@@ -16,7 +16,7 @@ export class PanelPrioritiesTeamService {
    * Lista el equipo del usuario (solo activos por defecto, pero se puede filtrar).
    */
   async listTeamMembers(user: AuthUser, includeInactive = false): Promise<PanelTeamMember[]> {
-    const where: any = { userId: user.id };
+    const where: Record<string, unknown> = { userId: user.id };
     if (!includeInactive) {
       where.active = true;
     }

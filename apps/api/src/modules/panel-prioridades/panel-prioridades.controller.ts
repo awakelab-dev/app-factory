@@ -270,7 +270,7 @@ export class PanelPrioritiesController {
   async setDelegation(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
-    @Body() body: any
+    @Body() body: { delegatedToName?: string | null; followUpDate?: string }
   ) {
     const { delegatedToName, followUpDate } = body;
     return this.delegationsService.setDelegation(user, id, delegatedToName, followUpDate);

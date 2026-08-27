@@ -44,7 +44,7 @@ export class PanelPrioritiesTasksService {
     user: AuthUser,
     filters?: { quadrant?: number; status?: string; origin?: string }
   ): Promise<PanelTasksListResponse> {
-    const where: any = { userId: user.id };
+    const where: Record<string, unknown> = { userId: user.id };
 
     if (filters?.quadrant !== undefined) {
       where.quadrant = filters.quadrant;
