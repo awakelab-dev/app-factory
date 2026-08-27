@@ -203,6 +203,66 @@ describe('GatesService.decide — disparo de trabajo (D3: se acabó el `cli gene
     expect(jobs.enqueue).not.toHaveBeenCalled();
   });
 
+  it('changes_requested en el gate FUNCIONAL encola un re-análisis (y sin specId: la re-pasada crea una spec nueva)', async () => {
+    const { service, jobs } = buildService({ gateType: 'functional' });
+
+    await service.decide({
+      gateId: 'gate-1',
+      decision: 'changes_requested',
+      reviewer: 'antonio.alonso@awakelab.world',
+      notes: 'el PDF no existe en el prototipo'
+    });
+
+    // Esto es lo que mata el hueco de panel-prioridades (2026-08-27): pedir
+    // cambios dejaba el proyecto en spec_ready y no volvía a pasar nada.
+    expect(jobs.enqueue).toHaveBeenCalledWith({
+      kind: 'analysis',
+      projectId: 'proj-1',
+      specId: undefined,
+      requestedBy: 'antonio.alonso@awakelab.world'
+    });
+  });
+
+  it('changes_requested en el gate TÉCNICO encola el mismo re-análisis', async () => {
+    const { service, jobs } = buildService({ gateType: 'technical' });
+
+    await service.decide({ gateId: 'gate-1', decision: 'changes_requested', reviewer: 'leo@awakelab.dev', notes: 'RLS' });
+
+    expect(jobs.enqueue).toHaveBeenCalledWith(expect.objectContaining({ kind: 'analysis', projectId: 'proj-1' }));
+  });
+
+  it('si los DOS gates de spec piden cambios, el guardarraíl de un trabajo activo por proyecto evita el segundo análisis', async () => {
+    const { service, jobs } = buildService({ gateType: 'technical' });
+    (jobs.enqueue as ReturnType<typeof vi.fn>).mockResolvedValue({
+      job: { id: 'job-analisis-ya-activo', kind: 'analysis' },
+      alreadyQueued: true
+    });
+
+    await service.decide({ gateId: 'gate-1', decision: 'changes_requested', reviewer: 'leo@awakelab.dev', notes: 'x' });
+
+    // No es este servicio quien deduplica: `enqueueIn` devuelve el trabajo
+    // activo (lock de fila, D-047). Aquí se fija que se confía en eso y no se
+    // intenta encolar dos veces ni se trata `alreadyQueued` como error.
+    expect(jobs.enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it('el re-análisis se encola DESPUÉS de escribir el gate, igual que la generación', async () => {
+    const { service, prisma, jobs } = buildService({ gateType: 'functional' });
+    const order: string[] = [];
+    (prisma.gate.update as ReturnType<typeof vi.fn>).mockImplementation(({ data }) => {
+      order.push('gate');
+      return Promise.resolve({ id: 'gate-1', ...data });
+    });
+    (jobs.enqueue as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      order.push('enqueue');
+      return Promise.resolve({ job: { id: 'job-1', kind: 'analysis' }, alreadyQueued: false });
+    });
+
+    await service.decide({ gateId: 'gate-1', decision: 'changes_requested', reviewer: 'x@y.com', notes: 'x' });
+
+    expect(order).toEqual(['gate', 'enqueue']);
+  });
+
   it('el trabajo se encola DESPUÉS de escribir el gate (si encolar falla, la decisión ya está registrada)', async () => {
     const { service, prisma, jobs } = buildService({ gateType: 'technical', specGates: bothApproved });
     const order: string[] = [];

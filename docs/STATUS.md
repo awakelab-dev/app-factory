@@ -27,31 +27,114 @@
 > que es el shell por defecto del Mac. Nada de `read -p` ni otros bash-ismos: en zsh `-p` significa
 > "leer del coproceso" y el comando falla con `read: -p: no coprocess` (pasó el 2026-08-23).
 
-**D3 está desplegado y verificado en staging. No queda ningún paso de consola en el ciclo.** Los 11
-pasos del despliegue se ejecutaron el 2026-08-23 y el último cerró con `PUSH-Y-BORRADO-OK`.
+**PENDIENTE — desplegar D-054 y desatascar `panel-prioridades`.** El primer prototipo de un gerente
+ajeno a Sistemas (Antonio Alonso, segunda cuenta Claude) llegó y se analizó solo, pero al pedir
+cambios en el gate funcional el proyecto se quedó en `spec_ready` sin que nada lo recogiera. Los dos
+huecos ya están corregidos y verificados en el sandbox (245/245 en `@awk/factory`, `turbo` 25/25 en
+verde, lockfile idéntico); falta desplegarlo y re-encolar ese proyecto, que se decidió antes del fix.
 
-Solo queda **un commit de cierre con esta documentación**:
+Archivos ya escritos en el repo por el bridge (no hay nada que copiar):
+`apps/factory/src/pipeline/gates.service.ts`, `gates.service.spec.ts`,
+`analysis-runner.service.ts`, `analysis-runner.service.spec.ts`, `docs/DECISIONES.md`, este `STATUS.md`.
 
-```zsh
-cd ~/projects/app-factory && \
-git add docs/STATUS.md docs/DECISIONES.md docs/09-incremento-d-cero-consola.md docs/runbooks/prueba-e2e-cowork.md docs/onboarding/one-pager-gerente-prototipo.html && \
-git commit -m "[docs] cierra D3: desplegado en staging y prueba de humo verde (D-053)" && \
-git push origin main && \
-echo "documentación al día"
-```
-
-Debe terminar con `documentación al día`. Incluye el one-pager nuevo para gerentes
-(`docs/onboarding/one-pager-gerente-prototipo.html`, hermano del de administradores de cuenta): las
-frases que el gerente escribe en Cowork para prototipar, enviar y hacer seguimiento. **Si ya hiciste
-el commit de cierre antes de que existiera**, va suelto:
+### 1. Confirmar que el árbol está como se espera antes de commitear
 
 ```zsh
-cd ~/projects/app-factory && \
-git add docs/onboarding/one-pager-gerente-prototipo.html docs/STATUS.md && \
-git commit -m "[docs] one-pager de onboarding para gerentes" && \
-git push origin main && \
-echo "one-pager al día"
+cd ~/projects/app-factory && git status --porcelain && grep -c "'analysis'" apps/factory/src/pipeline/gates.service.ts && grep -c "CORRECCIONES DEL REVISOR" apps/factory/src/pipeline/analysis-runner.service.ts
 ```
+
+Debe listar exactamente esos 6 archivos como `M`, y después imprimir `2` y `1`. Si algún archivo no
+aparece, el bridge no lo escribió: avisar antes de seguir.
+
+### 2. Commit y push (el push a `main` dispara CI y, si CI queda verde, el deploy de staging)
+
+```zsh
+cd ~/projects/app-factory && git add apps/factory/src/pipeline docs/DECISIONES.md docs/STATUS.md && git commit -m "[factory] pedir cambios en un gate de spec encola el re-análisis y le pasa las correcciones del revisor (D-054)" && git push origin main && echo "empujado"
+```
+
+### 3. Esperar a CI y luego al Deploy (dos workflows, en ese orden)
+
+```zsh
+cd ~/projects/app-factory && sleep 25 && gh run watch $(gh run list --workflow CI --branch main --limit 1 --json databaseId --jq '.[0].databaseId') --exit-status && echo "CI VERDE"
+```
+
+```zsh
+cd ~/projects/app-factory && sleep 30 && gh run watch $(gh run list --workflow Deploy --limit 1 --json databaseId --jq '.[0].databaseId') --exit-status && echo "DEPLOY VERDE"
+```
+
+Si CI falla, **leer el log antes de tocar el código**: el fallo más frecuente de este repo es GitHub
+devolviendo 429/503 al bajar las actions, que se arregla re-lanzando el run.
+
+### 4. Comprobar que las imágenes desplegadas llevan el cambio (D-046: no dar el deploy por bueno)
+
+Son dos contenedores distintos: el disparo vive en la API (`factory`) y el prompt en el worker
+(`factory-runner`).
+
+```zsh
+ssh AWK-Dev "cd /opt/awkfactory/staging && docker compose --env-file .env -p awk-staging exec -T factory grep -c \"'analysis'\" dist/pipeline/gates.service.js && docker compose --env-file .env -p awk-staging exec -T factory-runner grep -c 'CORRECCIONES DEL REVISOR' dist/pipeline/analysis-runner.service.js"
+```
+
+Debe imprimir `2` y luego `1` — medidos contra el `dist` compilado de verdad, no deducidos. Si sale
+`0`, el contenedor sigue con la imagen vieja: `docker compose --env-file .env -p awk-staging pull && up -d`.
+
+### 5. Re-encolar `panel-prioridades` (su gate se decidió antes del fix, así que no le llega el disparo nuevo)
+
+Terminal A — túnel a la managed PG (dejar abierta; resuelve el endpoint solo):
+
+```zsh
+ssh -N -L 15432:$(ssh AWK-Dev "sed -n 's/^FACTORY_DATABASE_URL=.*@\([^:@]*\):[0-9]*\/.*/\1/p' /opt/awkfactory/staging/.env"):5432 AWK-Dev
+```
+
+Terminal B — encolar (sin `export`: el CLI ya lee `apps/factory/.env`, que apunta a `awkfactory_staging`):
+
+```zsh
+cd ~/projects/app-factory && pnpm --filter=@awk/factory run cli -- enqueue-analysis --project 01a0427b-1b97-712c-b2b5-84ce1dcd85ee
+```
+
+El worker lo toma en segundos y el análisis tarda ~3 min y ~0,30 USD. Seguimiento sin SQL: preguntar
+en Cowork "¿cómo va Panel de Prioridades?" hasta que vuelva a `pending_approval` con spec **v2**.
+
+### 6. Verificar la v2 — es la prueba de que los tres fixes funcionan
+
+En la v2 **no debe aparecer** la exportación a PDF ni el endpoint `/export/week-pdf`, **no debe
+haber** una sección "Decisiones ya tomadas", el aprobador de la funcional debe ser **Antonio** (no
+Leonardo), y las 4 respuestas y 3 correcciones de Antonio deben estar incorporadas. Comprobación
+rápida desde el repo, **con el túnel del paso 5 todavía abierto** (`export-spec` lee de la BD) y una
+vez que la v2 exista:
+
+```zsh
+cd ~/projects/app-factory && pnpm --filter=@awk/factory run cli -- export-spec 01a0427b-1b97-712c-b2b5-84ce1dcd85ee && grep -ic "jspdf\|week-pdf\|decisiones ya tomadas" docs/pipeline/panel-prioridades/spec-funcional.md docs/pipeline/panel-prioridades/spec-tecnica.md
+```
+
+`export-spec` vuelca todas las versiones en el mismo directorio en orden ascendente, así que lo que
+queda en disco es la v2. La salida esperada son exactamente estas dos líneas (medido):
+
+```
+docs/pipeline/panel-prioridades/spec-funcional.md:0
+docs/pipeline/panel-prioridades/spec-tecnica.md:0
+```
+
+Cualquier número distinto de `0` significa que el prompt endurecido no bastó: ajustarlo **antes** de
+generar, que es donde el error costaría los ~8 USD del run.
+
+### 7. Cerrar los gates de la v2
+
+Antonio decide el funcional (esta vez **aprobar**, no "cambios solicitados", si la v2 le encaja) y tú
+el técnico en `/factory`. Al aprobarse el segundo, **la generación se encola sola** (D-053).
+
+### 8. Limpiar el andamiaje
+
+```zsh
+cd ~/projects/app-factory && mkdir -p _to_delete && mv .awk-transfer _entrega-conector-otra-cuenta _to_delete/ 2>/dev/null; ls _to_delete && echo "andamiaje movido"
+```
+
+---
+
+**Pendiente de DECISIÓN tuya (no es un paso):** `changes_requested` en `manager_acceptance` tiene el
+mismo hueco que se acaba de cerrar — el proyecto pasa a `changes_requested` y la regeneración no
+arranca sola. No se tocó a propósito: una regeneración cuesta ~8 USD y dispararla desde el "esto no
+me sirve" de un gerente, sin que Sistemas lea antes sus notas, es política, no bug. Decide si se
+automatiza igual o si se queda como paso explícito de Sistemas.
 
 ---
 

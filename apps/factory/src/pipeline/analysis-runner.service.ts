@@ -37,7 +37,30 @@ docs/04-integracion-cowork.md, "list_modules") y documenta eso en reuseNotes.
 Aplica los criterios de docs/05-gobernanza-seguridad.md para sensitivityFlags
 (datos personales/RGPD, dependencias externas nuevas, migraciones a core,
 primer módulo de un tipo/cliente) y complexityScore. No implementes código
-todavía — este paso solo produce la spec para el gate humano.`;
+todavía — este paso solo produce la spec para el gate humano.
+
+TRES REGLAS DURAS, de specs reales que salieron mal (panel-prioridades,
+2026-08-27: la spec afirmó una exportación a PDF con jsPDF que el prototipo no
+tiene, presentó como decisiones aprobadas cosas que nadie había decidido, y
+contó 18 tareas de demostración donde había 17):
+
+1. NO INVENTES FUNCIONALIDAD. Toda capacidad que atribuyas al material fuente
+   tiene que estar EN el material fuente y has de poder señalar dónde. Si crees
+   que algo falta o conviene, va como propuesta explícita — nunca como algo que
+   el prototipo ya hace, y nunca como un endpoint o una pantalla más de la spec
+   técnica.
+2. NO ATRIBUYAS DECISIONES A NADIE. Lo que tú deduzcas son PROPUESTAS que el
+   gate tiene que confirmar. Titula esa sección "Propuestas a confirmar en el
+   gate" y redáctalas como propuestas ("se propone…"), jamás "Decisiones ya
+   tomadas" ni "aprobado por <persona>". El único texto vinculante de otra
+   persona son las correcciones del revisor si el prompt te las pasa.
+3. LAS CIFRAS SE CUENTAN, NO SE ESTIMAN. Número de registros de demostración,
+   de vistas, de entidades, de endpoints: cuéntalos en el material real o no
+   los escribas.
+
+La spec funcional se dirige al SOLICITANTE que te dice el prompt ("Solicitado
+por"), y las preguntas del gate funcional son PARA ÉL. No pongas a otra persona
+como aprobador ni como dueño de las decisiones de negocio.`;
 
 const CHANGE_ANALYSIS_SYSTEM_PROMPT = `Eres el paso de ANÁLISIS DE CAMBIO del pipeline de AwkFactory
 (docs/04-integracion-cowork.md, "request_change": analiza módulo actual +
@@ -83,8 +106,10 @@ produce la mini-spec para el gate humano.`;
  *
  * También sirve para REVISAR una spec ("complementar", docs/05): si el
  * proyecto viene de `changes_requested` → `spec_ready`, correr `analyze` de
- * nuevo crea la siguiente versión con gates frescos — un dev edita el
- * material fuente/instrucciones entre una corrida y otra, no el código.
+ * nuevo crea la siguiente versión con gates frescos. Desde 2026-08-27 ese
+ * re-análisis lo encola solo `GatesService` y el prompt lleva las
+ * `decisionNotes` del revisor (`revisionContext`), así que la corrección no
+ * depende de que un dev edite el material fuente entre una corrida y otra.
  */
 @Injectable()
 export class AnalysisRunnerService {
@@ -164,7 +189,8 @@ export class AnalysisRunnerService {
       `Proyecto: ${project.displayName} (slug: ${project.moduleSlug}).`,
       `Material fuente: ${sourceDescription}`,
       `Solicitado por: ${project.requestedBy}.`,
-      `Escribe la spec en ${specDir}/ tal como se te indicó en las instrucciones del sistema.`
+      `Escribe la spec en ${specDir}/ tal como se te indicó en las instrucciones del sistema.`,
+      ...(await this.revisionContext(projectId))
     ].join('\n');
 
     let result: AgentRunResult;
@@ -190,6 +216,64 @@ export class AnalysisRunnerService {
       `Análisis completo para "${project.moduleSlug}": spec v${spec.version}, gates funcional+técnico abiertos.`
     );
     return spec;
+  }
+
+  /**
+   * Correcciones del revisor para una RE-pasada de análisis (docs/05,
+   * "complementar"). Si la última spec del proyecto tiene gates en
+   * `changes_requested` con notas, esas notas son el motivo de esta corrida y
+   * viajan en el prompt junto con la spec que hay que corregir.
+   *
+   * Sin esto, re-analizar era inútil: el prompt solo llevaba nombre, fuente y
+   * solicitante, así que el agente volvía a leer el mismo prototipo y repetía
+   * los mismos errores que el revisor acababa de señalar. Las notas de gate ya
+   * viajaban a la GENERACIÓN (lección de `gestor-proyectos`, D-033) pero solo
+   * las de gates aprobados — el camino de "esto está mal, rehazlo" no las
+   * leía nadie. Lo destapó `panel-prioridades` (2026-08-27).
+   *
+   * Devuelve [] en el análisis inicial (no hay spec previa) y también cuando la
+   * spec previa no tiene correcciones: una re-corrida sin notas es legítima (un
+   * dev cambió el material fuente) y no debe ensuciar el prompt.
+   */
+  private async revisionContext(projectId: string): Promise<string[]> {
+    const previous = await this.prisma.spec.findFirst({
+      where: { projectId },
+      orderBy: { version: 'desc' },
+      include: { gates: { orderBy: { createdAt: 'asc' } } }
+    });
+    if (!previous) return [];
+
+    const notesOf = (status: string) =>
+      (previous.gates ?? [])
+        .filter((gate) => gate.status === status && gate.decisionNotes?.trim())
+        .map((gate) => `[gate ${gate.gateType} — ${gate.reviewer ?? 'revisor no registrado'}]\n${gate.decisionNotes?.trim()}`);
+
+    const corrections = notesOf('changes_requested');
+    if (corrections.length === 0) return [];
+
+    // Las notas de los gates APROBADOS de esa misma spec también viajan: la
+    // spec nueva abre gates frescos, así que una precisión ya acordada en la
+    // anterior se perdería para siempre si no se arrastra aquí (es la lección
+    // de D-033 con `gestor-proyectos`, donde una regla vivía en las notas del
+    // gate y el agente nunca la vio).
+    const agreed = notesOf('approved');
+
+    return [
+      '',
+      `REVISIÓN: esto NO es un análisis nuevo. Ya existe la spec v${previous.version} y un revisor la leyó y pidió`,
+      'cambios. Sus correcciones son VINCULANTES y son el motivo de esta pasada: aplícalas TODAS, no las',
+      'discutas, y no vuelvas a introducir nada que señalen como erróneo o inexistente. Lo que no mencionen,',
+      'consérvalo. Si una corrección contradice lo que dice la spec anterior, gana la corrección.',
+      '--- CORRECCIONES DEL REVISOR (vinculantes) ---',
+      ...corrections,
+      ...(agreed.length > 0
+        ? ['--- PRECISIONES YA ACORDADAS EN GATES APROBADOS (consérvalas) ---', ...agreed]
+        : []),
+      `--- SPEC FUNCIONAL v${previous.version} (la que hay que corregir) ---`,
+      previous.functionalContent,
+      `--- SPEC TÉCNICA v${previous.version} (la que hay que corregir) ---`,
+      previous.technicalContent
+    ];
   }
 
   /**

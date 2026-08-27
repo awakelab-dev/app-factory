@@ -52,7 +52,14 @@ const successResult: AgentRunResult = {
   turns: 3
 };
 
-function buildService(overrides: { project?: Record<string, unknown>; submission?: Record<string, unknown> } = {}) {
+function buildService(
+  overrides: {
+    project?: Record<string, unknown>;
+    submission?: Record<string, unknown>;
+    /** Spec previa con sus gates, para el camino de RE-análisis (`revisionContext`). */
+    previousSpec?: Record<string, unknown> | null;
+  } = {}
+) {
   const prisma = {
     run: {
       create: vi.fn().mockResolvedValue({ id: 'run-1' }),
@@ -60,6 +67,7 @@ function buildService(overrides: { project?: Record<string, unknown>; submission
     },
     spec: {
       count: vi.fn().mockResolvedValue(0),
+      findFirst: vi.fn().mockResolvedValue(overrides.previousSpec ?? null),
       create: vi.fn().mockImplementation(({ data }: { data: Record<string, unknown> }) =>
         Promise.resolve({ id: 'spec-1', ...data })
       )
@@ -317,6 +325,125 @@ function buildChangeService() {
 
   return { service: new AnalysisRunnerService(prisma, projects, gates, submissions), prisma, projects, gates };
 }
+
+describe('AnalysisRunnerService.runAnalysis — RE-análisis con las correcciones del revisor', () => {
+  const specConCambiosPedidos = {
+    version: 1,
+    functionalContent: '# spec funcional v1',
+    technicalContent: '# spec técnica v1',
+    gates: [
+      {
+        gateType: 'functional',
+        status: 'changes_requested',
+        reviewer: 'antonio.alonso@awakelab.world',
+        decisionNotes: 'El PDF con jsPDF NO existe en el prototipo: elimina el endpoint /export/week-pdf.'
+      },
+      { gateType: 'technical', status: 'pending', reviewer: null, decisionNotes: null }
+    ]
+  };
+
+  beforeEach(() => {
+    repo = fakeCheckout();
+    process.env.PLATFORM_REPO_PATH = repo;
+    process.env.ANTHROPIC_API_KEY = 'test-key';
+    readFileMock.mockReset();
+  });
+
+  function specFiles() {
+    readFileMock
+      .mockResolvedValueOnce('# spec funcional v2')
+      .mockResolvedValueOnce('# spec técnica v2')
+      .mockResolvedValueOnce(JSON.stringify({ complexityScore: 3, sensitivityFlags: [], reuseNotes: 'x' }));
+  }
+
+  it('mete las notas del gate que pidió cambios en el prompt, marcadas como vinculantes, con la spec a corregir', async () => {
+    const { service } = buildService({ previousSpec: specConCambiosPedidos });
+    specFiles();
+    const runner = vi.fn().mockResolvedValue(successResult);
+
+    await service.runAnalysis('proj-1', runner);
+
+    const prompt = runner.mock.calls[0]?.[0]?.prompt ?? '';
+    expect(prompt).toContain('CORRECCIONES DEL REVISOR (vinculantes)');
+    expect(prompt).toContain('El PDF con jsPDF NO existe en el prototipo');
+    expect(prompt).toContain('[gate functional — antonio.alonso@awakelab.world]');
+    expect(prompt).toContain('# spec funcional v1');
+    expect(prompt).toContain('# spec técnica v1');
+  });
+
+  it('sin ningún gate que haya pedido cambios NO añade nada: una re-corrida por otro motivo no debe ensuciar el prompt', async () => {
+    const { service } = buildService({
+      previousSpec: {
+        ...specConCambiosPedidos,
+        gates: [
+          { gateType: 'functional', status: 'approved', reviewer: 'a@b.com', decisionNotes: 'nota de aprobación' },
+          { gateType: 'technical', status: 'pending', reviewer: null, decisionNotes: null }
+        ]
+      }
+    });
+    specFiles();
+    const runner = vi.fn().mockResolvedValue(successResult);
+
+    await service.runAnalysis('proj-1', runner);
+
+    const prompt = runner.mock.calls[0]?.[0]?.prompt ?? '';
+    expect(prompt).not.toContain('CORRECCIONES DEL REVISOR');
+    expect(prompt).not.toContain('nota de aprobación');
+  });
+
+  it('arrastra también las notas de los gates APROBADOS de esa spec: los gates nuevos nacen vacíos y una precisión acordada se perdería (D-033)', async () => {
+    const { service } = buildService({
+      previousSpec: {
+        ...specConCambiosPedidos,
+        gates: [
+          ...(specConCambiosPedidos.gates as Record<string, unknown>[]).slice(0, 1),
+          {
+            gateType: 'technical',
+            status: 'approved',
+            reviewer: 'leonardo.barreto@awakelab.dev',
+            decisionNotes: 'RLS en las cuatro tablas, no solo en tasks.'
+          }
+        ]
+      }
+    });
+    specFiles();
+    const runner = vi.fn().mockResolvedValue(successResult);
+
+    await service.runAnalysis('proj-1', runner);
+
+    const prompt = runner.mock.calls[0]?.[0]?.prompt ?? '';
+    expect(prompt).toContain('PRECISIONES YA ACORDADAS EN GATES APROBADOS');
+    expect(prompt).toContain('RLS en las cuatro tablas');
+  });
+
+  it('el análisis inicial (sin spec previa) deja el prompt limpio', async () => {
+    const { service } = buildService();
+    specFiles();
+    const runner = vi.fn().mockResolvedValue(successResult);
+
+    await service.runAnalysis('proj-1', runner);
+
+    const prompt = runner.mock.calls[0]?.[0]?.prompt ?? '';
+    expect(prompt).not.toContain('REVISIÓN');
+    expect(prompt).toContain('Solicitado por: leonardo.barreto@awakelab.dev');
+  });
+
+  it('las reglas contra inventar funcionalidad y contra atribuir decisiones viajan en el system prompt', async () => {
+    const { service } = buildService();
+    specFiles();
+    const runner = vi.fn().mockResolvedValue(successResult);
+
+    await service.runAnalysis('proj-1', runner);
+
+    // Fijadas en un test a propósito: son la corrección de panel-prioridades
+    // (spec con un PDF inventado y con "decisiones ya tomadas" que nadie tomó)
+    // y una reescritura futura del prompt no debe borrarlas sin que se vea.
+    const systemPrompt = runner.mock.calls[0]?.[0]?.systemPrompt ?? '';
+    expect(systemPrompt).toContain('NO INVENTES FUNCIONALIDAD');
+    expect(systemPrompt).toContain('NO ATRIBUYAS DECISIONES A NADIE');
+    expect(systemPrompt).toContain('LAS CIFRAS SE CUENTAN, NO SE ESTIMAN');
+  });
+});
 
 describe('AnalysisRunnerService.runChangeAnalysis (request_change)', () => {
   beforeEach(() => {

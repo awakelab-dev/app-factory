@@ -44,6 +44,13 @@ export interface GateAmendInput {
  *
  *  - aprobar el gate que deja `functional` + `technical` en verde → encola
  *    `generation` para esa spec;
+ *  - `changes_requested` en un gate de SPEC (`functional`/`technical`) → encola
+ *    un RE-ANÁLISIS (2026-08-27): la máquina de estados ya preveía
+ *    `spec_ready → analyzing` "para re-correr el análisis", pero nadie
+ *    encolaba ese trabajo y el proyecto se quedaba en `spec_ready` para
+ *    siempre — la misma fricción de D-048 que D3 cerró solo del lado de
+ *    aprobar. Lo destapó `panel-prioridades`, el primer gate decidido por un
+ *    gerente ajeno a Sistemas: pidió cambios y no volvió a pasar nada;
  *  - `changes_requested` en `pr_review` → encola una REGENERACIÓN;
  *  - aprobar `pr_review` → encola `pr_merge`, y **no** transiciona a `staging`:
  *    eso lo hace el worker cuando ha visto la PR mergeada de verdad (D-049,
@@ -175,6 +182,18 @@ export class GatesService {
       return;
     }
 
+    // "Complementar" un gate de SPEC (docs/05) = re-analizar con las
+    // correcciones del revisor, que viajan en las `decisionNotes` y las lee
+    // `AnalysisRunnerService.runAnalysis`. Se encola aquí para que decidir el
+    // gate sea lo único que haga falta (norte de cero consola, docs/09): antes
+    // esto exigía `cli enqueue-analysis` por terminal, y como nada lo decía,
+    // no se hacía. NO se pasa `specId`: el re-análisis crea la versión
+    // SIGUIENTE de spec con gates frescos, no trabaja sobre la vigente.
+    if (input.decision === 'changes_requested' && REQUIRED_SPEC_GATES.includes(gateType)) {
+      await this.enqueue('analysis', specId, projectId, input.reviewer, `el gate ${gateType} pidió cambios`);
+      return;
+    }
+
     if (gateType !== 'pr_review') return;
 
     // Aprobar la PR: el merge lo hace el worker, que tiene `gh` y credencial.
@@ -193,13 +212,20 @@ export class GatesService {
   }
 
   private async enqueue(
-    kind: 'generation' | 'pr_merge',
+    kind: 'analysis' | 'generation' | 'pr_merge',
     specId: string,
     projectId: string,
     requestedBy: string,
     motivo: string
   ): Promise<void> {
-    const { job, alreadyQueued } = await this.jobs.enqueue({ kind, projectId, specId, requestedBy });
+    const { job, alreadyQueued } = await this.jobs.enqueue({
+      kind,
+      projectId,
+      // `specId` es del contrato de generación (D3). Un re-análisis no lo
+      // lleva: produce una spec nueva, no consume la que se está corrigiendo.
+      specId: kind === 'analysis' ? undefined : specId,
+      requestedBy
+    });
     this.logger.log(
       alreadyQueued
         ? `Ya había un trabajo activo para el proyecto ${projectId} (${job.kind} ${job.id}): no se encola ${kind}.`
