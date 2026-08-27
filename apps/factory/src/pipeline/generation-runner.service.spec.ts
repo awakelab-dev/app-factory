@@ -25,6 +25,25 @@ const successResult: AgentRunResult = {
 
 const okGit: GitCommandResult = { stdout: '', stderr: '' };
 
+/**
+ * Doble de `git` que modela las dos cosas de las que depende la preparación de
+ * la rama: si la rama YA existe (`rev-parse --verify`) y qué hay preparado para
+ * commitear (`diff --cached --name-only`, el guardarraíl de alcance).
+ */
+function gitDouble({ branchExists = false, staged = [] as string[] } = {}) {
+  return vi.fn().mockImplementation((args: string[]) => {
+    if (args[0] === 'rev-parse') {
+      return branchExists
+        ? Promise.resolve(okGit)
+        : Promise.reject(new Error("git rev-parse --verify --quiet refs/heads/factory/demo-modulo falló (código 1)"));
+    }
+    if (args[0] === 'diff' && args.includes('--cached')) {
+      return Promise.resolve({ stdout: staged.join('\n'), stderr: '' });
+    }
+    return Promise.resolve(okGit);
+  });
+}
+
 /** Checkout de mentira REAL: `assertRunnerEnv` (D-047) comprueba que exista. */
 function fakeCheckout({ conPrisma = true } = {}): string {
   const dir = mkdtempSync(join(tmpdir(), 'awkf-repo-'));
@@ -120,7 +139,7 @@ describe('GenerationRunnerService.runGeneration', () => {
   it('crea la rama, corre el agente con las carpetas del módulo como único alcance de escritura, y avanza a pr_review cuando hay PR', async () => {
     const { service, prisma, projects } = buildService();
     const agentRunner = vi.fn().mockResolvedValue(successResult);
-    const runGit = vi.fn().mockResolvedValue(okGit);
+    const runGit = gitDouble();
     const runGh = vi.fn().mockImplementation((args: string[]) =>
       Promise.resolve({
         stdout: args.includes('view')
@@ -132,7 +151,8 @@ describe('GenerationRunnerService.runGeneration', () => {
 
     const run = await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh, generateMigration: sinMigracion() });
 
-    expect(runGit).toHaveBeenCalledWith(['checkout', '-b', 'factory/demo-modulo'], repo);
+    expect(runGit).toHaveBeenCalledWith(['fetch', 'origin', '--prune', '--quiet'], repo);
+    expect(runGit).toHaveBeenCalledWith(['checkout', '-B', 'factory/demo-modulo', 'origin/main'], repo);
     expect(agentRunner).toHaveBeenCalledWith(
       expect.objectContaining({
         cwd: repo,
@@ -325,6 +345,78 @@ describe('GenerationRunnerService.runGeneration', () => {
   });
 
   // ---- Incremento D, bloque 3a: la migración se genera dentro del run ----
+
+  it('una rama que YA existe se reutiliza tal cual (regeneración incremental): ni -B ni origin/main', async () => {
+    const { service } = buildService();
+    const agentRunner = vi.fn().mockResolvedValue(successResult);
+    const runGit = gitDouble({ branchExists: true });
+    const runGh = vi.fn().mockResolvedValue({ stdout: '{"url":"https://pr/9","state":"OPEN"}\n', stderr: '' });
+
+    await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh, generateMigration: sinMigracion() });
+
+    expect(runGit).toHaveBeenCalledWith(['checkout', 'factory/demo-modulo'], repo);
+    expect(runGit).not.toHaveBeenCalledWith(['checkout', '-B', 'factory/demo-modulo', 'origin/main'], repo);
+  });
+
+  it('el fetch previo NO es best-effort: si falla, no se genera sobre un origin/main viejo', async () => {
+    const { service, projects } = buildService();
+    const agentRunner = vi.fn().mockResolvedValue(successResult);
+    const runGit = vi.fn().mockImplementation((args: string[]) =>
+      args[0] === 'fetch' ? Promise.reject(new Error('git fetch origin falló: Could not resolve host')) : Promise.resolve(okGit)
+    );
+    const runGh = vi.fn().mockResolvedValue(okGit);
+
+    // Basar 1,35 USD de generación en un main de hace días es el fallo que esto
+    // arregla; sin red el trabajo cae (y el clasificador lo reintenta) en vez
+    // de generar sobre una base vieja.
+    await expect(
+      service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh, generateMigration: sinMigracion() })
+    ).rejects.toThrow(/Could not resolve host/);
+    expect(agentRunner).not.toHaveBeenCalled();
+    expect(projects.transition).not.toHaveBeenCalledWith('proj-1', 'pr_review');
+  });
+
+  it('si lo preparado toca archivos de OTRO módulo, no commitea ni empuja y el run cae con ese motivo (panel-prioridades, 2026-08-27)', async () => {
+    const { service, projects } = buildService();
+    const agentRunner = vi.fn().mockResolvedValue(successResult);
+    const runGit = gitDouble({
+      staged: [
+        'apps/api/src/modules/demo-modulo/demo.service.ts',
+        'apps/api/src/modules/mesa-ayuda/mesa-ayuda.service.ts',
+        'apps/web/src/modules/mesa-ayuda/index.tsx'
+      ]
+    });
+    const runGh = vi.fn().mockResolvedValue(okGit);
+
+    await expect(
+      service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh, generateMigration: sinMigracion() })
+    ).rejects.toThrow(/archivo\(s\) de OTROS módulos.*mesa-ayuda/s);
+
+    // Lo que importa: NADA sale del checkout. Sin esto, el squash de la PR
+    // habría revertido en main los arreglos del módulo ajeno.
+    expect(runGit).not.toHaveBeenCalledWith(expect.arrayContaining(['push']), repo);
+    expect(runGit).not.toHaveBeenCalledWith(expect.arrayContaining(['commit']), repo);
+    expect(projects.transition).toHaveBeenCalledWith('proj-1', 'error');
+    expect(projects.transition).not.toHaveBeenCalledWith('proj-1', 'pr_review');
+  });
+
+  it('con solo archivos del propio módulo, el guardarraíl no estorba y se empuja', async () => {
+    const { service } = buildService();
+    const agentRunner = vi.fn().mockResolvedValue(successResult);
+    const runGit = gitDouble({
+      staged: [
+        'apps/api/src/modules/demo-modulo/demo.service.ts',
+        'apps/web/src/modules/demo-modulo/index.tsx',
+        'apps/api/prisma/schema.prisma',
+        'pnpm-lock.yaml'
+      ]
+    });
+    const runGh = vi.fn().mockResolvedValue({ stdout: '{"url":"https://pr/9","state":"OPEN"}\n', stderr: '' });
+
+    await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh, generateMigration: sinMigracion() });
+
+    expect(runGit).toHaveBeenCalledWith(['push', '-u', 'origin', 'factory/demo-modulo'], repo);
+  });
 
   it('genera la migración con el checkout y el slug del proyecto, ANTES del commit', async () => {
     const { service } = buildService();

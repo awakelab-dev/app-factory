@@ -21,6 +21,7 @@ function buildService(
     projectStatus?: string;
     prState?: string;
     prViewError?: Error;
+    mergeStateStatus?: string;
     checksError?: Error;
     mergeError?: Error;
     pendingManagerGate?: boolean;
@@ -50,7 +51,12 @@ function buildService(
     if (args[1] === 'view') {
       if (overrides.prViewError) throw overrides.prViewError;
       return {
-        stdout: JSON.stringify({ url: 'https://github.com/x/y/pull/7', state: overrides.prState ?? 'OPEN', number: 7 }),
+        stdout: JSON.stringify({
+          url: 'https://github.com/x/y/pull/7',
+          state: overrides.prState ?? 'OPEN',
+          number: 7,
+          mergeStateStatus: overrides.mergeStateStatus ?? 'CLEAN'
+        }),
         stderr: ''
       };
     }
@@ -74,6 +80,42 @@ function buildService(
     gitCalls
   };
 }
+
+describe('PrMergeService.runMerge — PR con conflictos (panel-prioridades, 2026-08-27)', () => {
+  beforeEach(() => {
+    process.env.PLATFORM_REPO_PATH = fakeCheckout();
+    process.env.ANTHROPIC_API_KEY = 'test';
+  });
+
+  it('una PR DIRTY falla ANTES de esperar checks, y el motivo habla de conflictos y no de checks', async () => {
+    const { service, deps, ghCalls, projects } = buildService({ mergeStateStatus: 'DIRTY' });
+
+    // GitHub no puede construir refs/pull/N/merge en una PR conflictiva, así
+    // que los workflows de pull_request no existen y `gh pr checks` respondía
+    // "no checks reported" — un error que apuntaba al sitio equivocado.
+    await expect(service.runMerge('proj-1', 'spec-1', deps)).rejects.toThrow(/CONFLICTOS con main/);
+    expect(ghCalls.some((args) => args[1] === 'checks')).toBe(false);
+    expect(ghCalls.some((args) => args[1] === 'merge')).toBe(false);
+    expect(projects.transition).not.toHaveBeenCalled();
+  });
+
+  it('pide mergeStateStatus en el gh pr view (si no, no hay nada que comprobar)', async () => {
+    const { service, deps, ghCalls } = buildService();
+
+    await service.runMerge('proj-1', 'spec-1', deps);
+
+    const view = ghCalls.find((args) => args[1] === 'view');
+    expect(view?.join(' ')).toContain('mergeStateStatus');
+  });
+
+  it('mergeStateStatus UNKNOWN (GitHub aún calculando) NO bloquea: solo DIRTY es un no rotundo', async () => {
+    const { service, deps, ghCalls } = buildService({ mergeStateStatus: 'UNKNOWN' });
+
+    await service.runMerge('proj-1', 'spec-1', deps);
+
+    expect(ghCalls.some((args) => args[1] === 'merge')).toBe(true);
+  });
+});
 
 describe('PrMergeService.runMerge', () => {
   beforeEach(() => {

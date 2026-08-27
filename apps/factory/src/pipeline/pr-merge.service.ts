@@ -24,6 +24,8 @@ interface PrView {
   url?: string;
   state?: string;
   number?: number;
+  /** CLEAN | DIRTY | BLOCKED | UNKNOWN… (GitHub). DIRTY = conflictos con la base. */
+  mergeStateStatus?: string;
 }
 
 /**
@@ -86,6 +88,21 @@ export class PrMergeService {
             'se cerró sin mergear. Decide qué hacer con el proyecto a mano (regenerar o rechazar).'
         );
       }
+      // Una PR con CONFLICTOS no tiene checks: GitHub no puede construir el
+      // merge ref (`refs/pull/N/merge`), así que los workflows de
+      // `pull_request` NUNCA se crean y `gh pr checks` sale con "no checks
+      // reported on the '<rama>' branch". Ese fue el error visible de la
+      // primera generación real (`panel-prioridades`, 2026-08-27) y apuntaba a
+      // los checks estando el problema dos pasos más atrás. Se comprueba antes
+      // de esperar, para que el motivo del trabajo diga la verdad.
+      if (pr.mergeStateStatus === 'DIRTY') {
+        throw new Error(
+          `La PR ${pr.url ?? branchName} tiene CONFLICTOS con main (mergeStateStatus=DIRTY): no se puede mergear y ` +
+            'GitHub tampoco ejecuta sus checks, así que esperarlos no serviría de nada. Resuelve los conflictos en la ' +
+            'rama —o bórrala y regenera desde main al día— y repón el merge con ' +
+            '`cli enqueue-generation --spec <specId> --kind pr_merge`.'
+        );
+      }
       await this.waitForChecks(branchName, repoPath, ghRunner);
       await ghRunner(['pr', 'merge', branchName, '--squash', '--delete-branch'], repoPath);
       this.logger.log(`PR ${pr.url ?? branchName} mergeada con squash y rama remota borrada.`);
@@ -112,7 +129,7 @@ export class PrMergeService {
 
   private async viewPr(branchName: string, repoPath: string, ghRunner: typeof runGh): Promise<PrView | null> {
     try {
-      const { stdout } = await ghRunner(['pr', 'view', branchName, '--json', 'url,state,number'], repoPath);
+      const { stdout } = await ghRunner(['pr', 'view', branchName, '--json', 'url,state,number,mergeStateStatus'], repoPath);
       return JSON.parse(stdout) as PrView;
     } catch (error) {
       // `gh pr view` sale con error tanto si no hay PR como si no hay red. Se

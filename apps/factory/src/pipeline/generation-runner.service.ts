@@ -235,14 +235,25 @@ export class GenerationRunnerService {
       );
     }
 
-    const prUrl = await this.tryOpenPullRequest(
-      branchName,
-      project.moduleSlug,
-      project.displayName,
-      specId,
-      gitRunner,
-      ghRunner
-    );
+    let prUrl: string | null;
+    try {
+      prUrl = await this.tryOpenPullRequest(
+        branchName,
+        project.moduleSlug,
+        project.displayName,
+        specId,
+        gitRunner,
+        ghRunner
+      );
+    } catch (error) {
+      // Lo único que lanza aquí a propósito es el guardarraíl de alcance
+      // (`assertOnlyOwnModule`): el código se generó, pero NO puede salir del
+      // checkout. Falla el run entero —con su consumo, D-046 hueco (a)— para
+      // que el motivo se vea en /factory y el proyecto no se quede en
+      // `generating` con un Run huérfano. Sin red/`gh`, `tryOpenPullRequest`
+      // sigue avisando y devolviendo null, sin pasar por aquí.
+      return this.fail(run.id, project.id, error instanceof Error ? error.message : String(error), result);
+    }
 
     await this.prisma.run.update({
       where: { id: run.id },
@@ -279,16 +290,74 @@ export class GenerationRunnerService {
     return this.prisma.run.findUniqueOrThrow({ where: { id: run.id } });
   }
 
+  /**
+   * Prepara la rama del módulo. Una rama NUEVA nace SIEMPRE de `origin/main`
+   * recién traído; una que ya existe (regeneración de la misma vuelta) se
+   * reutiliza tal cual, que es lo que quiere una PR incremental.
+   *
+   * Antes hacía `checkout -b` sobre lo que hubiera en HEAD, y eso rompió con la
+   * PRIMERA generación real (`panel-prioridades`, 2026-08-27): el checkout de
+   * generación es PERSISTENTE, `syncRepo` no lo toca a propósito (D-053, un
+   * `reset --hard` ahí borraría trabajo sin commitear) y `cleanupBranch` solo
+   * lo devuelve a `origin/main` TRAS un merge con éxito — que nunca había
+   * ocurrido. Estaba aparcado en `factory/mesa-ayuda`, así que la rama de
+   * `panel-prioridades` nació de ahí y se llevó dentro la versión VIEJA de
+   * mesa-ayuda: la PR salió `DIRTY` con 9 archivos en conflicto y, sin ese
+   * conflicto, el squash habría REVERTIDO en `main` los arreglos de ese
+   * módulo. El `fetch` es obligatorio (no best-effort): basar 1,35 USD de
+   * generación en un `origin/main` viejo es justo el fallo que esto arregla, y
+   * un fallo de red se clasifica como reintentable y vuelve solo.
+   */
   private async createOrReuseBranch(branchName: string, gitRunner: typeof runGit): Promise<void> {
-    try {
-      await gitRunner(['checkout', '-b', branchName], this.repoPath);
-    } catch (error) {
-      if (String(error).includes('already exists')) {
-        await gitRunner(['checkout', branchName], this.repoPath);
-        return;
-      }
-      throw error;
+    await gitRunner(['fetch', 'origin', '--prune', '--quiet'], this.repoPath);
+    if (await this.branchExists(branchName, gitRunner)) {
+      await gitRunner(['checkout', branchName], this.repoPath);
+      this.logger.log(`Rama ${branchName} ya existente: se reutiliza (regeneración incremental).`);
+      return;
     }
+    await gitRunner(['checkout', '-B', branchName, 'origin/main'], this.repoPath);
+    this.logger.log(`Rama ${branchName} creada desde origin/main al día.`);
+  }
+
+  private async branchExists(branchName: string, gitRunner: typeof runGit): Promise<boolean> {
+    try {
+      await gitRunner(['rev-parse', '--verify', '--quiet', `refs/heads/${branchName}`], this.repoPath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Guardarraíl de alcance: una generación NUNCA debe tocar archivos de otro
+   * módulo. Si lo hace, no se empuja nada — es la señal de que la rama nació
+   * contaminada (ver `createOrReuseBranch`), y empujarla arriesga revertir en
+   * `main` el trabajo de un módulo ajeno al pasar por el squash.
+   *
+   * Solo mira `apps/(api|web)/src/modules/<otro>/`: es el patrón donde el daño
+   * es real y donde no hay falsos positivos. Lo demás que la generación toca
+   * legítimamente (schema y migraciones de Prisma, lockfile, package.json) no
+   * se restringe aquí.
+   */
+  private async assertOnlyOwnModule(moduleSlug: string, gitRunner: typeof runGit): Promise<void> {
+    const { stdout } = await gitRunner(['diff', '--cached', '--name-only'], this.repoPath);
+    const staged = stdout
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const otherModule = /^apps\/(?:api|web)\/src\/modules\/([^/]+)\//;
+    const foreign = staged.filter((file) => {
+      const match = otherModule.exec(file);
+      return match !== null && match[1] !== moduleSlug;
+    });
+    if (foreign.length === 0) return;
+    const muestra = foreign.slice(0, 8).join(', ');
+    throw new Error(
+      `La generación de "${moduleSlug}" toca ${foreign.length} archivo(s) de OTROS módulos y no se empuja: ` +
+        `${muestra}${foreign.length > 8 ? ', …' : ''}. ` +
+        'Casi siempre significa que la rama nació de un checkout aparcado en la rama de otro módulo: ' +
+        'borra la rama en el checkout de generación y re-encola la generación.'
+    );
   }
 
   /**
@@ -311,9 +380,14 @@ export class GenerationRunnerService {
     gitRunner: typeof runGit,
     ghRunner: typeof runGh
   ): Promise<string | null> {
+    // `add` y la comprobación de alcance van FUERA del try: que la generación
+    // haya tocado otro módulo no es un "no se pudo empujar, seguimos" — es un
+    // motivo para no empujar y que el trabajo caiga con esa razón.
+    await gitRunner(['add', '-A'], this.repoPath);
+    await this.assertOnlyOwnModule(moduleSlug, gitRunner);
+
     let pushed = false;
     try {
-      await gitRunner(['add', '-A'], this.repoPath);
       await gitRunner(['commit', '-m', `[module:${moduleSlug}] Generado por la fábrica (spec ${specId})`], this.repoPath);
       await gitRunner(['push', '-u', 'origin', branchName], this.repoPath);
       pushed = true;
