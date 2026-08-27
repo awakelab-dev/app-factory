@@ -16,7 +16,7 @@ generator client {
 // y el runtime recibe el adapter (@prisma/adapter-pg) en el constructor.
 datasource db {
   provider = "postgresql"
-  schemas  = ["core", "moodle", "orientador", "proyectos", "focus", "incidencias", "reservas", "mesa_ayuda"]
+  schemas  = ["core", "moodle", "orientador", "proyectos", "focus", "incidencias", "reservas", "mesa_ayuda", "panel"]
 }
 
 /// Usuario de la plataforma. La identidad vendrá del IdP (SSO pendiente,
@@ -979,4 +979,153 @@ model MesaAyudaAgent {
   @@unique([departmentId, agentUserId])
   @@map("agents")
   @@schema("mesa_ayuda")
+}
+
+// ---------------------------------------------------------------------------
+// Módulo panel-prioridades (spec docs/pipeline/panel-prioridades/): panel
+// personal del Líder de Administración basado en la matriz de Eisenhower
+// (urgencia × importancia → 4 cuadrantes → acción sugerida). Monouser en MVP
+// (solo Antonio), pero con RLS desde el primer día para preparar la futura
+// apertura multi-usuario sin reingeniería. RLS + RBAC redundante: ambas
+// activas para seguridad de zona de confianza (docs/05).
+//
+// `userId` es referencia conceptual a `core.users.id` en schedule_blocks,
+// team_members, delegations — SIN FK cross-schema hacia `core.User` (mismo
+// patrón que otros módulos generados). El filtrado por user_id ocurre a nivel
+// de aplicación + RLS de Postgres en todas las tablas del módulo.
+//
+// `taskId` en schedule_blocks puede quedar NULL después de borrar una tarea
+// (soft delete): los bloques huérfanos se conservan para auditoría (mismo
+// patrón que FocusSession.taskId con `onDelete: SetNull`).
+// ---------------------------------------------------------------------------
+
+enum PanelTaskStatus {
+  open
+  done
+  discarded
+
+  @@schema("panel")
+}
+
+enum PanelTaskAction {
+  do        // Cuadrante 1: urgente e importante
+  plan      // Cuadrante 2: no urgente pero importante
+  delegate  // Cuadrante 3: urgente pero no importante
+  eliminate // Cuadrante 4: no urgente ni importante
+
+  @@schema("panel")
+}
+
+enum PanelTaskOrigin {
+  meeting
+  email
+  chat
+  self
+  direction
+
+  @@schema("panel")
+}
+
+/// Tarea en la matriz de Eisenhower. `userId` filtra por user_id de JWT
+/// (monouser hoy, multi-usuario en futuro). `urgent` y `important` definen
+/// el cuadrante; `action` se calcula automáticamente (1=do, 2=plan, 3=delegate,
+/// 4=eliminate). RLS: usuario solo ve/edita sus propias filas.
+model PanelTask {
+  id                 String             @id @default(uuid(7)) @db.Uuid
+  userId             String             @db.Uuid // core.users.id, sin FK cross-schema
+  title              String             @db.VarChar(200)
+  detail             String?            @db.VarChar(1000)
+  urgent             Boolean            // true = urgente
+  important          Boolean            // true = importante
+  quadrant           Int                // Computed: 1|2|3|4 (derivado de urgent+important)
+  action             PanelTaskAction    // Computed: do|plan|delegate|eliminate
+  dueDate            DateTime?          @db.Date
+  estimatedMinutes   Int                @default(60) // 30-240 en la UI
+  origin             PanelTaskOrigin
+  status             PanelTaskStatus    @default(open)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  scheduleBlocks ScheduleBlock[]
+  delegations    Delegation[]
+
+  @@index([userId, status])
+  @@index([userId, quadrant])
+  @@index([dueDate])
+  @@map("tasks")
+  @@schema("panel")
+}
+
+/// Bloque de tiempo agendado (lunes-viernes, 8-17, bloques de 1 hora).
+/// `dayOfWeek` = 0 (lunes)..4 (viernes); `hour` = 8..17. RLS: usuario
+/// solo ve/edita sus propios bloques. `taskId` nullable: si se borra una
+/// tarea, el bloque queda huérfano pero se conserva (same pattern as FocusSession).
+model ScheduleBlock {
+  id            String     @id @default(uuid(7)) @db.Uuid
+  userId        String     @db.Uuid // core.users.id, sin FK cross-schema
+  taskId        String?    @db.Uuid // Nullable: tarea borrada deja bloque huérfano
+  task          PanelTask? @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  dayOfWeek     Int        // 0=lunes, 1=martes, ..., 4=viernes
+  hour          Int        // 8-17
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@index([userId, dayOfWeek, hour])
+  @@map("schedule_blocks")
+  @@schema("panel")
+}
+
+/// Persona del equipo del usuario a quien puede delegar. Local al módulo,
+/// sin sincronización con directorio corporativo. RLS: usuario solo ve/edita
+/// su propio equipo (userId = session_user_id).
+model TeamMember {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  userId       String   @db.Uuid // core.users.id, dueño del equipo
+  addedByUserId String  @db.Uuid // core.users.id, quién registró a esta persona
+  name         String
+  email        String   @db.VarChar(255)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId, active])
+  @@map("team_members")
+  @@schema("panel")
+}
+
+/// Delegación de una tarea (cuadrante 3: urgente no importante).
+/// `delegatedToName` es string (referencia histórica a `TeamMember.name`),
+/// no FK: si la persona se elimina del equipo, la delegación se mantiene
+/// para auditoría. RLS: usuario solo ve delegaciones de sus propias tareas.
+model Delegation {
+  id              String    @id @default(uuid(7)) @db.Uuid
+  taskId          String    @db.Uuid
+  task            PanelTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId          String    @db.Uuid // core.users.id, dueño de la tarea
+  delegatedToName String?   // Nullable: delegación sin responsable aún (pending)
+  followUpDate    DateTime? @db.Date
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([taskId])
+  @@index([userId])
+  @@map("delegations")
+  @@schema("panel")
+}
+
+/// Auditoría específica del módulo (complementa `core.audit_events` con
+/// contexto de panel-prioridades). No requiere RLS: admins de la plataforma
+/// ven todo. Ejemplo: quién vio/modificó qué tarea confidencial, fecha y hora.
+model PanelAuditTrail {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  userId    String   @db.Uuid // core.users.id, quien hizo la acción
+  action    String   // Ej: "task.created", "task.moved_quadrant", "delegation.assigned"
+  taskId    String?  @db.Uuid // Nullable: acción que no es sobre una tarea específica
+  details   Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+  @@map("audit_trail")
+  @@schema("panel")
 }

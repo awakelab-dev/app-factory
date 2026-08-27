@@ -1,11 +1,23 @@
 -- CreateSchema
 CREATE SCHEMA IF NOT EXISTS "mesa_ayuda";
 
+-- CreateSchema
+CREATE SCHEMA IF NOT EXISTS "panel";
+
 -- CreateEnum
 CREATE TYPE "mesa_ayuda"."TicketStatus" AS ENUM ('abierto', 'en_proceso', 'resuelto', 'cerrado', 'reabierto');
 
 -- CreateEnum
 CREATE TYPE "mesa_ayuda"."TicketPriority" AS ENUM ('baja', 'media', 'alta', 'urgente');
+
+-- CreateEnum
+CREATE TYPE "panel"."PanelTaskStatus" AS ENUM ('open', 'done', 'discarded');
+
+-- CreateEnum
+CREATE TYPE "panel"."PanelTaskAction" AS ENUM ('do', 'plan', 'delegate', 'eliminate');
+
+-- CreateEnum
+CREATE TYPE "panel"."PanelTaskOrigin" AS ENUM ('meeting', 'email', 'chat', 'self', 'direction');
 
 -- AlterTable
 ALTER TABLE "core"."users" ADD COLUMN     "externalMesaAyudaUser" BOOLEAN NOT NULL DEFAULT false,
@@ -163,6 +175,78 @@ CREATE TABLE "mesa_ayuda"."agents" (
     CONSTRAINT "agents_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "panel"."tasks" (
+    "id" UUID NOT NULL,
+    "userId" UUID NOT NULL,
+    "title" VARCHAR(200) NOT NULL,
+    "detail" VARCHAR(1000),
+    "urgent" BOOLEAN NOT NULL,
+    "important" BOOLEAN NOT NULL,
+    "quadrant" INTEGER NOT NULL,
+    "action" "panel"."PanelTaskAction" NOT NULL,
+    "dueDate" DATE,
+    "estimatedMinutes" INTEGER NOT NULL DEFAULT 60,
+    "origin" "panel"."PanelTaskOrigin" NOT NULL,
+    "status" "panel"."PanelTaskStatus" NOT NULL DEFAULT 'open',
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "tasks_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "panel"."schedule_blocks" (
+    "id" UUID NOT NULL,
+    "userId" UUID NOT NULL,
+    "taskId" UUID,
+    "dayOfWeek" INTEGER NOT NULL,
+    "hour" INTEGER NOT NULL,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "schedule_blocks_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "panel"."team_members" (
+    "id" UUID NOT NULL,
+    "userId" UUID NOT NULL,
+    "addedByUserId" UUID NOT NULL,
+    "name" TEXT NOT NULL,
+    "email" VARCHAR(255) NOT NULL,
+    "active" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "team_members_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "panel"."delegations" (
+    "id" UUID NOT NULL,
+    "taskId" UUID NOT NULL,
+    "userId" UUID NOT NULL,
+    "delegatedToName" TEXT,
+    "followUpDate" DATE,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "delegations_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "panel"."audit_trail" (
+    "id" UUID NOT NULL,
+    "userId" UUID NOT NULL,
+    "action" TEXT NOT NULL,
+    "taskId" UUID,
+    "details" JSONB,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "audit_trail_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "departments_name_key" ON "mesa_ayuda"."departments"("name");
 
@@ -233,6 +317,33 @@ CREATE INDEX "kb_articles_isPublished_idx" ON "mesa_ayuda"."kb_articles"("isPubl
 CREATE UNIQUE INDEX "agents_departmentId_agentUserId_key" ON "mesa_ayuda"."agents"("departmentId", "agentUserId");
 
 -- CreateIndex
+CREATE INDEX "tasks_userId_status_idx" ON "panel"."tasks"("userId", "status");
+
+-- CreateIndex
+CREATE INDEX "tasks_userId_quadrant_idx" ON "panel"."tasks"("userId", "quadrant");
+
+-- CreateIndex
+CREATE INDEX "tasks_dueDate_idx" ON "panel"."tasks"("dueDate");
+
+-- CreateIndex
+CREATE INDEX "schedule_blocks_userId_dayOfWeek_hour_idx" ON "panel"."schedule_blocks"("userId", "dayOfWeek", "hour");
+
+-- CreateIndex
+CREATE INDEX "team_members_userId_active_idx" ON "panel"."team_members"("userId", "active");
+
+-- CreateIndex
+CREATE INDEX "delegations_taskId_idx" ON "panel"."delegations"("taskId");
+
+-- CreateIndex
+CREATE INDEX "delegations_userId_idx" ON "panel"."delegations"("userId");
+
+-- CreateIndex
+CREATE INDEX "audit_trail_userId_createdAt_idx" ON "panel"."audit_trail"("userId", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "audit_trail_action_createdAt_idx" ON "panel"."audit_trail"("action", "createdAt");
+
+-- CreateIndex
 CREATE INDEX "users_externalMesaAyudaUser_email_idx" ON "core"."users"("externalMesaAyudaUser", "email");
 
 -- CreateIndex
@@ -265,52 +376,25 @@ ALTER TABLE "mesa_ayuda"."kb_articles" ADD CONSTRAINT "kb_articles_topicId_fkey"
 -- AddForeignKey
 ALTER TABLE "mesa_ayuda"."agents" ADD CONSTRAINT "agents_departmentId_fkey" FOREIGN KEY ("departmentId") REFERENCES "mesa_ayuda"."departments"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
--- Añadido automáticamente desde apps/api/src/modules/mesa-ayuda/migration.extra.sql
+-- AddForeignKey
+ALTER TABLE "panel"."schedule_blocks" ADD CONSTRAINT "schedule_blocks_taskId_fkey" FOREIGN KEY ("taskId") REFERENCES "panel"."tasks"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "panel"."delegations" ADD CONSTRAINT "delegations_taskId_fkey" FOREIGN KEY ("taskId") REFERENCES "panel"."tasks"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- Añadido automáticamente desde apps/api/src/modules/panel-prioridades/migration.extra.sql
 -- (constraints que Prisma no sabe declarar: índice único parcial, CHECK, exclusion).
 -- No editar aquí: se reescribe en cada generación. Ver D-049 y docs/09-incremento-d-cero-consola.md.
--- Constraints adicionales para mesa_ayuda que Prisma no expresa
--- (índices únicos parciales, CHECK, exclusión, etc.)
--- Anexado por el generador al final de la migración generada.
+-- Constraint unique parcial para schedule_blocks: una sola tarea por franja (user_id, day_of_week, hour),
+-- pero solo para bloques activos (no borrados/NULL). Regla de negocio (spec-tecnica.md):
+-- "Unique (user_id, day_of_week, hour) — una sola tarea por franja". Prisma no sabe declarar
+-- índices únicos parciales (solo @@unique total, que bloquearía re-reservar un hueco ya cancelado).
+-- Esta constraint se anexa al migration.sql generado por "prisma migrate diff".
+--
+-- Sin esta constraint: si se borra un bloque (DELETE), se puede crear otro para el mismo hueco.
+-- Caso: Usuario borra el bloque 9 de lunes (libera para reusar), luego crea uno nuevo en el mismo
+-- lugar → sin constraint, ambos podrían coexistir (solo el no-NULL violaría UNIQUE total).
 
--- change-2: Índice único parcial en core.users para usuarios externos de mesa-ayuda
--- Asegura que no hay duplicados de email entre usuarios externos
--- (los internos siguen con UNIQUE global; ambos índices coexisten)
-CREATE UNIQUE INDEX idx_external_mesa_ayuda_users_email
-  ON core.users (email)
-  WHERE "externalMesaAyudaUser" = true;
-
--- Índice para búsqueda rápida de usuarios externos
-CREATE INDEX idx_external_users_active
-  ON core.users ("externalMesaAyudaUser", email)
-  WHERE "externalMesaAyudaUser" = true;
-
--- Índice para búsquedas de cuentas bloqueadas temporalmente (limpieza periódica)
-CREATE INDEX idx_users_locked_until
-  ON core.users ("lockedUntil")
-  WHERE "lockedUntil" > now();
-
--- Índice único parcial: un solo ticket ABIERTO/EN_PROCESO por solicitante
--- (evita que un solicitante tenga múltiples tickets activos simultáneamente)
-CREATE UNIQUE INDEX idx_tickets_open_per_requestor
-  ON mesa_ayuda.tickets (requestorEmail)
-  WHERE status IN ('abierto', 'en_proceso');
-
--- Índice único parcial: solo una asignación activa (isActive=true) por agente+departamento
-CREATE UNIQUE INDEX idx_agents_active_per_dept
-  ON mesa_ayuda.agents (agentUserId, departmentId)
-  WHERE "isActive" = true;
-
--- CHECK constraint: resolutionTime > responseTime
-ALTER TABLE mesa_ayuda.slas
-  ADD CONSTRAINT sla_resolution_gt_response
-  CHECK ("resolutionTimeMinutes" > "responseTimeMinutes");
-
--- CHECK constraint: priority enum válido (redundante con Prisma enum, pero documental)
-ALTER TABLE mesa_ayuda.tickets
-  ADD CONSTRAINT ticket_priority_valid
-  CHECK (priority IN ('baja', 'media', 'alta', 'urgente'));
-
--- CHECK constraint: status enum válido
-ALTER TABLE mesa_ayuda.tickets
-  ADD CONSTRAINT ticket_status_valid
-  CHECK (status IN ('abierto', 'en_proceso', 'resuelto', 'cerrado', 'reabierto'));
+CREATE UNIQUE INDEX "schedule_blocks_user_day_hour_active_uniq"
+  ON "panel"."schedule_blocks" ("userId", "dayOfWeek", "hour")
+  WHERE "taskId" IS NOT NULL;
