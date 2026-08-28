@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { AlertCircle, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@awk/ui';
 import { apiFetch } from '../../lib/api';
-import type { PanelTeamMember, CreateTeamMemberRequest } from '../panel-prioridades.types';
+import { z } from 'zod';
+import { panelTeamMemberSchema, type PanelTeamMember, type CreateTeamMemberRequest } from './panel-prioridades.types';
 
 export function TeamPage() {
   const [members, setMembers] = useState<PanelTeamMember[]>([]);
@@ -18,10 +19,8 @@ export function TeamPage() {
   async function loadTeam() {
     try {
       setLoading(true);
-      const response = await apiFetch('/api/panel-prioridades/team', {
-        expectedType: 'json'
-      });
-      setMembers(response || []);
+      const response = await apiFetch('/api/panel-prioridades/team', z.array(panelTeamMemberSchema));
+      setMembers(response);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar equipo');
     } finally {
@@ -35,10 +34,10 @@ export function TeamPage() {
       return;
     }
     try {
-      await apiFetch('/api/panel-prioridades/team', {
+      // El alta devuelve el miembro creado; aquí solo interesa que no falle.
+      await apiFetch('/api/panel-prioridades/team', z.unknown(), {
         method: 'POST',
-        body: JSON.stringify(formData),
-        expectedType: 'json'
+        body: JSON.stringify(formData)
       });
       setFormData({ name: '', email: '' });
       setShowForm(false);
@@ -51,10 +50,9 @@ export function TeamPage() {
   async function removeMember(id: string) {
     if (!confirm('¿Desactivar este miembro?')) return;
     try {
-      await apiFetch(`/api/panel-prioridades/team/${id}`, {
-        method: 'DELETE',
-        expectedType: 'json'
-      });
+      // DELETE responde 204 sin cuerpo: `z.unknown()` acepta el null que
+      // devuelve apiFetch cuando no hay JSON que parsear.
+      await apiFetch(`/api/panel-prioridades/team/${id}`, z.unknown(), { method: 'DELETE' });
       await loadTeam();
     } catch (err) {
       alert('Error al desactivar: ' + (err instanceof Error ? err.message : String(err)));

@@ -109,6 +109,9 @@ describe('registry (manifests → menú/rutas)', () => {
       'gestor-proyectos',
       'moodle-insights',
       'orientador-ia',
+      // `panel-prioridades` incluye `admin` en requiredRoles a propósito (gate
+      // funcional: los admins de plataforma entran para auditoría).
+      'panel-prioridades',
       'incidencias-aula',
       'factory-console',
       'core-admin'
@@ -134,6 +137,7 @@ describe('registry (manifests → menú/rutas)', () => {
       'Proyectos',
       'Moodle Insights',
       'Orientador IA',
+      'Panel de Prioridades',
       ...incidenciasNav,
       'Fábrica',
       'Usuarios'

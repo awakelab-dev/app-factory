@@ -1,5 +1,5 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../../core/prisma/prisma.service';
+import { PrismaService } from '../../prisma/prisma.service';
 import type { AuthUser } from '@awk/auth';
 import type { PanelDelegation } from './panel-prioridades.types';
 import { PanelPrioritiesMappers } from './panel-prioridades.mappers';

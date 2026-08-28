@@ -273,7 +273,16 @@ export class PanelPrioritiesController {
     @Body() body: { delegatedToName?: string | null; followUpDate?: string }
   ) {
     const { delegatedToName, followUpDate } = body;
-    return this.delegationsService.setDelegation(user, id, delegatedToName, followUpDate);
+    // Omitir `delegatedToName` equivale a dejar la tarea SIN responsable, que
+    // es un estado legítimo del cuadrante 3 (gate funcional: es un aviso, no un
+    // bloqueo). El servicio espera `string | null`, nunca `undefined`.
+    // El cuerpo trae la fecha como string ISO; el servicio trabaja con Date.
+    return this.delegationsService.setDelegation(
+      user,
+      id,
+      delegatedToName ?? null,
+      followUpDate ? new Date(followUpDate) : null
+    );
   }
 
   // ========================================================================

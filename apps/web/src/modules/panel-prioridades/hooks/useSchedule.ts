@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
-import { apiFetch } from '../../lib/api';
-import type { ScheduleWeek } from '../panel-prioridades.types';
+import { apiFetch } from '../../../lib/api';
+import { scheduleWeekSchema, type ScheduleWeek } from '../panel-prioridades.types';
 
 export function useSchedule() {
   const [schedule, setSchedule] = useState<ScheduleWeek | null>(null);
@@ -9,7 +9,7 @@ export function useSchedule() {
   const loadSchedule = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await apiFetch('/api/panel-prioridades/schedule', { expectedType: 'json' });
+      const response = await apiFetch('/api/panel-prioridades/schedule', scheduleWeekSchema);
       setSchedule(response);
     } catch (err) {
       console.error('Error loading schedule:', err);

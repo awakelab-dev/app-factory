@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../../core/prisma/prisma.service';
+import { PrismaService } from '../../prisma/prisma.service';
 import type { AuthUser } from '@awk/auth';
 import type { PanelKpisResponse, Diagnostic, QuadrantDistribution } from './panel-prioridades.types';
 import { PanelPrioritiesScheduleService } from './panel-prioridades-schedule.service';
@@ -47,7 +47,9 @@ export class PanelPrioritiesKpisService {
     for (let q = 1; q <= 4; q++) {
       minutesByQuadrantArray.push({
         quadrant: q,
-        taskCount: tasksByQuadrant[q - 1].taskCount,
+        // `noUncheckedIndexedAccess`: el índice devuelve `T | undefined` aunque
+        // el bucle de arriba haya rellenado los cuatro cuadrantes.
+        taskCount: tasksByQuadrant[q - 1]?.taskCount ?? 0,
         totalMinutes: minutesByQuadrant.get(q) || 0
       });
     }

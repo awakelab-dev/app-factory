@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
-import { apiFetch } from '../../lib/api';
-import type { PanelTask } from '../panel-prioridades.types';
+import { apiFetch } from '../../../lib/api';
+import { z } from 'zod';
+import { panelTaskSchema, type PanelTask } from '../panel-prioridades.types';
 
 export function useTasks() {
   const [tasks, setTasks] = useState<PanelTask[]>([]);
@@ -18,9 +19,9 @@ export function useTasks() {
       
       const response = await apiFetch(
         `/api/panel-prioridades/tasks?${query.toString()}`,
-        { expectedType: 'json' }
+        z.array(panelTaskSchema)
       );
-      setTasks(response || []);
+      setTasks(response);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error');
     } finally {

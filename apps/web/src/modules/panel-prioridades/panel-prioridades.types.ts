@@ -69,3 +69,27 @@ export const panelKpisResponseSchema = z.object({
   diagnostics: z.array(z.any())
 });
 export type PanelKpisResponse = z.infer<typeof panelKpisResponseSchema>;
+
+// Agenda semanal (la misma forma que devuelve GET /schedule en la API).
+export const scheduleGridSchema = z.object({
+  day: z.number().int().min(0).max(4),
+  hour: z.number().int().min(8).max(17),
+  taskId: z.string().uuid().nullable(),
+  taskTitle: z.string().nullable()
+});
+export type ScheduleGrid = z.infer<typeof scheduleGridSchema>;
+
+export const scheduleWeekSchema = z.array(
+  z.object({
+    day: z.number().int().min(0).max(4),
+    blocks: z.array(scheduleGridSchema)
+  })
+);
+export type ScheduleWeek = z.infer<typeof scheduleWeekSchema>;
+
+// Alta de miembro del equipo (cuerpo del POST /team).
+export const createTeamMemberRequestSchema = z.object({
+  name: z.string().min(1).max(100),
+  email: z.string().email()
+});
+export type CreateTeamMemberRequest = z.infer<typeof createTeamMemberRequestSchema>;

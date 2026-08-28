@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { apiFetch } from '../../lib/api';
-import type { PanelDelegation } from '../panel-prioridades.types';
+import { z } from 'zod';
+import { panelDelegationSchema, type PanelDelegation } from './panel-prioridades.types';
 
 export function DelegationsPage() {
   const [delegations, setDelegations] = useState<PanelDelegation[]>([]);
@@ -15,10 +16,8 @@ export function DelegationsPage() {
   async function loadDelegations() {
     try {
       setLoading(true);
-      const response = await apiFetch('/api/panel-prioridades/delegations', {
-        expectedType: 'json'
-      });
-      setDelegations(response || []);
+      const response = await apiFetch('/api/panel-prioridades/delegations', z.array(panelDelegationSchema));
+      setDelegations(response);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar delegaciones');
     } finally {

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { apiFetch } from '../../lib/api';
-import type { PanelKpisResponse } from '../panel-prioridades.types';
+import { panelKpisResponseSchema, type PanelKpisResponse } from './panel-prioridades.types';
 
 export function MetricsPage() {
   const [metrics, setMetrics] = useState<PanelKpisResponse | null>(null);
@@ -15,9 +15,7 @@ export function MetricsPage() {
   async function loadMetrics() {
     try {
       setLoading(true);
-      const response = await apiFetch('/api/panel-prioridades/kpis', {
-        expectedType: 'json'
-      });
+      const response = await apiFetch('/api/panel-prioridades/kpis', panelKpisResponseSchema);
       setMetrics(response);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar métricas');

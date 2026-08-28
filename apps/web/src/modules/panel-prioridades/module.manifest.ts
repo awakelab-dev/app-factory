@@ -18,11 +18,8 @@ export const panelPrioridadesManifest: ModuleManifest = {
   description: 'Matriz de Eisenhower: gestión de tareas por urgencia/importancia, bloques de tiempo y delegaciones',
   basePath: '/panel-prioridades',
   requiredRoles: ['panel_admin', 'admin'],
-  nav: [{ label: 'Panel de Prioridades', path: '/panel-prioridades', icon: 'Layout' }],
-  sensitivityFlags: {
-    // Datos confidenciales: detalle de tareas (facturación, presupuestos, auditorías)
-    // Datos personales: nombres del equipo, carga de trabajo individual
-    classifyAs: 'confidential_personal',
-    requiresAudit: true
-  }
+  // La clasificación de sensibilidad (confidencial + personal, con auditoría
+  // obligatoria) vive en la spec y en el manifest del prototipo: `ModuleManifest`
+  // del shell no la contempla, y añadirle campos propios rompe el contrato.
+  nav: [{ label: 'Panel de Prioridades', path: '/panel-prioridades', icon: 'Layout' }]
 };

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { apiFetch } from '../../lib/api';
+import { scheduleWeekSchema } from './panel-prioridades.types';
 
 export function WeekPage() {
   const [loading, setLoading] = useState(true);
@@ -13,9 +14,7 @@ export function WeekPage() {
   async function loadSchedule() {
     try {
       setLoading(true);
-      const response = await apiFetch('/api/panel-prioridades/schedule', {
-        expectedType: 'json'
-      });
+      const response = await apiFetch('/api/panel-prioridades/schedule', scheduleWeekSchema);
       void response;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar agenda');
