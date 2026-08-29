@@ -16,7 +16,7 @@ generator client {
 // y el runtime recibe el adapter (@prisma/adapter-pg) en el constructor.
 datasource db {
   provider = "postgresql"
-  schemas  = ["core", "moodle", "orientador", "proyectos", "focus", "incidencias", "reservas", "mesa_ayuda"]
+  schemas  = ["core", "moodle", "orientador", "proyectos", "focus", "incidencias", "reservas", "mesa_ayuda", "panel"]
 }
 
 /// Usuario de la plataforma. La identidad vendrá del IdP (SSO pendiente,
@@ -960,4 +960,122 @@ model MesaAyudaAgent {
   @@unique([departmentId, agentUserId])
   @@map("agents")
   @@schema("mesa_ayuda")
+}
+
+// ---------------------------------------------------------------------------
+// Módulo panel-prioridades: Panel de Prioridades (matriz de Eisenhower)
+// (D-056): gestión personal de tareas por urgencia/importancia.
+// Patrón de aislamiento monouser: cada usuario solo ve/edita sus propias filas.
+// RLS activo en todas las tablas para cumplir docs/05 (datos confidencial-personales).
+// ---------------------------------------------------------------------------
+
+/// Tarea del usuario en el panel de prioridades.
+/// Clasificada por urgencia/importancia → cuadrante (1..4) y acción (do/plan/delegate/eliminate).
+model PanelTask {
+  id                String   @id @default(uuid(7)) @db.Uuid
+  userId            String   @db.Uuid // core.users.id, sin FK cross-schema (RLS)
+  title             String   @db.VarChar(200)
+  detail            String?  @db.Text // ≤1000 chars
+  urgent            Boolean
+  important         Boolean
+  /// Cuadrante computado: 1=(urgent && important), 2=(!urgent && important),
+  /// 3=(urgent && !important), 4=(!urgent && !important)
+  quadrant          Int      @db.SmallInt // 1|2|3|4
+  /// Acción derivada: do (Q1), plan (Q2), delegate (Q3), eliminate (Q4)
+  action            String   // do | plan | delegate | eliminate
+  dueDate           DateTime? @db.Date
+  /// Dedicación estimada en minutos: 30–240 (30, 60, 90, 120, 150, 180, 240)
+  estimatedMinutes  Int      @db.SmallInt
+  /// Origen: meeting | email | chat | self | direction
+  origin            String
+  /// Estado: open | done | discarded
+  status            String   @default("open")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  /// Relaciones
+  scheduleBlocks    PanelScheduleBlock[]
+  delegation        PanelDelegation?
+  auditTrail        PanelAuditTrail[]
+
+  @@index([userId, status])
+  @@index([userId, quadrant])
+  @@index([dueDate])
+  @@map("tasks")
+  @@schema("panel")
+}
+
+/// Bloque horario reservado en la semana (lunes–viernes, 08:00–17:00).
+/// Una sola tarea por franja (unique constraint en migration.extra.sql si Prisma no lo soporta).
+model PanelScheduleBlock {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  userId        String   @db.Uuid // core.users.id, RLS
+  taskId        String?  @db.Uuid // nullable si la tarea se borra
+  task          PanelTask? @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  /// Día de la semana: 0=lunes, ..., 4=viernes
+  dayOfWeek     Int      @db.SmallInt // 0..4
+  /// Hora del día: 8..17
+  hour          Int      @db.SmallInt // 8..17
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([userId, dayOfWeek, hour])
+  @@index([userId, dayOfWeek])
+  @@map("schedule_blocks")
+  @@schema("panel")
+}
+
+/// Miembro del equipo registrado por el usuario para delegar tareas.
+/// Solo visible al propietario (RLS por userId).
+model PanelTeamMember {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  userId      String   @db.Uuid // core.users.id, propietario, RLS
+  addedByUserId String  @db.Uuid // core.users.id, quién lo añadió (auditoria)
+  name        String   @db.VarChar(100)
+  email       String   @db.VarChar(255)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId, active])
+  @@map("team_members")
+  @@schema("panel")
+}
+
+/// Delegación de una tarea urgente-no-importante (cuadrante 3).
+/// delegatedToName puede ser null (la tarea no está asignada).
+model PanelDelegation {
+  id              String   @id @default(uuid(7)) @db.Uuid
+  taskId          String   @unique @db.Uuid // 1:1 con PanelTask
+  task            PanelTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId          String   @db.Uuid // core.users.id (propietario de la tarea, RLS implícita vía task)
+  /// Nombre de la persona delegada (referencia histórica, string libre — la persona
+  /// puede ser eliminada del equipo sin borrar la delegación).
+  delegatedToName String?  @db.VarChar(100)
+  followUpDate    DateTime? @db.Date
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId])
+  @@index([followUpDate])
+  @@map("delegations")
+  @@schema("panel")
+}
+
+/// Auditoría de acceso/cambios en tareas confidenciales (reutiliza AuditService del core).
+/// No requiere RLS: es solo para admins/auditoría interna.
+model PanelAuditTrail {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  userId    String   @db.Uuid // quién accedió/modificó
+  action    String   // p. ej. "viewed", "created", "updated", "deleted"
+  taskId    String?  @db.Uuid // tarea afectada
+  task      PanelTask? @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  details   Json?    // contexto (cuadrante anterior, nuevo, etc.)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([taskId])
+  @@index([createdAt])
+  @@map("audit_trail")
+  @@schema("panel")
 }
