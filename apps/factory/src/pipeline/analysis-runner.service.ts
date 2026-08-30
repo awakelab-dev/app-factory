@@ -60,7 +60,15 @@ contó 18 tareas de demostración donde había 17):
 
 La spec funcional se dirige al SOLICITANTE que te dice el prompt ("Solicitado
 por"), y las preguntas del gate funcional son PARA ÉL. No pongas a otra persona
-como aprobador ni como dueño de las decisiones de negocio.`;
+como aprobador ni como dueño de las decisiones de negocio.
+
+4. NO DES POR CERRADO UN GATE DE ESTA SPEC. Los gates de la spec que escribes
+   nacen PENDIENTES, siempre. Si el prompt te pasa correcciones o precisiones de
+   una versión anterior, incorpóralas al contenido y, si necesitas una sección de
+   gate, titúlala "Gate funcional — PENDIENTE" con lo que queda por decidir.
+   Nunca "COMPLETADO", "aprobado por <persona>" ni un visto bueno atribuido a
+   nadie: quien decide es una persona, después, y marcarlo tú hace que quien lea
+   la spec crea que ya está decidido.`;
 
 const CHANGE_ANALYSIS_SYSTEM_PROMPT = `Eres el paso de ANÁLISIS DE CAMBIO del pipeline de AwkFactory
 (docs/04-integracion-cowork.md, "request_change": analiza módulo actual +

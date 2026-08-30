@@ -27,130 +27,88 @@
 > que es el shell por defecto del Mac. Nada de `read -p` ni otros bash-ismos: en zsh `-p` significa
 > "leer del coproceso" y el comando falla con `read: -p: no coprocess` (pasó el 2026-08-23).
 
-**Estado: la Fábrica generó su primer módulo de verdad** (`panel-prioridades`, PR #11, 9 min 21 s,
-1,35 USD). El merge automático falló porque **la rama nació de un checkout aparcado en
-`factory/mesa-ayuda`**, 9 commits por detrás de `main`: la PR salió `DIRTY` y, sin ese conflicto, el
-squash habría revertido en `main` los arreglos de mesa-ayuda (D-055). Los tres arreglos están
-escritos y verificados (252/252, `turbo` 25/25); falta desplegarlos y regenerar el módulo desde una
-base limpia.
+**Dónde estamos (29-08).** `panel-prioridades` completó el ciclo entero: prototipo de un gerente ajeno
+a Sistemas → análisis → gates → generación → PR #12 **mergeada** → proyecto en `staging` con el gate
+`manager_acceptance` abierto. Pero al abrirlo en staging, **el módulo no implementa la spec** (D-058):
+no hay forma de crear una tarea, no hay drag-and-drop, `WeekPage` descarta sus datos y cuatro de las
+cinco pantallas no tienen entrada en el menú. **No se le pide nada a Antonio todavía.**
 
-### 1. Confirmar la rama y el árbol ANTES de commitear
+Pendiente: (1) desplegar D-056/D-057/D-058, que siguen sin commitear; (2) lanzar el `request_change`.
+
+### 1. Volver a `main` y traer el merge
 
 ```zsh
-cd ~/projects/app-factory && git rev-parse --abbrev-ref HEAD && git status --porcelain
+cd ~/projects/app-factory && git checkout main && git pull --ff-only origin main && git log --oneline -3 && git status --porcelain
 ```
 
-Debe decir **`main`** (el 27-08 el commit se fue a una rama de feature y `git push origin main` dijo
-`Everything up-to-date`, que es fácil de leer como éxito) y listar 6 archivos como `M`: los cuatro de
+Debe aparecer arriba el squash de la PR #12 y listar como modificados `CLAUDE.md`, los cuatro de
 `apps/factory/src/pipeline/` y los dos de `docs/`.
 
-### 2. Commit y push (dispara CI y, en verde, el Deploy de staging)
+### 2. Commit y push del lote acumulado
 
 ```zsh
-cd ~/projects/app-factory && git add apps/factory/src/pipeline docs/DECISIONES.md docs/STATUS.md && git commit -m "[factory] la rama del módulo nace de origin/main y no se empuja si toca otro módulo (D-055)" && git push origin main && echo "empujado"
+cd ~/projects/app-factory && git add CLAUDE.md apps/factory/src/pipeline docs/DECISIONES.md docs/STATUS.md && git commit -m "[factory] veredicto de CI en la generación, notas del gate que pide cambios y convenciones de módulo (D-056, D-057, D-058)" && git push origin main && echo "empujado"
 ```
 
-### 3. Esperar el CI y el Deploy de ESE sha
+### 3. Comprobar que las imágenes lo llevan
 
 ```zsh
-cd ~/projects/app-factory && SHA=$(git rev-parse HEAD) && echo "esperando el run de ${SHA:0:7}" && until ID=$(gh run list --workflow CI --limit 15 --json databaseId,headSha --jq "map(select(.headSha==\"$SHA\"))[0].databaseId // empty") && [ -n "$ID" ]; do sleep 10; done && gh run watch "$ID" --exit-status && echo "CI VERDE"
+ssh AWK-Dev "cd /opt/awkfactory/staging && docker compose --env-file .env -p awk-staging exec -T factory-generator grep -c 'la CI la RECHAZA' dist/pipeline/generation-runner.service.js; docker compose --env-file .env -p awk-staging exec -T factory-generator grep -c 'CORRECCIONES PEDIDAS EN LA REVISIÓN' dist/pipeline/generation-runner.service.js; docker compose --env-file .env -p awk-staging exec -T factory-runner grep -c 'NO DES POR CERRADO UN GATE' dist/pipeline/analysis-runner.service.js"
 ```
+
+`1`, `1` y `1`, medidos contra el `dist`. El Deploy solo arranca si CI está verde, así que esto
+demuestra las dos cosas. `CLAUDE.md` no se comprueba así: viaja en el repo, y le llega al agente
+porque la rama del cambio nace de `origin/main`.
+
+### 4. Lanzar el cambio sobre el módulo
+
+El texto está redactado (chat de la sesión del 29-08). **Lánzalo con el conector desde Cowork**
+(`request_change`): así el análisis del cambio lo hace el worker sobre `/platform-repo`, que se
+sincroniza con `origin/main` y por tanto ve el `CLAUDE.md` nuevo.
+
+La escotilla por CLI existe pero **analiza síncronamente en tu Mac** (necesita `PLATFORM_REPO_PATH`
+al día y `ANTHROPIC_API_KEY` locales), y la bandera es `--request`, no `--text`:
 
 ```zsh
-cd ~/projects/app-factory && SHA=$(git rev-parse HEAD) && until ID=$(gh run list --workflow Deploy --limit 15 --json databaseId,headSha --jq "map(select(.headSha==\"$SHA\"))[0].databaseId // empty") && [ -n "$ID" ]; do sleep 15; done && gh run watch "$ID" --exit-status && echo "DEPLOY VERDE"
+cd ~/projects/app-factory && pnpm --filter=@awk/factory run cli -- request-change 01a0427b-1b97-712c-b2b5-84ce1dcd85ee --request "<el texto del cambio>"
 ```
 
-### 4. Comprobar que la imagen del generador lleva los tres cambios
+A partir de ahí: análisis del cambio (~0,3 USD) → mini-spec v3 con gates frescos → los apruebas →
+generación (~2,5 USD) → **la CI decide** si se abre el gate de revisión de PR → merge → staging.
 
-```zsh
-ssh AWK-Dev "cd /opt/awkfactory/staging && docker compose --env-file .env -p awk-staging exec -T factory-generator grep -c 'OTROS módulos' dist/pipeline/generation-runner.service.js; docker compose --env-file .env -p awk-staging exec -T factory-generator grep -c 'CONFLICTOS con main' dist/pipeline/pr-merge.service.js"
-```
+### 5. Solo entonces, Antonio
 
-Debe imprimir `2` y `1`, medidos contra el `dist` compilado. Si sale `0`, la imagen es la vieja:
-`docker compose --env-file .env -p awk-staging pull && … up -d`.
+Cuando el cambio esté en staging: avisarle, que **vuelva a entrar** (los roles viajan en el JWT y el
+rol se va a renombrar a `panel_prioridades_admin`, así que hay que reasignárselo en `/admin/usuarios`),
+que valide contra lo que pidió y decida `manager_acceptance` desde Cowork.
 
-### 5. Cerrar la PR #11 y borrar su rama remota
-
-El código de esa PR no se rescata: lleva dentro la versión vieja de mesa-ayuda.
-
-```zsh
-cd ~/projects/app-factory && gh pr close 11 --delete-branch --comment "Rama creada sobre un checkout aparcado en factory/mesa-ayuda (D-055): se regenera desde main al día." && echo "PR #11 cerrada"
-```
-
-### 6. Borrar la rama en el checkout de generación del servidor
-
-Con el arreglo puesto, una rama que ya existe **se reutiliza**: si no se borra, la regeneración
-volvería a la base contaminada.
-
-```zsh
-ssh AWK-Dev 'GEN=$(sed -n "s/^PLATFORM_REPO_GEN_HOST_PATH=//p" /opt/awkfactory/staging/.env | head -1); cd "$GEN" && git checkout --force main && git branch -D factory/panel-prioridades && git fetch origin --prune && git log --oneline -1 && git status -sb'
-```
-
-Debe terminar mostrando el último commit y `## main...origin/main` sin cambios pendientes. Si git se
-queja de *dubious ownership*, `git config --global --add safe.directory "$GEN"` y repetir.
-
-### 7. Regenerar desde base limpia
-
-`pr_review → generating` **no existe** en la máquina de estados, así que primero hay que mover el
-proyecto. Con el túnel abierto (terminal A):
-
-```zsh
-ssh -N -L 15432:$(ssh AWK-Dev "sed -n 's/^FACTORY_DATABASE_URL=.*@\([^:@]*\):[0-9]*\/.*/\1/p' /opt/awkfactory/staging/.env"):5432 AWK-Dev
-```
-
-Terminal B, los dos pasos:
-
-```zsh
-cd ~/projects/app-factory && pnpm --filter=@awk/factory run cli -- advance 01a0427b-1b97-712c-b2b5-84ce1dcd85ee changes_requested
-```
-
-```zsh
-cd ~/projects/app-factory && pnpm --filter=@awk/factory run cli -- enqueue-generation --spec 01a042c8-cf29-709d-a63b-d6ae4e3b4c35
-```
-
-Tarda ~10 min y ~1,35 USD. En el log del generador debe aparecer
-`Rama factory/panel-prioridades creada desde origin/main al día.`
-
-### 8. Leer el diff de la PR nueva — esta vez con una comprobación objetiva
-
-```zsh
-cd ~/projects/app-factory && gh pr list --limit 3 --json number,headRefName,url && echo "--- archivos, deben ser SOLO de panel-prioridades ---" && gh pr diff $(gh pr list --head factory/panel-prioridades --limit 1 --json number --jq '.[0].number') --name-only
-```
-
-Ningún archivo debe estar bajo `apps/api/src/modules/mesa-ayuda/` ni `apps/web/src/modules/mesa-ayuda/`.
-Y dos cosas que la spec v2 dejó sueltas y conviene mirar en el diff antes de aprobar `pr_review`:
-el umbral de apagafuegos (`> 40` frente a `>= 40`: Antonio dijo *más del* 40 %) y que
-`DELETE /tasks/:id` sea soft delete (`status = discarded`), nunca borrado físico.
-
-### 9. Limpiar el andamiaje y la rama de feature
+### 6. Limpiar el andamiaje y la rama
 
 ```zsh
 cd ~/projects/app-factory && mkdir -p _to_delete && mv .awk-transfer _entrega-conector-otra-cuenta _to_delete/ 2>/dev/null; ls _to_delete && echo "andamiaje movido"
 ```
 
 ```zsh
-cd ~/projects/app-factory && git checkout feat/mesa-ayuda-admin-catalogos && git rebase origin/main && git push --force-with-lease && git checkout main && echo "rama al día"
+cd ~/projects/app-factory && git branch -D factory/panel-prioridades && git checkout feat/mesa-ayuda-admin-catalogos && git rebase origin/main && git push --force-with-lease && git checkout main && echo "ramas al día"
 ```
 
 ---
 
 **Pendientes de DECISIÓN tuya (no son pasos):**
 
-1. **`changes_requested` en `manager_acceptance`** sigue sin encolar la regeneración (el mismo hueco
-   que D-054 cerró para los gates de spec). No se tocó a propósito: una regeneración cuesta ~1,35 USD
-   y dispararla desde el "esto no me sirve" de un gerente, sin que Sistemas lea sus notas, es
-   política y no bug.
-2. **La protección de `main` es de papel para ti**: el push de D-054 pasó con
-   `Bypassed rule violations … Changes must be made through a pull request`. Coherente con D-053 (la
-   protección existe para el PAT del generador), pero un cambio de Sistemas entra sin que nadie lea
-   el diff — la garantía que `pr_review` sostiene para el código generado.
-3. **El analizador marca los gates de la spec NUEVA como completados**: la v2 decía
-   `Gate técnico — COMPLETADO ✅ aprobadas por Leonardo Barreto` con ese gate **pendiente**, porque
-   arrastra la nota del gate aprobado de la v1. Una línea más de prompt y un test lo cierran.
-4. **Una rama de módulo que ya existe puede seguir anclada a un `main` viejo** (caso regeneración).
-   Rebasarla automáticamente es más peligroso que el síntoma; hoy al menos se ve (guardarraíl de
-   alcance + aviso de `DIRTY`). Decide si quieres que la regeneración avise cuando la rama esté a más
-   de N commits de `main`.
+1. **`changes_requested` en `manager_acceptance`** sigue sin encolar la regeneración (D-054 y D-056
+   cerraron los otros dos caminos). Sin tocar a propósito: disparar ~2,5 USD desde el "esto no me
+   sirve" de un gerente es política, no bug.
+2. **Un módulo nuevo SIEMPRE rompe `apps/web/src/modules/registry.test.ts`**, que enumera a mano los
+   módulos visibles — y el agente tiene prohibido tocar archivos del core. Con el diseño actual,
+   ninguna primera generación puede dejar la CI verde por sí sola. O el test deja de enumerar, o se
+   asume que ese archivo lo toca Sistemas en cada módulo nuevo.
+3. **La protección de `main` es de papel para ti**: los push pasan con `Bypassed rule violations`.
+4. **Los roles genéricos que ya existen** (`empleado`, `recepcion`, de reserva-salas) siguen sin
+   prefijo de módulo. Renombrarlos es un cambio con migración de datos: decide si merece la pena.
+5. **¿Verificación local además de la CI?** El veredicto llega de GitHub (~4 min ocupando el worker).
+   `turbo typecheck` dentro del contenedor sería más rápido, pero exige mantener `node_modules` al día
+   en `/platform-repo-gen`.
 
 ---
 

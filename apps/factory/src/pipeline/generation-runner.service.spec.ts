@@ -71,7 +71,7 @@ function buildService(
     gatesApproved?: boolean;
     spec?: typeof spec | null;
     projectByThatId?: { id: string; moduleSlug: string } | null;
-    specGates?: Array<{ gateType: string; reviewer: string; decisionNotes: string | null }>;
+    specGates?: Array<{ gateType: string; status?: string; reviewer: string; decisionNotes: string | null }>;
   } = {}
 ) {
   const prisma = {
@@ -201,7 +201,14 @@ describe('GenerationRunnerService.runGeneration', () => {
         : Promise.reject(new Error('a pull request for branch "factory/demo-modulo" already exists'))
     );
 
-    await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh, generateMigration: sinMigracion() });
+    // El veredicto de CI se inyecta verde: este test es sobre la REUTILIZACIÓN
+    // de la PR, no sobre la CI (sin inyectarlo, el doble de `gh` rechazaría
+    // también `pr checks` y se leería como CI roja).
+    await service.runGeneration(
+      'spec-1',
+      {},
+      { agentRunner, runGit, runGh, ciVerdict: async () => ({ estado: 'verde' as const }), generateMigration: sinMigracion() }
+    );
 
     expect(runGh).toHaveBeenCalledWith(['pr', 'view', 'factory/demo-modulo', '--json', 'url,state'], repo);
     expect(runGh).not.toHaveBeenCalledWith(expect.arrayContaining(['pr', 'create']), repo);
@@ -259,8 +266,18 @@ describe('GenerationRunnerService.runGeneration', () => {
     // y el agente nunca la vio — el prompt solo llevaba las specs.
     const { service, prisma } = buildService({
       specGates: [
-        { gateType: 'functional', reviewer: 'leo@awakelab.dev', decisionNotes: 'Arrancar vacío, sin datos de ejemplo.' },
-        { gateType: 'technical', reviewer: 'leo@awakelab.dev', decisionNotes: 'Cambiar el asignado es SOLO admin.' }
+        {
+          gateType: 'functional',
+          status: 'approved',
+          reviewer: 'leo@awakelab.dev',
+          decisionNotes: 'Arrancar vacío, sin datos de ejemplo.'
+        },
+        {
+          gateType: 'technical',
+          status: 'approved',
+          reviewer: 'leo@awakelab.dev',
+          decisionNotes: 'Cambiar el asignado es SOLO admin.'
+        }
       ]
     });
     const agentRunner = vi.fn().mockResolvedValue(successResult);
@@ -270,10 +287,13 @@ describe('GenerationRunnerService.runGeneration', () => {
     await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh, generateMigration: sinMigracion() });
 
     expect(prisma.gate.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { specId: 'spec-1', status: 'approved' } })
+      expect.objectContaining({
+        where: { specId: 'spec-1', status: { in: ['approved', 'changes_requested'] } }
+      })
     );
     const prompt: string = agentRunner.mock.calls[0]?.[0]?.prompt;
-    expect(prompt).toContain('NOTAS DE LOS GATES APROBADOS');
+    expect(prompt).toContain('NOTAS DE LOS GATES');
+    expect(prompt).toContain('PRECISIONES DE LOS GATES APROBADOS');
     expect(prompt).toContain('[gate technical — leo@awakelab.dev]');
     expect(prompt).toContain('Cambiar el asignado es SOLO admin.');
     expect(prompt).toContain('Arrancar vacío, sin datos de ejemplo.');
@@ -281,7 +301,7 @@ describe('GenerationRunnerService.runGeneration', () => {
 
   it('omite el bloque de notas si los gates aprobados no traen decisionNotes', async () => {
     const { service } = buildService({
-      specGates: [{ gateType: 'functional', reviewer: 'leo@awakelab.dev', decisionNotes: null }]
+      specGates: [{ gateType: 'functional', status: 'approved', reviewer: 'leo@awakelab.dev', decisionNotes: null }]
     });
     const agentRunner = vi.fn().mockResolvedValue(successResult);
     const runGit = vi.fn().mockResolvedValue(okGit);
@@ -289,7 +309,7 @@ describe('GenerationRunnerService.runGeneration', () => {
 
     await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh, generateMigration: sinMigracion() });
 
-    expect(agentRunner.mock.calls[0]?.[0]?.prompt).not.toContain('NOTAS DE LOS GATES APROBADOS');
+    expect(agentRunner.mock.calls[0]?.[0]?.prompt).not.toContain('NOTAS DE LOS GATES');
   });
 
   it('nunca permite que el bash del agente haga git push/commit o sudo', async () => {
@@ -416,6 +436,122 @@ describe('GenerationRunnerService.runGeneration', () => {
     await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh, generateMigration: sinMigracion() });
 
     expect(runGit).toHaveBeenCalledWith(['push', '-u', 'origin', 'factory/demo-modulo'], repo);
+  });
+
+  it('el prompt lleva las notas de los gates que pidieron CAMBIOS marcadas como el motivo de la vuelta, y las de los aprobados como vigentes', async () => {
+    const { service, prisma } = buildService();
+    (prisma.gate.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { gateType: 'technical', status: 'approved', reviewer: 'leo@awakelab.dev', decisionNotes: 'RLS en las cuatro tablas.' },
+      {
+        gateType: 'pr_review',
+        status: 'changes_requested',
+        reviewer: 'leo@awakelab.dev',
+        decisionNotes: 'La migración usa user_id y la columna es "userId".'
+      }
+    ]);
+    const agentRunner = vi.fn().mockResolvedValue(successResult);
+    const runGit = gitDouble();
+    const runGh = vi.fn().mockResolvedValue({ stdout: '{"url":"https://pr/9","state":"OPEN"}\n', stderr: '' });
+
+    await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh, generateMigration: sinMigracion() });
+
+    // Antes de 2026-08-27 solo viajaban las de gates aprobados, así que una
+    // regeneración pedida desde `pr_review` no veía el motivo (había que
+    // colarlo con `amend-gate` en un gate aprobado).
+    const prompt = agentRunner.mock.calls[0]?.[0]?.prompt ?? '';
+    expect(prompt).toContain('CORRECCIONES PEDIDAS EN LA REVISIÓN');
+    expect(prompt).toContain('La migración usa user_id');
+    expect(prompt).toContain('PRECISIONES DE LOS GATES APROBADOS');
+    expect(prompt).toContain('RLS en las cuatro tablas');
+  });
+
+  it('CI VERDE: se abre el gate de revisión y el run queda success', async () => {
+    const { service, gates, projects, prisma } = buildService();
+    const agentRunner = vi.fn().mockResolvedValue(successResult);
+    const runGit = gitDouble();
+    const runGh = vi.fn().mockResolvedValue({ stdout: '{"url":"https://pr/9","state":"OPEN"}\n', stderr: '' });
+    const ciVerdict = vi.fn().mockResolvedValue({ estado: 'verde' });
+
+    await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh, ciVerdict, generateMigration: sinMigracion() });
+
+    expect(ciVerdict).toHaveBeenCalled();
+    expect(gates.openGatesForSpec).toHaveBeenCalledWith('spec-1', ['pr_review']);
+    expect(projects.transition).toHaveBeenCalledWith('proj-1', 'pr_review');
+    const estados = (prisma.run.update as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]?.data?.status);
+    expect(estados).toContain('success');
+  });
+
+  it('CI ROJA: el run cae, el gate humano NO se abre y el motivo lo dice (panel-prioridades, 2026-08-27)', async () => {
+    const { service, gates, projects, prisma } = buildService();
+    const agentRunner = vi.fn().mockResolvedValue(successResult);
+    const runGit = gitDouble();
+    const runGh = vi.fn().mockResolvedValue({ stdout: '{"url":"https://pr/9","state":"OPEN"}\n', stderr: '' });
+    const ciVerdict = vi.fn().mockResolvedValue({
+      estado: 'roja',
+      detalle: 'build · lint · typecheck · test fail 1m37s'
+    });
+
+    // El agente había declarado "Typecheck: 0 errores" con 20 errores reales.
+    // Su resumen no es evidencia: manda la CI.
+    await expect(
+      service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh, ciVerdict, generateMigration: sinMigracion() })
+    ).rejects.toThrow(/la CI la RECHAZA/);
+    expect(gates.openGatesForSpec).not.toHaveBeenCalled();
+    expect(projects.transition).not.toHaveBeenCalledWith('proj-1', 'pr_review');
+    expect(projects.transition).toHaveBeenCalledWith('proj-1', 'error');
+    const errores = (prisma.run.update as ReturnType<typeof vi.fn>).mock.calls
+      .map((c) => c[0]?.data?.errorMessage)
+      .filter(Boolean) as string[];
+    expect(errores.join(' ')).toContain('typecheck');
+  });
+
+  it('SIN CHECKS: no bloquea — abre el gate y avisa (mejor eso que congelar el pipeline)', async () => {
+    const { service, gates } = buildService();
+    const agentRunner = vi.fn().mockResolvedValue(successResult);
+    const runGit = gitDouble();
+    const runGh = vi.fn().mockResolvedValue({ stdout: '{"url":"https://pr/9","state":"OPEN"}\n', stderr: '' });
+    const ciVerdict = vi.fn().mockResolvedValue({ estado: 'sin_checks', detalle: 'no checks reported' });
+
+    await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh, ciVerdict, generateMigration: sinMigracion() });
+
+    expect(gates.openGatesForSpec).toHaveBeenCalledWith('spec-1', ['pr_review']);
+  });
+
+  it('sin PR (sin red/gh) no se pregunta a la CI: no hay nada que preguntar', async () => {
+    const { service, gates } = buildService();
+    const agentRunner = vi.fn().mockResolvedValue(successResult);
+    const runGit = gitDouble();
+    const runGh = vi.fn().mockRejectedValue(new Error('gh: command not found'));
+    const ciVerdict = vi.fn();
+
+    await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh, ciVerdict, generateMigration: sinMigracion() });
+
+    expect(ciVerdict).not.toHaveBeenCalled();
+    expect(gates.openGatesForSpec).not.toHaveBeenCalled();
+  });
+
+  it('el veredicto por defecto reintenta mientras los checks no existen y solo entonces los da por ausentes', async () => {
+    const { service, gates } = buildService();
+    const agentRunner = vi.fn().mockResolvedValue(successResult);
+    const runGit = gitDouble();
+    let checksPedidos = 0;
+    const runGh = vi.fn().mockImplementation((args: string[]) => {
+      if (args[1] === 'view') return Promise.resolve({ stdout: '{"url":"https://pr/9","state":"OPEN"}\n', stderr: '' });
+      if (args[1] === 'checks') {
+        checksPedidos += 1;
+        return Promise.reject(new Error("gh pr checks falló (código 1): no checks reported on the 'factory/demo-modulo' branch"));
+      }
+      return Promise.resolve(okGit);
+    });
+    const sleep = vi.fn().mockResolvedValue(undefined);
+
+    await service.runGeneration('spec-1', {}, { agentRunner, runGit, runGh, sleep, generateMigration: sinMigracion() });
+
+    // Tras el push, GitHub tarda unos segundos en crear el run y `--watch` no
+    // espera: sale con código 1 en el acto. Se reintenta antes de concluir.
+    expect(checksPedidos).toBe(4);
+    expect(sleep).toHaveBeenCalledTimes(3);
+    expect(gates.openGatesForSpec).toHaveBeenCalledWith('spec-1', ['pr_review']);
   });
 
   it('genera la migración con el checkout y el slug del proyecto, ANTES del commit', async () => {

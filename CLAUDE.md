@@ -44,6 +44,53 @@ Reglas asociadas:
 - Cada prototipo → un módulo de la plataforma (nunca app standalone). Pipeline con spec intermedia y gates humanos.
 - `legacy/` contiene el prototipo original (Express+Mongo+React): **referencia conceptual, no base de código**. Su dashboard se reconstruye en Fase 1; después `legacy/` se elimina. No modificarlo ni instalarle dependencias.
 
+## Convenciones de esquema y SQL (las lee también el agente generador)
+
+- **Tablas en snake_case por `@@map`; columnas en camelCase, sin `@map` de campo.** En
+  `apps/api/prisma/schema.prisma` hay `@@map("departments")` a nivel de modelo y **cero** `@map` a
+  nivel de campo: las columnas reales son `"userId"`, `"createdAt"`, `"departmentId"`.
+- **En SQL crudo, las columnas van SIEMPRE entre comillas dobles**: `"userId"`, nunca `user_id`.
+  Aplica a políticas RLS (`CREATE POLICY … USING/WITH CHECK`), `ALTER TABLE`, índices, constraints,
+  triggers y a cualquier `migration.extra.sql`.
+- **Verifica cada identificador contra el `schema.prisma` que generas**, no contra el documento de
+  spec: las specs escriben los modelos en snake_case por legibilidad y eso NO es el nombre real.
+- Cada módulo vive en su propio schema de Postgres (`@@schema("mesa_ayuda")`, `panel`, …); cualifica
+  el schema en el SQL crudo donde haga falta.
+- **`PrismaService` se importa como `'../../prisma/prisma.service'`** desde `apps/api/src/modules/<slug>/`.
+  El archivo está en `apps/api/src/prisma/prisma.service.ts` y **no existe ningún `core/` en esa ruta**:
+  todos los módulos de la plataforma lo importan así. Copia el import de un módulo existente
+  (`focus-flow`, `gestor-proyectos`) en vez de deducirlo.
+- **El repo compila con `strict: true` y `noUncheckedIndexedAccess: true`** (`tsconfig.base.json`):
+  todo acceso por índice (`arr[0]`, `mapa[clave]`) es `T | undefined` y hay que estrecharlo antes de
+  usarlo, y los callbacks sin tipo contextual necesitan anotación explícita. `tsc` es parte de la CI:
+  código que no compila NO llega a revisión humana.
+
+> Esto está aquí porque en `panel-prioridades` (2026-08-27, D-055) la migración generada usó
+> `user_id` y la CI la tumbó con `ERROR: column "user_id" does not exist` — el hint de Postgres decía
+> literalmente `Perhaps you meant to reference the column "tasks.userId"`. Costó una regeneración
+> completa (~2,25 USD). En `mesa-ayuda` había salido bien por suerte, no por regla.
+
+## Convenciones de módulo (las lee también el agente generador)
+
+- **El nombre de un rol lleva SIEMPRE el prefijo del módulo**: `<slug_del_módulo>_<papel>` —
+  `mesa_ayuda_admin`, `mesa_ayuda_agente`, `incidencias_docente`, `orientador_admin`. Nunca un nombre
+  genérico (`panel_admin`, `empleado`, `recepcion`): en `/admin/usuarios` el administrador ve una
+  lista PLANA con los roles de toda la plataforma, y con un nombre genérico no hay forma de saber de
+  qué módulo es. El rol se declara en los `@Roles()` del controller (de ahí se siembra solo, D-050) y
+  en `requiredRoles` del manifest: los dos tienen que decir exactamente lo mismo.
+- **Cada pantalla con ruta necesita su entrada en el `nav` del manifest.** Si `index.tsx` registra
+  cinco rutas y el manifest declara una sola entrada de menú, las otras cuatro pantallas son
+  inalcanzables salvo escribiendo la URL a mano. Una entrada por pantalla que el usuario deba poder
+  abrir, con su `label` y su `icon`; las rutas de detalle (`/algo/:id`) no llevan entrada propia.
+- **Un módulo cuya UI solo lee está a medias.** Si la spec pide crear, editar, mover o borrar, tiene
+  que haber formulario/modal y su llamada de escritura. Endpoints `POST`/`PUT`/`DELETE` que ninguna
+  pantalla invoca son la señal de que falta media aplicación — no un detalle pendiente.
+
+> Las tres salieron de `panel-prioridades` (2026-08-27, D-058): el módulo compiló, pasó la CI y se
+> mergeó **sin una sola forma de dar de alta una tarea**, con cuatro de sus cinco pantallas sin enlace
+> en el menú y con un rol llamado `panel_admin`. CI verde significa "compila", nunca "hace lo que se
+> pidió".
+
 ## Estilo de trabajo con Leonardo
 
 - Es CTO técnico: hablar sin rodeos, con trade-offs y recomendación clara. Español.

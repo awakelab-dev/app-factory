@@ -442,6 +442,7 @@ describe('AnalysisRunnerService.runAnalysis — RE-análisis con las correccione
     expect(systemPrompt).toContain('NO INVENTES FUNCIONALIDAD');
     expect(systemPrompt).toContain('NO ATRIBUYAS DECISIONES A NADIE');
     expect(systemPrompt).toContain('LAS CIFRAS SE CUENTAN, NO SE ESTIMAN');
+    expect(systemPrompt).toContain('NO DES POR CERRADO UN GATE DE ESTA SPEC');
   });
 });
 

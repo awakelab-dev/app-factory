@@ -12,6 +12,14 @@ import type { GateType } from './types';
 
 const DEFAULT_MODEL = 'claude-sonnet-5';
 
+/** Mensaje de `gh pr checks` cuando el run aún no existe (o no hay workflows). */
+const SIN_CHECKS = /no checks reported/i;
+/** Reintentos mientras los checks todavía no existen (tras el push tardan segundos). */
+const CI_INTENTOS_SIN_CHECKS = 4;
+const CI_ESPERA_SIN_CHECKS_MS = 20_000;
+/** Techo de espera de la CI, igual que el del merge. */
+const DEFAULT_CI_TIMEOUT_MS = 30 * 60 * 1000;
+
 const DEFAULT_REQUIRED_GATES: GateType[] = ['functional', 'technical'];
 
 // Comandos que el propio Bash del agente nunca puede correr, incluso dentro
@@ -46,6 +54,19 @@ export interface GenerationRunnerDeps {
   runPrisma?: typeof runPrisma;
   /** Inyectable solo para los tests (evita ejecutar git/prisma de verdad). */
   generateMigration?: typeof generateMigrationForBranch;
+  /** Veredicto de la CI sobre la PR recién abierta. Inyectable en tests. */
+  ciVerdict?: (branchName: string, repoPath: string, runner: typeof runGh) => Promise<CiVerdict>;
+  /** Espera entre reintentos mientras los checks aún no existen. */
+  sleep?: (ms: number) => Promise<void>;
+}
+
+/**
+ * Qué dice la CI de la rama recién empujada. `sin_checks` no es un fallo: son
+ * los segundos que GitHub tarda en crear el run, o un repo sin workflows.
+ */
+export interface CiVerdict {
+  estado: 'verde' | 'roja' | 'sin_checks';
+  detalle?: string;
 }
 
 /**
@@ -88,6 +109,8 @@ export class GenerationRunnerService {
     const ghRunner = deps.runGh ?? runGh;
     const prismaRunner = deps.runPrisma ?? runPrisma;
     const migrationGenerator = deps.generateMigration ?? generateMigrationForBranch;
+    const dormir = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+    const ciVerdict = deps.ciVerdict ?? ((rama, ruta, runner) => this.ciVerdictFromGh(rama, ruta, runner, dormir));
 
     const spec = await this.prisma.spec.findUnique({
       where: { id: specId },
@@ -124,13 +147,29 @@ export class GenerationRunnerService {
     // 2026-07-19): la instrucción "reasignar tareas es SOLO admin" vivía en
     // las notas del gate técnico y el agente nunca la vio, porque el prompt
     // solo llevaba las specs. Ahora viajan siempre.
+    // Se leen las notas de los gates APROBADOS y de los que pidieron CAMBIOS.
+    // Las de "changes_requested" son el motivo de una REgeneración (D-053:
+    // complementar sobre la PR encola otra vuelta) y hasta 2026-08-27 no las
+    // leía nadie — el agente regeneraba a ciegas y había que meter la
+    // instrucción a mano en un gate aprobado con `amend-gate`. Es la misma
+    // familia de hueco que D-054 cerró para el re-análisis, aquí en la
+    // generación.
     const specGates = await this.prisma.gate.findMany({
-      where: { specId, status: 'approved' },
+      where: { specId, status: { in: ['approved', 'changes_requested'] } },
       orderBy: { createdAt: 'asc' }
     });
-    const gateNotesBlock = specGates
-      .filter((gate) => gate.decisionNotes?.trim())
-      .map((gate) => `[gate ${gate.gateType} — ${gate.reviewer}]\n${gate.decisionNotes?.trim()}`)
+    const conNotas = specGates.filter((gate) => gate.decisionNotes?.trim());
+    const bloque = (gates: typeof conNotas) =>
+      gates.map((gate) => `[gate ${gate.gateType} — ${gate.reviewer}]\n${gate.decisionNotes?.trim()}`).join('\n\n');
+    const pidieronCambios = conNotas.filter((gate) => gate.status === 'changes_requested');
+    const aprobados = conNotas.filter((gate) => gate.status === 'approved');
+    const gateNotesBlock = [
+      pidieronCambios.length > 0
+        ? `CORRECCIONES PEDIDAS EN LA REVISIÓN (vinculantes, son el motivo de esta vuelta):\n${bloque(pidieronCambios)}`
+        : '',
+      aprobados.length > 0 ? `PRECISIONES DE LOS GATES APROBADOS (siguen vigentes):\n${bloque(aprobados)}` : ''
+    ]
+      .filter(Boolean)
       .join('\n\n');
 
     const project = spec.project;
@@ -176,7 +215,7 @@ export class GenerationRunnerService {
       spec.functionalContent,
       ...(gateNotesBlock
         ? [
-            '--- NOTAS DE LOS GATES APROBADOS (instrucciones del revisor: VINCULANTES; si contradicen algún detalle de la spec, prevalecen las notas) ---',
+            '--- NOTAS DE LOS GATES (instrucciones del revisor: VINCULANTES; si contradicen algún detalle de la spec, prevalecen las notas) ---',
             gateNotesBlock
           ]
         : [])
@@ -253,6 +292,36 @@ export class GenerationRunnerService {
       // `generating` con un Run huérfano. Sin red/`gh`, `tryOpenPullRequest`
       // sigue avisando y devolviendo null, sin pasar por aquí.
       return this.fail(run.id, project.id, error instanceof Error ? error.message : String(error), result);
+    }
+
+    // EL VEREDICTO LO DA LA CI, NO EL RESUMEN DEL AGENTE (2026-08-27, D-057).
+    // El prompt le pide correr `turbo run build lint typecheck test` y no darse
+    // por terminado si falla; en `panel-prioridades` el agente escribió
+    // "✅ Typecheck: 0 errores TypeScript" con VEINTE errores en su propio
+    // módulo (5 de ellos por importar `../../core/prisma/prisma.service`, ruta
+    // que no existe) y despachó como "problema secundario" el único test que
+    // fallaba — que fallaba precisamente porque su módulo no compilaba. El
+    // pipeline se lo creyó: Run `success`, transición a `verifying` (un estado
+    // donde nadie verificaba nada) y gate humano abierto sobre código que no
+    // compila. Es D-049 un paso antes: el estado era declarativo.
+    if (prUrl) {
+      const veredicto = await ciVerdict(branchName, repoPath, ghRunner);
+      if (veredicto.estado === 'roja') {
+        return this.fail(
+          run.id,
+          project.id,
+          `El código se generó y la PR está abierta (${prUrl}), pero la CI la RECHAZA, así que el gate de ` +
+            `revisión no se abre: no se gasta atención humana en código que no compila. Motivo: ${veredicto.detalle ?? 'sin detalle'}`,
+          result
+        );
+      }
+      if (veredicto.estado === 'sin_checks') {
+        // No bloquea: preferimos abrir el gate a congelar el pipeline cuando
+        // GitHub no reporta (repo sin workflows, PR conflictiva, sin red).
+        this.logger.warn(
+          `La PR ${prUrl} no reporta checks (${veredicto.detalle ?? 'sin detalle'}): se abre el gate de revisión SIN veredicto de CI.`
+        );
+      }
     }
 
     await this.prisma.run.update({
@@ -451,6 +520,42 @@ export class GenerationRunnerService {
   }
 
   /** `usage` = consumo del agente cuando lo hubo (D-047, ver AnalysisRunnerService.fail). */
+  /**
+   * Pregunta a la CI por la rama recién empujada con el MISMO mecanismo que ya
+   * usa el merge (`gh pr checks --watch --fail-fast`, con timeout: una CI
+   * colgada no puede quedarse con el worker para siempre).
+   *
+   * El único caso que no es veredicto es "no checks reported": tras el push,
+   * GitHub tarda unos segundos en crear el run, y `gh pr checks --watch` NO
+   * espera a que existan — sale con código 1 en el acto (así se descubrió, del
+   * lado del merge, en `panel-prioridades`). Por eso se reintenta unas veces
+   * antes de darlo por "sin checks", que NO bloquea el gate.
+   */
+  private async ciVerdictFromGh(
+    branchName: string,
+    repoPath: string,
+    ghRunner: typeof runGh,
+    dormir: (ms: number) => Promise<void>
+  ): Promise<CiVerdict> {
+    const timeoutMs = Number(process.env.FACTORY_PR_CHECKS_TIMEOUT_MS ?? DEFAULT_CI_TIMEOUT_MS);
+    for (let intento = 1; intento <= CI_INTENTOS_SIN_CHECKS; intento++) {
+      this.logger.log(`Esperando el veredicto de la CI de ${branchName} (intento ${intento}/${CI_INTENTOS_SIN_CHECKS})…`);
+      try {
+        await ghRunner(['pr', 'checks', branchName, '--watch', '--fail-fast', '--interval', '30'], repoPath, {
+          timeoutMs
+        });
+        this.logger.log(`CI de ${branchName} en verde.`);
+        return { estado: 'verde' };
+      } catch (error) {
+        const detalle = error instanceof Error ? error.message : String(error);
+        if (!SIN_CHECKS.test(detalle)) return { estado: 'roja', detalle };
+        if (intento === CI_INTENTOS_SIN_CHECKS) return { estado: 'sin_checks', detalle };
+        await dormir(CI_ESPERA_SIN_CHECKS_MS);
+      }
+    }
+    return { estado: 'sin_checks' };
+  }
+
   private async fail(runId: string, projectId: string, message: string, usage?: AgentUsage): Promise<never> {
     await this.prisma.run.update({
       where: { id: runId },
