@@ -1,29 +1,82 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
-import { apiFetch } from '../../lib/api';
-import { scheduleWeekSchema } from './panel-prioridades.types';
+import type { DragEndEvent } from '@dnd-kit/core';
+import { DndContext } from '@dnd-kit/core';
+import { ScheduleGrid, UnscheduledPanel } from './components';
+import { useTasks } from './hooks/useTasks';
+import { useSchedule } from './hooks/useSchedule';
 
 export function WeekPage() {
-  const [loading, setLoading] = useState(true);
+  const { tasks, listTasks } = useTasks();
+  const { schedule, loading, loadSchedule, reserveBlock, releaseBlock } = useSchedule();
+  const [releasing, setReleasing] = useState<{ day: number; hour: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    loadSchedule();
+    loadInitial();
   }, []);
 
-  async function loadSchedule() {
-    try {
-      setLoading(true);
-      const response = await apiFetch('/api/panel-prioridades/schedule', scheduleWeekSchema);
-      void response;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al cargar agenda');
-    } finally {
-      setLoading(false);
-    }
+  async function loadInitial() {
+    await listTasks({ quadrant: 1 });
+    await listTasks({ quadrant: 2 });
+    await loadSchedule();
   }
 
-  const days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
+  // Tareas Q1 y Q2 que NO tienen bloque agendado
+  const unscheduledTasks = tasks.filter(t => {
+    const hasBlock = schedule?.some(day =>
+      day.blocks.some(block => block.taskId === t.id && block.hour)
+    );
+    return (t.quadrant === 1 || t.quadrant === 2) && t.status === 'open' && !hasBlock;
+  });
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over) return;
+
+    const taskId = active.id as string;
+    const task = tasks.find(t => t.id === taskId);
+
+    // Validar Q1/Q2
+    if (!task || task.quadrant === 3 || task.quadrant === 4) {
+      setError('Solo Q1 y Q2 pueden ser agendadas');
+      return;
+    }
+
+    // over.id formato: "0-8" (day-hour)
+    const overIdStr = String(over.id);
+    const parts = overIdStr.split('-');
+    if (parts.length !== 2) {
+      setError('Coordenadas inválidas');
+      return;
+    }
+    const day = parseInt(parts[0] ?? '', 10);
+    const hour = parseInt(parts[1] ?? '', 10);
+
+    if (isNaN(day) || isNaN(hour)) {
+      setError('Coordenadas inválidas');
+      return;
+    }
+
+    try {
+      await reserveBlock(taskId, day, hour);
+      setError(null);
+    } catch (err) {
+      setError('Error al agendar: ' + (err instanceof Error ? err.message : 'Error desconocido'));
+    }
+  };
+
+  const handleReleaseBlock = async (day: number, hour: number) => {
+    setReleasing({ day, hour });
+    try {
+      await releaseBlock(day, hour);
+      setError(null);
+    } catch (err) {
+      setError('Error al liberar: ' + (err instanceof Error ? err.message : 'Error desconocido'));
+    } finally {
+      setReleasing(null);
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -32,7 +85,7 @@ export function WeekPage() {
           Panel de Prioridades <span className="text-awk-cyan-400">·</span> semana
         </h1>
         <p className="mt-2 text-sm text-awk-blue-300">
-          Time-blocking: reserva bloques de tiempo para tareas importantes
+          Time-blocking: arrastra tareas para reservar bloques de tiempo
         </p>
       </header>
 
@@ -46,35 +99,24 @@ export function WeekPage() {
       {loading ? (
         <p className="text-awk-blue-300">Cargando agenda…</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full bg-awk-navy-800 text-left text-sm border border-awk-blue-700 rounded-lg">
-            <thead>
-              <tr className="border-b border-awk-blue-700 bg-awk-navy-800">
-                <th className="px-4 py-2 font-medium text-awk-blue-100">Hora</th>
-                {days.map(day => (
-                  <th key={day} className="px-4 py-2 font-medium text-awk-blue-100">{day}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {Array.from({ length: 10 }).map((_, i) => {
-                const hour = 8 + i;
-                return (
-                  <tr key={hour} className="border-b border-awk-blue-700 hover:bg-awk-blue-800/20">
-                    <td className="px-4 py-2 font-medium text-awk-blue-200">{hour}:00</td>
-                    {days.map((_, dayIdx) => (
-                      <td
-                        key={dayIdx}
-                        className="px-4 py-2 border-l border-awk-blue-700 bg-awk-blue-800/20 cursor-pointer hover:bg-awk-blue-800/40"
-                      >
-                        <div className="h-10 rounded bg-awk-cyan-400/20 border border-awk-cyan-400/40" />
-                      </td>
-                    ))}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <DndContext onDragEnd={handleDragEnd}>
+          <div className="grid grid-cols-4 gap-6">
+            <UnscheduledPanel tasks={unscheduledTasks} />
+            <div className="col-span-3">
+              <ScheduleGrid
+                schedule={schedule ?? undefined}
+                onReleaseBlock={handleReleaseBlock}
+              />
+            </div>
+          </div>
+        </DndContext>
+      )}
+
+      {releasing && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-awk-navy-800 rounded-lg p-4 border border-awk-blue-700">
+            <p className="text-awk-blue-100">Liberando bloque…</p>
+          </div>
         </div>
       )}
     </div>
