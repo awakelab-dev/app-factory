@@ -93,3 +93,32 @@ export const createTeamMemberRequestSchema = z.object({
   email: z.string().email()
 });
 export type CreateTeamMemberRequest = z.infer<typeof createTeamMemberRequestSchema>;
+
+// Crear tarea (cuerpo del POST /tasks)
+export const createPanelTaskRequestSchema = z.object({
+  title: z.string().min(1).max(200),
+  detail: z.string().max(1000).nullable().optional(),
+  urgent: z.boolean(),
+  important: z.boolean(),
+  dueDate: z.string().datetime().nullable().optional(),
+  estimatedMinutes: estimatedMinutesSchema,
+  origin: panelTaskOriginSchema,
+  delegatedToName: z.string().max(100).nullable().optional(),
+  followUpDate: z.string().datetime().nullable().optional()
+});
+export type CreatePanelTaskRequest = z.infer<typeof createPanelTaskRequestSchema>;
+
+// Actualizar tarea (cuerpo del PUT /tasks/:id)
+export const updatePanelTaskRequestSchema = z.object({
+  title: z.string().min(1).max(200).optional(),
+  detail: z.string().max(1000).nullable().optional(),
+  urgent: z.boolean().optional(),
+  important: z.boolean().optional(),
+  dueDate: z.string().datetime().nullable().optional(),
+  estimatedMinutes: estimatedMinutesSchema.optional(),
+  origin: panelTaskOriginSchema.optional(),
+  status: panelTaskStatusSchema.optional(),
+  delegatedToName: z.string().max(100).nullable().optional(),
+  followUpDate: z.string().datetime().nullable().optional()
+});
+export type UpdatePanelTaskRequest = z.infer<typeof updatePanelTaskRequestSchema>;

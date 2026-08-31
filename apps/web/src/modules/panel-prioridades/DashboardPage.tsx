@@ -1,48 +1,112 @@
 import { useEffect, useState } from 'react';
-import { AlertCircle, Clock, RefreshCw, Target, Zap } from 'lucide-react';
+import { AlertCircle, RefreshCw, Plus, Target, Zap, Clock } from 'lucide-react';
 import { Button } from '@awk/ui';
-import { apiFetch } from '../../lib/api';
+import type { DragEndEvent } from '@dnd-kit/core';
+import { DndContext } from '@dnd-kit/core';
+import { QuadrantColumn, TaskModal } from './components';
+import { useTasks } from './hooks/useTasks';
+import { useTeam } from './hooks/useTeam';
+import { useSchedule } from './hooks/useSchedule';
 import type { PanelTask } from './panel-prioridades.types';
-import { panelTaskSchema } from './panel-prioridades.types';
-import { z } from 'zod';
 
 const QUADRANTS = [
-  { id: 1, title: 'Hacer', subtitle: 'Urgente + Importante', color: 'awk-red', icon: AlertCircle },
-  { id: 2, title: 'Planificar', subtitle: 'Importante', color: 'awk-cyan', icon: Target },
-  { id: 3, title: 'Delegar', subtitle: 'Urgente', color: 'awk-yellow', icon: Zap },
-  { id: 4, title: 'Eliminar', subtitle: 'Ni urgente ni importante', color: 'awk-gray', icon: Clock }
+  { id: 1, title: 'Hacer', subtitle: 'Urgente + Importante', icon: AlertCircle },
+  { id: 2, title: 'Planificar', subtitle: 'Importante', icon: Target },
+  { id: 3, title: 'Delegar', subtitle: 'Urgente', icon: Zap },
+  { id: 4, title: 'Eliminar', subtitle: 'Ni urgente ni importante', icon: Clock }
 ];
 
-const panelTasksListSchema = z.array(panelTaskSchema);
+function computeFromQuadrant(quadrant: number): [boolean, boolean] {
+  switch (quadrant) {
+    case 1:
+      return [true, true];
+    case 2:
+      return [false, true];
+    case 3:
+      return [true, false];
+    case 4:
+    default:
+      return [false, false];
+  }
+}
 
 export function DashboardPage() {
-  const [tasks, setTasks] = useState<PanelTask[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { tasks, loading, error, listTasks, createTask, updateTask, closeTask, setDelegation } =
+    useTasks();
+  const { members, listMembers } = useTeam();
+  const { releaseAllBlocksForTask } = useSchedule();
+
+  const [showModal, setShowModal] = useState(false);
+  const [selectedTask, setSelectedTask] = useState<PanelTask | null>(null);
   const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
-    loadTasks();
+    loadInitial();
   }, []);
 
-  async function loadTasks() {
-    try {
-      setLoading(true);
-      setError(null);
-      const response = await apiFetch('/api/panel-prioridades/tasks', panelTasksListSchema);
-      setTasks(response || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al cargar tareas');
-    } finally {
-      setLoading(false);
-    }
+  async function loadInitial() {
+    await listTasks();
+    await listMembers();
   }
 
   async function onRefresh() {
     setSyncing(true);
-    await loadTasks();
+    await listTasks();
     setSyncing(false);
   }
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over) return;
+
+    const taskId = active.id as string;
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    const newQuadrant = parseInt(over.id as string, 10);
+    if (task.quadrant === newQuadrant) return;
+
+    const [newUrgent, newImportant] = computeFromQuadrant(newQuadrant);
+
+    try {
+      await updateTask(taskId, {
+        urgent: newUrgent,
+        important: newImportant
+      });
+
+      // Si entra en Q4, liberar bloques
+      if (newQuadrant === 4 && task.quadrant !== 4) {
+        await releaseAllBlocksForTask(taskId);
+      }
+
+      // Si sale de Q3, limpiar delegación
+      if (task.quadrant === 3 && newQuadrant !== 3) {
+        await setDelegation(taskId, null, null);
+      }
+
+      await listTasks();
+    } catch (err) {
+      console.error('Error moving task:', err);
+    }
+  };
+
+  const handleOpenModal = (task?: PanelTask) => {
+    setSelectedTask(task || null);
+    setShowModal(true);
+  };
+
+  const handleCloseTask = async (id: string, status: 'done' | 'discarded') => {
+    try {
+      await closeTask(id, status);
+      await listTasks();
+    } catch (err) {
+      console.error('Error closing task:', err);
+    }
+  };
+
+  const handleSaveModal = async () => {
+    await listTasks();
+  };
 
   const tasksByQuadrant = QUADRANTS.map(q => ({
     ...q,
@@ -60,10 +124,16 @@ export function DashboardPage() {
             Matriz de Eisenhower: clasifica tus tareas por urgencia e importancia
           </p>
         </div>
-        <Button onClick={onRefresh} disabled={syncing}>
-          <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
-          {syncing ? 'Actualizando…' : 'Actualizar'}
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={() => handleOpenModal()} className="gap-2">
+            <Plus className="h-4 w-4" />
+            Nueva tarea
+          </Button>
+          <Button onClick={onRefresh} disabled={syncing} variant="outline">
+            <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+            {syncing ? 'Actualizando…' : 'Actualizar'}
+          </Button>
+        </div>
       </header>
 
       {error && (
@@ -76,38 +146,36 @@ export function DashboardPage() {
       {loading ? (
         <p className="text-awk-blue-300">Cargando tareas…</p>
       ) : (
-        <div className="grid grid-cols-2 gap-6 lg:grid-cols-4">
-          {tasksByQuadrant.map(q => {
-            const Icon = q.icon;
-            return (
-              <div key={q.id} className="rounded-lg border border-awk-blue-700 bg-awk-navy-800 p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <Icon className="h-4 w-4 text-awk-cyan-400" />
-                  <div>
-                    <p className="text-sm font-semibold text-white">{q.title}</p>
-                    <p className="text-xs text-awk-blue-400">{q.subtitle}</p>
-                  </div>
-                </div>
-                <p className="text-2xl font-bold text-awk-cyan-400">{q.tasks.length}</p>
-                <div className="mt-4 max-h-60 space-y-2 overflow-y-auto">
-                  {q.tasks.map(task => (
-                    <div
-                      key={task.id}
-                      className="rounded-lg bg-awk-blue-800/40 p-2 text-xs border border-awk-blue-700"
-                    >
-                      <p className="text-awk-blue-50 line-clamp-2">{task.title}</p>
-                      <div className="mt-1 flex items-center gap-1 text-awk-blue-400">
-                        {task.overdue && <span className="text-red-400">•Vencida</span>}
-                        {task.estimatedMinutes && <span>• {task.estimatedMinutes}m</span>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <DndContext onDragEnd={handleDragEnd}>
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
+            {tasksByQuadrant.map(q => (
+              <QuadrantColumn
+                key={q.id}
+                id={q.id}
+                title={q.title}
+                subtitle={q.subtitle}
+                icon={q.icon}
+                tasks={q.tasks}
+                onTaskClick={task => handleOpenModal(task)}
+                onTaskClose={handleCloseTask}
+              />
+            ))}
+          </div>
+        </DndContext>
       )}
+
+      <TaskModal
+        task={selectedTask}
+        open={showModal}
+        onClose={() => {
+          setShowModal(false);
+          setSelectedTask(null);
+        }}
+        onSave={handleSaveModal}
+        onCreateTask={createTask}
+        onUpdateTask={updateTask}
+        teamMembers={members}
+      />
     </div>
   );
 }

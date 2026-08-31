@@ -31,11 +31,11 @@ import { PanelPrioritiesKpisService } from './panel-prioridades-kpis.service';
 
 /**
  * Panel de Prioridades (matriz de Eisenhower).
- * Todos los endpoints requieren rol `panel_admin` (o `admin` por backwards compatibility).
+ * Todos los endpoints requieren rol `panel_prioridades_admin` (o `admin` por backwards compatibility).
  * Cada endpoint filtra implícitamente por user_id (RLS + RBAC redundante).
  */
 @Controller('panel-prioridades')
-@Roles('panel_admin', 'admin')
+@Roles('panel_prioridades_admin', 'admin')
 export class PanelPrioritiesController {
   constructor(
     private readonly tasksService: PanelPrioritiesTasksService,
