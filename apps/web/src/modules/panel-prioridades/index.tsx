@@ -5,15 +5,16 @@ import { WeekPage } from './WeekPage';
 import { DelegationsPage } from './DelegationsPage';
 import { MetricsPage } from './MetricsPage';
 import { TeamPage } from './TeamPage';
+import { PanelLayout } from './components';
 import { panelPrioridadesManifest } from './module.manifest';
 
 export const panelPrioridadesModule: ModuleRegistration = {
   manifest: panelPrioridadesManifest,
   routes: [
-    { path: '/panel-prioridades', element: <DndContext><DashboardPage /></DndContext> },
-    { path: '/panel-prioridades/week', element: <DndContext><WeekPage /></DndContext> },
-    { path: '/panel-prioridades/delegations', element: <DelegationsPage /> },
-    { path: '/panel-prioridades/metrics', element: <MetricsPage /> },
-    { path: '/panel-prioridades/team', element: <TeamPage /> }
+    { path: '/panel-prioridades', element: <PanelLayout><DndContext><DashboardPage /></DndContext></PanelLayout> },
+    { path: '/panel-prioridades/week', element: <PanelLayout><DndContext><WeekPage /></DndContext></PanelLayout> },
+    { path: '/panel-prioridades/delegations', element: <PanelLayout><DelegationsPage /></PanelLayout> },
+    { path: '/panel-prioridades/metrics', element: <PanelLayout><MetricsPage /></PanelLayout> },
+    { path: '/panel-prioridades/team', element: <PanelLayout><TeamPage /></PanelLayout> }
   ]
 };

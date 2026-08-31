@@ -21,7 +21,9 @@ export const panelPrioridadesManifest: ModuleManifest = {
   // La clasificación de sensibilidad (confidencial + personal, con auditoría
   // obligatoria) vive en la spec y en el manifest del prototipo: `ModuleManifest`
   // del shell no la contempla, y añadirle campos propios rompe el contrato.
-  // Las subpáginas (Semana, Delegadas, Indicadores, Equipo) son internas al módulo
-  // y no aparecen como entradas del menú del shell — solo la entrada principal de Matriz.
+  // Una sola entrada en el menú del shell: la navegación entre las cinco
+  // pantallas vive DENTRO del módulo, en la barra de pestañas de
+  // `components/PanelLayout.tsx`. Sin esa barra, cuatro rutas quedarían
+  // inalcanzables (pasó al llegar a staging, D-058).
   nav: [{ label: 'Panel de Prioridades', path: '/panel-prioridades', icon: 'LayoutGrid' }]
 };
